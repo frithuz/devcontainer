@@ -88,7 +88,16 @@ For components Syft detects, the build puts license files where Syft looks for t
 - **Go modules:** Syft looks up a module's license in any `…/pkg/mod/<module>@<version>/` directory in the image. `collect-legal.sh` lists every module compiled into the image's Go binaries (`go version -m`, including Docker's and Ubuntu's), downloads each through the Go proxy, verified against `sum.golang.org`, into a build cache mount, and keeps only its license and notice files under `/legal/go/pkg/mod/`, outside the live `GOPATH`. It keeps them from every directory of the module, at their upstream paths, since subdirectories often hold code under another license (forked Go code, for example). License-named files that aren't documents are skipped: Go source, scripts, config files, and anything in hidden directories such as `.github/`. These are also the transitive notices the Go binaries need (see [Transitive dependencies](#transitive-dependencies)). A main module that reports `(devel)` gets its version (and, for a binary built from a file list, its path) from a `-X …Version=` linker flag, as Syft infers it; a module the proxy can't serve (pebble's unpublished commit) falls back to a component's fetched attribution for the same repository. The first download is about 900 MB and two minutes; the layer is reused until its inputs or the refresh argument change.
 - **Go modules whose notices name another license:** Syft reads only license-named files at the top of a module's directory. A license whose text a module keeps in a subdirectory (`spdy/LICENSE`), under another name (`GO_LICENSE`), or only links from its NOTICE is therefore missing from the attestation. `scripts/license-evidence.yaml` lists these modules after review. For each one, `collect-legal.sh` copies the module's own text, or downloads a pinned text checked against its SHA-256, to the top of the module's directory, beside the upstream files. It never replaces or removes them. Each entry pins the upstream files it was reviewed against by SHA-256, so a changed file fails the build until the entry is reviewed again. A version of the module that has none of those files (one that predates the code) is skipped and logged, and an entry no version applies to fails the build. `manifest.tsv` records each added file and where it came from (`added:<name>=<path or URL>`). A NOTICE Syft can't classify still shows up as a `LicenseRef-<sha256>` alongside the module's licenses: that's Syft reporting a file it can't classify, not a missing license.
 
-What remains without a license in the attestation, and why: binaries Syft identifies only by version pattern (go, node, python, jq) never get one; Rust crates (uv's, from `cargo auditable`) have no license source Syft reads; packages pip's own SBOM lists carry none; and the Go toolchain's `cmd/*` entries are the standard library. Their licenses are in `manifest.tsv`. Scanning builder stages (`BUILDKIT_SBOM_SCAN_STAGE`) isn't used: the builder stages are full Debian images whose packages aren't shipped.
+What remains without a license in the attestation, and why: binaries Syft identifies only by version pattern (go, node, python, jq) never get one; Rust crates (uv's, from `cargo auditable`) have no license source Syft reads; packages pip's own SBOM lists carry none; and the Go toolchain's `cmd/*` entries are the standard library. Their licenses are in `manifest.tsv`.
+
+Known to be wrong in the attestation, checked against upstream (deps.dev for packages, the license files at the installed tags for everything else) on 2026-10-25. Syft produces these, so the build can't correct them; `manifest.tsv` and the notices are right:
+
+- **`github.com/spdx/tools-golang`** (in dockerd) reads `Apache-2.0 AND CC-BY-4.0 AND GPL-2.0-only`. Its `LICENSE.code` is `Apache-2.0 OR GPL-2.0-or-later` (Apache-2.0 is elected in `scripts/source-roots.yaml`); CC-BY-4.0 covers only its docs. Syft joins every license it finds with `AND` and can't read a choice or "or later" from the text.
+- **`qrcode-terminal`** (bundled with npm) reads `LicenseRef-Apache-2.0`: its `package.json` uses the deprecated `licenses: [{"type": "Apache 2.0"}]` form. Its `LICENSE` is Apache-2.0, as `manifest.tsv` records.
+- **Thirteen apt packages** whose copyright files aren't machine-readable (gcc-16's runtime libraries, libcrypt1, libgcrypt20, libgnutls30t64, krb5's libraries, libtasn1-6, ubuntu-keyring) carry only `LicenseRef-<sha256>` entries, Syft's name for text it can't classify, not an identified license.
+- **Go modules whose upstream lists more licenses** (`cloud.google.com/go`, `hcsshim`, `cfssl`, `minlz`, `kube-openapi`, and a few others) differ because deps.dev counts license files in every subdirectory. None of that code is linked into an image binary; the one subdirectory that is (`k8s.io/client-go/third_party/forked/golang`) is covered by `scripts/license-evidence.yaml`.
+
+Scanning builder stages (`BUILDKIT_SBOM_SCAN_STAGE`) isn't used: the builder stages are full Debian images whose packages aren't shipped.
 
 To check coverage locally, export an OCI layout and read the attestation: `docker buildx bake image --allow fs.write=<dir> --set image.attest=type=sbom --set image.output=type=oci,dest=<dir>,tar=false`. Exporting with `type=local` copies the whole root filesystem to the host and stalled on macOS.
 
@@ -110,7 +119,7 @@ The repository-level licenses as reported by GitHub. Each one has to be confirme
 | pnpm | MIT (+ bundled deps) | fetched at build; image for `dist/node_modules/*` | The image ships only the binary and its bundled `dist/node_modules` |
 | hadolint | **GPL-3.0** | fetched at build (+ `ThirdPartyNotices.txt`) | Copyleft (see below). Recorded as `GPL-3.0-only`; upstream states no "or later" |
 | shfmt | BSD-3-Clause | fetched at build | |
-| jq | MIT AND ICU (+ bundled oniguruma, BSD-2-Clause) | image (`/COPYING`) | `COPYING` covers jq, decNumber (ICU), and dtoa, but not oniguruma |
+| jq | MIT AND ICU AND BSD-2-Clause AND dtoa | image (`/COPYING`) | `COPYING` covers jq, decNumber (ICU), dtoa, and the Heimdal and NetBSD code (BSD-2-Clause), but not the oniguruma built into the binary (also BSD-2-Clause) |
 | yq | MIT | fetched at build | |
 | jv | Apache-2.0 | `jv` stage (the module's `LICENSE`, verified by `go.sum`) | Built with `go install` at a pinned version; the manifest records the module, version, and hash from the binary's build info |
 | gomplate | MIT | fetched at build | |
@@ -119,7 +128,7 @@ The repository-level licenses as reported by GitHub. Each one has to be confirme
 | git-cliff | MIT OR Apache-2.0 | fetched at build | Both license files |
 | GitHub CLI | MIT | release tarball | |
 | oras | Apache-2.0 | fetched at build | The image ships no license file |
-| Codex | Apache-2.0 | fetched at build (`LICENSE`, `NOTICE`) | Bundles bubblewrap (LGPL-2.0-or-later, vendored in `openai/codex` at `codex-rs/vendor/bubblewrap`), ripgrep (Unlicense OR MIT), and voice libraries: GStreamer and GLib (LGPL-2.1-or-later), proxy-libintl (LGPL-2.0), PCRE2, Opus, libffi, zlib |
+| Codex | Apache-2.0 | fetched at build (`LICENSE`, `NOTICE`) | Bundles bubblewrap (LGPL-2.0-or-later, vendored in `openai/codex` at `codex-rs/vendor/bubblewrap`), ripgrep (Unlicense OR MIT), and voice libraries: GStreamer and GLib (LGPL-2.1-or-later), proxy-libintl (LGPL-2.0-or-later), PCRE2, Opus, libffi, zlib |
 | Docker Engine packages | Apache-2.0 | fetched at build | Docker's `.deb`s ship no `copyright` file; `containerd.io` does |
 | Claude Code | **Proprietary** | fetched at build (`LICENSE.md` from the npm package of the installed version) | Preinstalled under the applicable Anthropic terms (see below) |
 
@@ -244,14 +253,13 @@ Claude Code stays **preinstalled**. Anthropic's [legal and compliance documentat
 ## Open questions
 
 1. **Distribution compliance review.** Before the first public release, confirm: source images in the image's own repository, linked by a source index, as "the same place" under GPLv2/LGPL-2.x and as §6(d) directions under GPLv3; coverage for the actual GPL/LGPL/MPL versions and the recorded dual-license elections; complete transitive notices; and the Claude Code terms for this distribution. The project's CC0 dedication does not resolve these questions.
-3. **Copyleft source gaps:**
+2. **Copyleft source gaps:**
    - **pebble:** its exact source isn't public. Remove it from the image (which means not shipping Ubuntu's base layer unchanged), ship it and accept the gap, or ask Canonical to publish the commit.
    - **hadolint:** the exact Haskell dependency set of the release build has to be established before its source image can be built.
    - **Unknown licenses:** the licenses of uv's and Codex's Rust crates, hadolint's Haskell packages, and what Claude Code bundles haven't been determined, so they may add copyleft roots.
-2. **License gaps found during implementation** (reported by `collect-legal.sh`, which doesn't fail on them yet):
+3. **License gaps found during implementation** (reported by `collect-legal.sh`, which doesn't fail on them yet):
    - Ten bundled npm/pnpm modules ship no license text, only a `license` field (`@npmcli/agent`, `@sigstore/verify`, `spdx-exceptions`, `spdx-license-ids`, `chownr`, `get-pnpm`, `isexe`, `minipass`, `tar`, `yallist`).
    - jq's `COPYING` doesn't cover its bundled oniguruma.
    - Thirteen apt packages (from seven source packages: gcc-16, libxcrypt, libgcrypt20, gnutls28, krb5, libtasn1-6, ubuntu-keyring) have copyright files that aren't machine-readable, so their license is `NOASSERTION`. All of them mention GPL or LGPL, so their source is mirrored regardless.
-   - hadolint, golangci-lint, and proxy-libintl ship a license text without an "or later" statement; `-only` is recorded pending review.
+   - hadolint and golangci-lint ship a license text without an "or later" statement; `-only` is recorded pending review.
    - Transitive notices are collected for every Go module, but not yet for Rust binaries (uv, git-cliff, ripgrep, Codex) or Haskell (hadolint).
-   - Node's bundled `merve` has no known license; it's recorded as `NOASSERTION`.

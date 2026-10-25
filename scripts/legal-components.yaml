@@ -100,7 +100,7 @@ components:
 
   - name: jq
     stage: jq
-    license: MIT AND ICU
+    license: MIT AND ICU AND BSD-2-Clause AND dtoa
     version: jq --version
     notices: [/legal/attribution/jq/COPYING]
     paths: [/usr/local/bin/jq]

@@ -106,10 +106,6 @@ gaps:
     components: [pebble]
     reason: the commit in its build info isn't public
 
-  - name: node-merve
-    components: [node:merve]
-    reason: license unknown
-
 # Dual-licensed components distributed under their permissive option. They owe no source.
 elections:
   - name: node-zstd

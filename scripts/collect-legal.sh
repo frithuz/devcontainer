@@ -280,7 +280,7 @@ voice=$codex_pkg/codex-resources/voice
 if [[ -f $voice/sources.json ]]; then
 	declare -A voice_license=(
 		["glib"]=LGPL-2.1-or-later ["gstreamer"]=LGPL-2.1-or-later ["gst-plugins-base"]=LGPL-2.1-or-later
-		["gst-plugins-good"]=LGPL-2.1-or-later ["proxy-libintl"]=LGPL-2.0-only ["libffi"]=MIT
+		["gst-plugins-good"]=LGPL-2.1-or-later ["proxy-libintl"]=LGPL-2.0-or-later ["libffi"]=MIT
 		["pcre2"]="BSD-3-Clause WITH PCRE2-exception" ["opus"]=BSD-3-Clause ["zlib"]=Zlib)
 	while IFS=$'\t' read -r name version url sha256; do
 		license=${voice_license[$name]:-}
@@ -338,11 +338,12 @@ declare -A node_lib=(
 	["acorn"]="acorn MIT -" ["ada"]="ada Apache-2.0_OR_MIT -" ["amaro"]="amaro MIT -"
 	["ares"]="c-ares MIT c-ares:c-ares" ["brotli"]="brotli MIT google:brotli"
 	["icu"]="icu Unicode-3.0 unicode:international_components_for_unicode" ["libffi"]="libffi MIT libffi_project:libffi"
-	["lief"]="lief Apache-2.0 -" ["llhttp"]="llhttp MIT llhttp:llhttp" ["nbytes"]="nbytes MIT -"
-	["ncrypto"]="ncrypto MIT -" ["nghttp2"]="nghttp2 MIT nghttp2:nghttp2" ["nghttp3"]="nghttp3 MIT ngtcp2:nghttp3"
+	["lief"]="lief Apache-2.0 -" ["llhttp"]="llhttp MIT llhttp:llhttp" ["merve"]="merve Apache-2.0_OR_MIT -"
+	["nbytes"]="nbytes MIT -" ["ncrypto"]="ncrypto MIT -" ["nghttp2"]="nghttp2 MIT nghttp2:nghttp2"
+	["nghttp3"]="nghttp3 MIT ngtcp2:nghttp3"
 	["ngtcp2"]="ngtcp2 MIT ngtcp2:ngtcp2" ["openssl"]="openssl Apache-2.0 openssl:openssl"
 	["simdjson"]="simdjson Apache-2.0_OR_MIT -" ["simdutf"]="simdutf Apache-2.0_OR_MIT -"
-	["sqlite"]="sqlite blessing sqlite:sqlite" ["undici"]="undici MIT nodejs:undici" ["uv"]="libuv MIT libuv:libuv"
+	["sqlite"]="sqlite blessing sqlite:sqlite" ["undici"]="undici MIT nodejs:undici" ["uv"]="libuv MIT_AND_BSD-2-Clause_AND_ISC libuv:libuv"
 	["uvwasi"]="uvwasi MIT -" ["v8"]="v8 BSD-3-Clause google:v8" ["zlib"]="zlib Zlib zlib:zlib"
 	["zstd"]="zstd BSD-3-Clause_OR_GPL-2.0-only facebook:zstandard"
 )
@@ -365,8 +366,11 @@ sbom library expat "$expat_version" "pkg:generic/expat@$expat_version" MIT - "ht
 	"cpe:2.3:a:libexpat_project:libexpat:$expat_version:*:*:*:*:*:*:*"
 
 # --- npm packages bundled with npm and pnpm -----------------------------------------------
+# The deprecated object and array forms ({"type": "Apache 2.0"}, as qrcode-terminal uses) become
+# an expression of their types, with spaces made into SPDX-style hyphens.
 # shellcheck disable=SC2016 # jq program, not shell.
-package_fields='[.name, .version, (.license // .licenses // "NOASSERTION" | if type == "string" then . else tostring end)] | join(" ")'
+package_fields='[.name, .version, (.license // .licenses // "NOASSERTION" |
+	if type == "string" then . else [.] | flatten | map(if type == "object" then .type else . end | gsub(" "; "-")) | join(" OR ") end)] | join(" ")'
 for parent in npm:/usr/local/lib/node_modules/npm/node_modules pnpm:/opt/pnpm/dist/node_modules; do
 	owner=${parent%%:*}
 	root=${parent#*:}
@@ -588,7 +592,7 @@ mkdir -p "$legal/sbom"
 cyclonedx='
 [inputs | split("\t") | {
 	type: .[0], name: .[1], version: .[2], purl: .[3], "bom-ref": .[3],
-	licenses: [{expression: .[4]}],
+	licenses: (if .[4] == "NOASSERTION" then [] else [{expression: .[4]}] end),
 	hashes: (if .[6] == "-" then [] else [{alg: "SHA-256", content: .[6]}] end),
 	cpe: (if .[10] == "-" then null else .[10] end),
 	properties: (if .[5] == "-" then [] else [{name: "devcontainer:path", value: .[5]}] end),
