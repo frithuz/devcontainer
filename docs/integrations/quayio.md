@@ -2,7 +2,7 @@
 
 The image is published to **`quay.io/frithuz/devcontainer`**. This page covers the one-time setup in Quay and GitHub that the [publish workflow](../maintenance.md#publishing-publishyml) depends on.
 
-Quay is the **default distribution registry**. Only one job writes to it: **`promote`**, our own job. It copies the image, with its signatures and source artifacts, from the [GHCR mirror](ghcr.md), confirms the source is attached, and applies the tags. Promotion runs independently of tests and continues when tests fail. It authenticates as a single robot account, **`frithuz+promote`**, using **OIDC federation only**. No Quay token is stored anywhere, in GitHub or elsewhere.
+Quay is the **default distribution registry**. Only one job writes to it: **`promote`**, our own job. It copies the image, with its signatures, source indexes, and source images, from the [GHCR mirror](ghcr.md), confirms the source is attached, and applies the tags. Promotion runs independently of tests and continues when tests fail. It authenticates as a single robot account, **`frithuz+promote`**, using **OIDC federation only**. No Quay token is stored anywhere, in GitHub or elsewhere.
 
 ## 1. Organization
 
@@ -75,7 +75,7 @@ The job needs `id-token: write`. It requests a GitHub OIDC token, exchanges it f
 
 ```yaml
 promote:
-  needs: [build, attach-ghcr]
+  needs: [build, sources]
   runs-on: ubuntu-26.04
   permissions:
     contents: read
@@ -114,7 +114,7 @@ promote:
 - **No stored credentials:** the repository should have no Actions secrets, and the organization only `OP_INTEGRATION_KEY` if [1Password](1password.md) is ever adopted.
 - **Promotion:** after a run, the Quay tags point at the same digests as the GHCR tags, and the signatures verify against the Quay reference.
 - **Independent testing:** a deliberately failing test still allows `promote` to finish. The workflow reports the test failure and the successful sync separately. Copy failures retry and report incomplete synchronization; recovery uses the same digest ([GHCR recovery](ghcr.md#synchronization-and-recovery)).
-- **Referrers:** check that the source artifact is attached:
+- **Referrers:** check that the source index is attached, and that its source images resolve:
 
   ```sh
   oras discover --distribution-spec v1.1-referrers-api \
@@ -122,7 +122,7 @@ promote:
     quay.io/frithuz/devcontainer:main
   ```
 
-- **Referrer retention:** source artifacts are untagged manifests that reach their image only through `subject`. Quay protects digest-only pushes with a hidden temporary tag that expires after an hour by default. Quay's newer garbage collector keeps manifests that have a subject, but whether quay.io keeps untagged referrers indefinitely isn't documented. After the first publish, run the `oras discover` check above again **after more than an hour**, and again **after more than 14 days** (Quay's default Time Machine window). If the artifact disappears, also give it a tag (e.g. `source-<subject-digest-hex>`) when attaching. A tag keeps it under normal tag retention.
+- **Referrer retention:** source indexes are untagged manifests that reach their image only through `subject` (source images are tagged `source-*`, so ordinary tag retention covers them). Quay protects digest-only pushes with a hidden temporary tag that expires after an hour by default. Quay's newer garbage collector keeps manifests that have a subject, but whether quay.io keeps untagged referrers indefinitely isn't documented. After the first publish, run the `oras discover` check above again **after more than an hour**, and again **after more than 14 days** (Quay's default Time Machine window). If the source index disappears, also give it a tag (e.g. `source-index-<subject-digest-hex>`) when attaching. A tag keeps it under normal tag retention.
 
 ## Troubleshooting
 

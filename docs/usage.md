@@ -16,7 +16,7 @@ The same image, with the same tags and digests, is published to two registries:
 
 | Registry | Use it for |
 | --- | --- |
-| `quay.io/frithuz/devcontainer` | **Default.** Receives the image and its source artifacts from GHCR while tests run independently |
+| `quay.io/frithuz/devcontainer` | **Default.** Receives the image and its source images from GHCR while tests run independently |
 | `ghcr.io/<owner>/devcontainer` | **GitHub Actions.** Pulls stay inside GitHub's network, so they're fast and free |
 
 Digests are identical after synchronization, so pinning `@sha256:<digest>` gives the same image from either registry. GHCR receives a new image first; Quay follows as it is copied. Test failures are reported without blocking the copy or removing the image. Digest pinning fixes the contents you consume; it does not imply passing tests. Consumers that require passing tests should check the publish run's results for that digest.
@@ -162,7 +162,7 @@ capabilities:
 
 The Codex kit follows the same shape, with OpenAI hosts and credentials.
 
-**Kits aren't published.** The only thing in the registry is the image itself (plus its source artifacts). `sbx` builds a kit from this repository at a pinned commit, using a git reference:
+**Kits aren't published.** The only thing in the registry is the image itself (plus its source images and source indexes). `sbx` builds a kit from this repository at a pinned commit, using a git reference:
 
 ```sh
 sbx run 'git+https://github.com/<owner>/devcontainer#ref=<COMMIT>&dir=sandboxes/claude' <workspace>

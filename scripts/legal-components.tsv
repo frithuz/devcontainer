@@ -1,0 +1,26 @@
+# Components copied from pinned upstream images, for scripts/collect-legal.sh.
+# Columns (tab-separated):
+#   component, Dockerfile stage, license (SPDX), version command,
+#   notice files (space-separated globs), installed paths (space-separated),
+#   upstream license files ("<owner/repo> <tag> <file>...", {version} substituted, - if the
+#     image ships them): fetched into /legal/attribution/<component>/ at the installed version,
+#   purl ({version} substituted, - if none) for tools SBOM scanners can't identify on their
+#     own: added to /legal/sbom/devcontainer.cdx.json, hashed from the first installed path.
+# The "base" stage lists files Ubuntu's base image ships outside any apt package.
+# Adding a COPY'd tool to the Dockerfile requires a row here.
+go	go	BSD-3-Clause	go env GOVERSION	/legal/attribution/go/LICENSE /legal/attribution/go/PATENTS	/usr/local/go	-	-
+node	node	MIT	node --version	/legal/attribution/node/LICENSE	/usr/local/bin/node	nodejs/node v{version} LICENSE	-
+npm	node	Artistic-2.0	npm --version	/usr/local/lib/node_modules/npm/LICENSE	/usr/local/lib/node_modules/npm	-	-
+python	python	PSF-2.0	python3 --version	/legal/attribution/python/LICENSE.txt	/usr/local/bin/python3.15 /usr/local/lib/python3.15 /usr/local/lib/libpython3.15.so.1.0 /usr/local/lib/libpython3.so /usr/local/include/python3.15	-	-
+pip	python	MIT	pip3 --version	/usr/local/lib/python3.15/site-packages/pip-*.dist-info/licenses/*	/usr/local/lib/python3.15/site-packages/pip	-	-
+uv	uv	MIT OR Apache-2.0	uv --version	/legal/attribution/uv/LICENSE-*	/usr/local/bin/uv /usr/local/bin/uvx	astral-sh/uv {version} LICENSE-APACHE LICENSE-MIT	-
+oras	oras	Apache-2.0	oras version	/legal/attribution/oras/LICENSE	/usr/local/bin/oras	oras-project/oras v{version} LICENSE	-
+hadolint	hadolint	GPL-3.0-only	hadolint --version	/legal/attribution/hadolint/LICENSE /legal/attribution/hadolint/ThirdPartyNotices.txt	/usr/local/bin/hadolint	hadolint/hadolint v{version} LICENSE ThirdPartyNotices.txt	pkg:github/hadolint/hadolint@v{version}
+shfmt	shfmt	BSD-3-Clause	shfmt --version	/legal/attribution/shfmt/LICENSE	/usr/local/bin/shfmt	mvdan/sh v{version} LICENSE	-
+jq	jq	MIT AND ICU	jq --version	/legal/attribution/jq/COPYING	/usr/local/bin/jq	-	-
+gomplate	gomplate	MIT	gomplate --version	/legal/attribution/gomplate/LICENSE	/usr/local/bin/gomplate	hairyhenderson/gomplate v{version} LICENSE	-
+golangci-lint	golangci-lint	GPL-3.0-only	golangci-lint --version	/legal/attribution/golangci-lint/LICENSE	/usr/local/bin/golangci-lint	golangci/golangci-lint v{version} LICENSE	-
+git-cliff	git-cliff	MIT OR Apache-2.0	git-cliff --version	/legal/attribution/git-cliff/LICENSE-*	/usr/local/bin/git-cliff	orhun/git-cliff v{version} LICENSE-APACHE LICENSE-MIT	pkg:cargo/git-cliff@{version}
+betterleaks	betterleaks	MIT	betterleaks version	/legal/attribution/betterleaks/LICENSE	/usr/local/bin/betterleaks	betterleaks/betterleaks v{version} LICENSE	-
+pnpm	pnpm	MIT	pnpm --version	/legal/attribution/pnpm/LICENSE	/opt/pnpm/pnpm /opt/pnpm/pn /opt/pnpm/pnpx /opt/pnpm/pnx /opt/pnpm/dist	pnpm/pnpm v{version} LICENSE	pkg:npm/pnpm@{version}
+pebble	base	GPL-3.0-only	pebble version --client	/legal/attribution/pebble/COPYING	/usr/bin/pebble	canonical/pebble v{version} COPYING	-

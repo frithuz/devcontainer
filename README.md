@@ -27,7 +27,7 @@ A single Ubuntu 26.04 LTS container image, `quay.io/frithuz/devcontainer` (mirro
 | [`docs/usage.md`](docs/usage.md) | Consuming the image as a devcontainer, in CI, and in sandboxes |
 | [`docs/maintenance.md`](docs/maintenance.md) | Dependabot, CI, releases, contributor expectations |
 | [`docs/legal.md`](docs/legal.md) | Project license, its implications, and third-party notices shipped in `/legal` |
-| [`docs/data-model.md`](docs/data-model.md) | Draft schemas for inventories, source artifacts, and registry-backed publication records |
+| [`docs/data-model.md`](docs/data-model.md) | Draft schemas for inventories, source images and indexes, and registry-backed publication records |
 | [`docs/integrations/`](docs/integrations/) | Setup for external services: [Quay.io](docs/integrations/quayio.md), [GHCR mirror](docs/integrations/ghcr.md), [1Password](docs/integrations/1password.md) |
 
 ## License

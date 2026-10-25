@@ -9,7 +9,7 @@ This project's own code, configuration, and documentation are dedicated to the p
 - **Reuse:** anyone can copy, modify, and redistribute the project's own work, including commercially, without attribution or a requirement to publish changes. See the [CC0 deed](https://creativecommons.org/publicdomain/zero/1.0/) and [attribution FAQ](https://wiki.creativecommons.org/wiki/CC0_FAQ#Does_CC0_require_others_who_use_my_work_to_give_me_attribution.3F).
 - **Permanence and limits:** CC0 waives copyright and related rights to the extent permitted by law, with an unconditional license fallback where the waiver is ineffective. It is irrevocable for work already released under it. It provides no patent or trademark license and disclaims warranties. See [CC0 §§2–4](https://creativecommons.org/publicdomain/zero/1.0/legalcode.en).
 - **Software compatibility:** Creative Commons explicitly permits CC0 for software and describes it as compatible with the GPL. The absence of a patent grant remains relevant to downstream adoption. See the [CC0 software FAQ](https://wiki.creativecommons.org/wiki/CC0_FAQ#May_I_apply_CC0_to_computer_software.3F_If_so.2C_is_there_a_recommended_implementation.3F).
-- **Redistributed components:** choosing CC0 for this project does not waive third-party rights. The image still needs upstream notices, applicable GPL/LGPL source delivery, and compliance with proprietary terms. The source bundles, retention rules, and distribution review below remain necessary. See the [CC0 guidance on third-party rights](https://wiki.creativecommons.org/wiki/CC0_FAQ#Who_can_use_CC0.3F).
+- **Redistributed components:** choosing CC0 for this project does not waive third-party rights. The image still needs upstream notices, applicable GPL/LGPL source delivery, and compliance with proprietary terms. The source images, retention rules, and distribution review below remain necessary. See the [CC0 guidance on third-party rights](https://wiki.creativecommons.org/wiki/CC0_FAQ#Who_can_use_CC0.3F).
 - **Contributions:** original contributions are accepted under CC0-1.0. Contributors must have authority to dedicate them; imported material must retain its upstream terms and be identified separately. The repository license cannot dedicate someone else's rights.
 
 ### Packaging and metadata
@@ -28,7 +28,7 @@ The [OCI specification](https://github.com/opencontainers/image-spec/blob/main/a
 
 Here the label identifies this project's own contribution and any rights it holds in the collection. It does not relicense Ubuntu, installed tools, or their dependencies. Keep their individual licenses, notices, and source obligations in `/legal/manifest.tsv` and the accompanying files. Do not turn the label into a hand-maintained aggregate expression of dependency licenses. `/legal/README.md` and registry descriptions must explain the scope: **Project files: CC0-1.0. Bundled third-party software: respective upstream licenses and terms; see /legal.**
 
-The repository currently contains design documentation only. Image copying, inventory generation, and packaging checks described here are implementation requirements, not completed build behavior.
+The image build now copies the project license and notices and generates `/legal/manifest.tsv` (see [How files get there](#how-files-get-there)). Source bundles, the source cache, and the stricter packaging checks described here are still implementation requirements, not completed build behavior.
 
 ## Image notices
 
@@ -40,6 +40,9 @@ The image redistributes binaries from many upstream projects, so it carries thei
 ├── LICENSE                      # This project's CC0-1.0 text; not a license for third-party components
 ├── SOURCE.md                    # Where to get Corresponding Source for copyleft components (OCI referrers)
 ├── manifest.tsv                 # Generated at build: component, version, architecture, license, notices, exact source
+├── sbom/devcontainer.cdx.json   # Generated at build: CycloneDX entries for components SBOM scanners can't identify
+├── provenance/                  # Build-time evidence (apt .deb URLs and checksums)
+├── go/pkg/mod/<module>@<ver>/   # License files of every Go module compiled into the image
 └── attribution/
     └── <component>/             # One directory per component (go, node, python, uv, hadolint, ...)
         ├── LICENSE*             # Verbatim upstream license file(s)
@@ -47,7 +50,7 @@ The image redistributes binaries from many upstream projects, so it carries thei
         └── SOURCE               # Upstream repository, license path, SPDX ID, and source location for copyleft components
 ```
 
-**Scope:** the inventory covers every redistributed component: the Ubuntu base, apt packages, copied binaries, npm packages, release tarballs, standalone installers, and bundled dependencies. Tools remain preinstalled. License and source collection is part of packaging them for public distribution.
+**Scope:** the inventory covers every redistributed component: the Ubuntu base, apt packages, copied binaries, release tarballs, standalone installers, and bundled dependencies. Tools remain preinstalled. License and source collection is part of packaging them for public distribution.
 
 Packages installed with apt keep their notices at `/usr/share/doc/<pkg>/copyright`; `/legal/manifest.tsv` records those paths without duplicating the files. Never delete them when trimming documentation. Notices alone do not provide Corresponding Source: apt and base-image packages with source-distribution requirements are included in the source inventory and bundles too.
 
@@ -56,13 +59,41 @@ Packages installed with apt keep their notices at `/usr/share/doc/<pkg>/copyrigh
 From most to least preferred:
 
 1. **From the source image.** If the pinned upstream image contains the project's license files, `COPY --from=<stage>` them into `/legal/attribution/<component>/`. These match the copied binary exactly. Examples: `/usr/local/go/LICENSE` and `PATENTS`, and Python's `LICENSE.txt`.
-2. **From the install artifact.** For npm packages (`/opt/tools/node_modules/*/LICENSE*`) and release tarballs, such as `gh` and the Codex standalone package, collect license files from what was actually installed.
-3. **Vendored in this repository.** For images that ship only a binary, such as distroless or `scratch` images like hadolint, shfmt, jq, gomplate, golangci-lint, betterleaks, git-cliff, and uv, commit the upstream license file under `legal/attribution/<component>/` in this repo. `COPY legal/ /legal/` brings them in. Each vendored file records in `SOURCE` the upstream path it was taken from.
+2. **From the install artifact.** For release tarballs, such as `gh`, collect license files from what was actually installed. The Codex package ships notices only for its voice libraries (`codex-resources/voice/NOTICE.md` and `licenses/`), which are referenced in place.
+3. **Fetched from upstream at build, for the installed version.** When neither the image nor the install artifact ships the license, `scripts/collect-legal.sh` downloads it from the upstream repository at the tag matching the installed version and records each file's upstream path, URL, and SHA-256 in `SOURCE`. This covers images that ship only a binary (node, uv, oras, hadolint with its `ThirdPartyNotices.txt`, shfmt, gomplate, golangci-lint, betterleaks, git-cliff, and pnpm, listed with their repositories in `scripts/legal-components.tsv`), Codex (`LICENSE`, `NOTICE`) and the bubblewrap and ripgrep it bundles, and Docker's apt packages (`docker-ce`, `docker-ce-cli`, `docker-buildx-plugin`, `docker-compose-plugin`), which ship no `copyright` file. Claude Code's notice is Anthropic's `LICENSE.md` from the `@anthropic-ai/claude-code` npm package of the installed version, checked against the registry's integrity hash; the installed binary is checked against the release `manifest.json` checksum. Nothing under `/legal/attribution` is committed: the repository's `legal/` holds only `README.md` and `SOURCE.md`, and git ignores the generated paths. Because the files always come from the installed version's tag, they can't drift from the binary, and a relicense shows up in the next build's `SOURCE` checksums.
+
+Every ELF file in the image must belong to an apt package or a component listed in `scripts/legal-components.tsv`; `collect-legal.sh` fails the build otherwise. That's how `/usr/bin/pebble`, which Ubuntu's base image ships outside any package, was found; it's listed under the `base` stage.
+
 `scripts/collect-legal.sh` gathers install-artifact files and writes `/legal/manifest.tsv`. Each row records the component, installed version, architecture, license identifier, notice locations, and exact source provenance. For apt/base packages, query the installed package database and record the binary package version, source package name and version, origin, and source archive checksums. For copied tools, include the pinned upstream image digest and release/build provenance. A version string alone cannot establish which patches or dependencies were compiled into a binary. Collection runs as root after all installations, so the agent CLIs are covered too.
+
+How the implementation records each kind of component:
+
+- **Copied tools** are listed in `scripts/legal-components.tsv` (stage, license, version command, notice files). Pinned digests are read from the `Dockerfile`, so they live in one place. A missing notice file fails the build.
+- **apt and base packages:** the Docker Engine install step, the last apt step, saves `apt-get download --print-uris` for every installed package to `/legal/provenance/apt-uris.txt`, giving each `.deb`'s exact URL and SHA-512. The manifest records the source package and version alongside it. Licenses come from the `License:` fields of machine-readable (DEP-5) copyright files; other copyright files are recorded as `NOASSERTION`, with their path as the notice. These are Debian short names, not SPDX expressions.
+- **Bundled dependencies:** npm's and pnpm's bundled `node_modules`, ripgrep, bubblewrap, and Codex's voice libraries (versions, URLs, and SHA-256s from its `sources.json`) each get their own row.
+
+`manifest.tsv` columns: `component`, `version`, `architecture`, `license`, `notices` (space-separated paths), `source` (provenance).
+
+### SBOM coverage
+
+`bake.yml` attaches an SPDX SBOM generated by BuildKit's Syft scanner. It identifies components from what's in the final image: the dpkg database, npm `package.json` files, Python `dist-info`, Go build info embedded in Go binaries (with their full module lists), dependency data embedded by `cargo auditable` (uv, sudo-rs), and version patterns in a few known binaries (go, node, python, jq). It can't identify standalone binaries without such metadata, or anything downloaded at build time: hadolint, git-cliff, pnpm, Claude Code, Codex, and the ripgrep, bubblewrap, and voice libraries bundled with Codex.
+
+Syft also reads SBOM files it finds in the image. `collect-legal.sh` therefore writes `/legal/sbom/devcontainer.cdx.json`, a CycloneDX 1.6 document with exactly those components: version, purl, SPDX license expression, SHA-256 of the installed binary, the installed path, and VCS/distribution URLs (with the source archive SHA-256 for the voice libraries). The file is deterministic, with no serial number or timestamp. Syft merges its components into the attestation with their licenses, but not their hashes, which stay in the file. Copied tools opt in with a purl in the last column of `scripts/legal-components.tsv`.
+
+Only components Syft can't detect belong in the file: Syft doesn't merge an entry with a package it detected itself, so listing, for example, `node` would produce a duplicate. The file also lists what's compiled into binaries without metadata Syft can read: the libraries node reports in `process.versions` (OpenSSL, ICU, V8, libuv, and others, with CPEs so vulnerability scanners match them), the expat bundled into Python's `pyexpat`, and this project itself.
+
+For components Syft detects, the build puts license files where Syft looks for them:
+
+- **apt packages without a copyright file** (Docker's four packages): `collect-legal.sh` writes a Debian machine-readable `/usr/share/doc/<package>/copyright` from the license files fetched at the installed version's upstream tag. Syft and Debian tooling read the license from it.
+- **Go modules:** Syft looks up a module's license in any `…/pkg/mod/<module>@<version>/` directory in the image. `collect-legal.sh` lists every module compiled into the image's Go binaries (`go version -m`, including Docker's and Ubuntu's), downloads each through the Go proxy, verified against `sum.golang.org`, into a build cache mount, and keeps only its license files under `/legal/go/pkg/mod/`, outside the live `GOPATH`. These are also the transitive notices the Go binaries need (see [Transitive dependencies](#transitive-dependencies)). A main module that reports `(devel)` gets its version (and, for a binary built from a file list, its path) from a `-X …Version=` linker flag, as Syft infers it; a module the proxy can't serve (pebble's unpublished commit) falls back to a component's fetched attribution for the same repository. The first download is about 900 MB and two minutes; the layer is reused until its inputs or the refresh argument change.
+
+What remains without a license in the attestation, and why: binaries Syft identifies only by version pattern (go, node, python, jq) never get one; Rust crates (uv's, from `cargo auditable`) have no license source Syft reads; packages pip's own SBOM lists carry none; and the Go toolchain's `cmd/*` entries are the standard library. Their licenses are in `manifest.tsv`. Scanning builder stages (`BUILDKIT_SBOM_SCAN_STAGE`) isn't used: the builder stages are full Debian images whose packages aren't shipped.
+
+To check coverage locally, export an OCI layout and read the attestation: `docker buildx bake image --allow fs.write=<dir> --set image.attest=type=sbom --set image.output=type=oci,dest=<dir>,tar=false`. Exporting with `type=local` copies the whole root filesystem to the host and stalled on macOS.
 
 `/legal` is `root:root`, world-readable, and read-only for `agent`.
 
-The [data model draft](data-model.md) proposes concrete inventory, source-cache, and source-bundle schemas, including authoritative JSON with a generated TSV summary. The interface changes remain a proposal until implementation adopts them.
+The [data model draft](data-model.md) proposes concrete inventory, source-image, and source-index schemas, including authoritative JSON with a generated TSV summary. The interface changes remain a proposal until implementation adopts them.
 
 ## Component licenses
 
@@ -71,103 +102,105 @@ The repository-level licenses as reported by GitHub. Each one has to be confirme
 | Component | License | Source of files | Notes |
 | --- | --- | --- | --- |
 | Go | BSD-3-Clause | image (`LICENSE`, `PATENTS`) | |
-| Node.js | MIT + bundled deps | image if present, else vendored | Node's `LICENSE` includes the licenses of its bundled dependencies |
-| Python | PSF-2.0 | image (`LICENSE.txt`) | |
-| uv | MIT OR Apache-2.0 | vendored | Both license files |
-| pnpm | MIT | npm package | |
-| hadolint | **GPL-3.0** | vendored | Copyleft (see below) |
-| shfmt | BSD-3-Clause | vendored | |
-| jq | MIT (+ bundled oniguruma, BSD-2-Clause) | vendored (`COPYING`) | GitHub reports `NOASSERTION`; read `COPYING` |
-| gomplate | MIT | vendored | |
-| golangci-lint | **GPL-3.0** | vendored | Copyleft (see below) |
-| betterleaks | MIT | vendored | |
-| git-cliff | MIT OR Apache-2.0 | vendored | Both license files |
+| Node.js | MIT + bundled deps | fetched at build | The `node` slim image doesn't ship Node's `LICENSE`. It includes the licenses of Node's bundled dependencies |
+| npm | Artistic-2.0 + bundled deps | image (in place) | Bundled with Node; each bundled module's notices are referenced in place |
+| Python | PSF-2.0 | image (`LICENSE.txt`) | pip (MIT) is recorded separately, with its notices in place |
+| uv | MIT OR Apache-2.0 | fetched at build | Both license files |
+| pnpm | MIT (+ bundled deps) | fetched at build; image for `dist/node_modules/*` | The image ships only the binary and its bundled `dist/node_modules` |
+| hadolint | **GPL-3.0** | fetched at build (+ `ThirdPartyNotices.txt`) | Copyleft (see below). Recorded as `GPL-3.0-only`; upstream states no "or later" |
+| shfmt | BSD-3-Clause | fetched at build | |
+| jq | MIT AND ICU (+ bundled oniguruma, BSD-2-Clause) | image (`/COPYING`) | `COPYING` covers jq, decNumber (ICU), and dtoa, but not oniguruma |
+| gomplate | MIT | fetched at build | |
+| golangci-lint | **GPL-3.0** | fetched at build | Copyleft (see below). Recorded as `GPL-3.0-only`; upstream states no "or later" |
+| betterleaks | MIT | fetched at build | |
+| git-cliff | MIT OR Apache-2.0 | fetched at build | Both license files |
 | GitHub CLI | MIT | release tarball | |
-| oras | Apache-2.0 | image if present, else vendored | |
-| Codex | Apache-2.0 | standalone package | Include `NOTICE` if shipped. The bundled `bwrap` (bubblewrap) is LGPL-2.0-or-later |
-| Claude Code | **Proprietary** | Vendor terms and shipped notices | Preinstalled under the applicable Anthropic terms (see below) |
+| oras | Apache-2.0 | fetched at build | The image ships no license file |
+| Codex | Apache-2.0 | fetched at build (`LICENSE`, `NOTICE`) | Bundles bubblewrap (LGPL-2.0-or-later, vendored in `openai/codex` at `codex-rs/vendor/bubblewrap`), ripgrep (Unlicense OR MIT), and voice libraries: GStreamer and GLib (LGPL-2.1-or-later), proxy-libintl (LGPL-2.0), PCRE2, Opus, libffi, zlib |
+| Docker Engine packages | Apache-2.0 | fetched at build | Docker's `.deb`s ship no `copyright` file; `containerd.io` does |
+| Claude Code | **Proprietary** | fetched at build (`LICENSE.md` from the npm package of the installed version) | Preinstalled under the applicable Anthropic terms (see below) |
 
 This table lists the primary non-apt tools. The generated inventory additionally covers all installed distro packages and bundled dependencies, with their individual licenses.
 
 ## Copyleft components
 
-The image conveys hadolint and golangci-lint (GPL), the bubblewrap bundled with Codex (LGPL), and copyleft components supplied by Ubuntu and apt, including Bash and Git. Inventory each under its actual license version and provide the required **Corresponding Source**. Being unmodified or installed through apt does not remove redistribution obligations. See the [GNU FAQ on redistributing downloaded binaries](https://www.gnu.org/licenses/gpl-faq.en.html#UnchangedJustBinary).
+The image conveys components under copyleft licenses: GPL (v2 and v3), LGPL, and MPL-2.0. Among them are hadolint, golangci-lint, and pebble (GPLv3), the bubblewrap and GStreamer/GLib libraries bundled with Codex (LGPL), MPL-2.0 Go modules compiled into gomplate, betterleaks, and Docker's binaries, and most of the Ubuntu base and apt packages, including Bash and Git. Being unmodified or installed through apt does not remove redistribution obligations. See the [GNU FAQ on redistributing downloaded binaries](https://www.gnu.org/licenses/gpl-faq.en.html#UnchangedJustBinary).
 
-For GPLv3 components, §6(d) permits source on another server but leaves availability obligations with the distributor. The project therefore **mirrors required source as OCI referrer artifacts** alongside each published image, with retrieval instructions in `/legal/SOURCE.md`. Source archives add registry storage and publishing work without increasing normal image downloads. Coverage and delivery must be reviewed under each component's license, including GPLv2 and LGPL; the GPLv3 mechanism alone is not a complete analysis of every component.
+**Policy: mirror the complete source of every copyleft component, in the same registry repository as the image, before the image's tags are published.** One mechanism covers every license:
 
-### What the source bundle contains
+- **GPLv2 and LGPL-2.x:** §3(a) (LGPL §6(a)) lets the distributor accompany the binary with the complete source. When distribution is by "offering access to copy from a designated place", offering equivalent access to the source "from the same place" counts as distributing it. GPLv2 has no provision for a third-party server, so the source lives with the image. "Complete source code" includes "the scripts used to control compilation and installation".
+- **GPLv3 and LGPLv3:** §6(d) is satisfied by offering the Corresponding Source through the same place, with clear directions next to the object code.
+- **MPL-2.0:** §3.2 requires the source of the covered files to be available with the executable. MPL is file-level, so only the MPL modules' own source is required, though the root-program source images below include more.
 
-For statically linked tools, include required source for compiled-in libraries as well as the project's code. Preserve patches and build scripts needed for the distributed version:
+Mirroring avoids written offers and their three-year commitments. Source stays available for as long as its image is ([Retention](#retention)).
 
-| Component | Bundle contents | How the exact set is determined |
-| --- | --- | --- |
-| golangci-lint | Exact source revision, patches, build scripts, and required vendored dependencies | Upstream build provenance and module build list; checksums validate the selected dependency sources |
-| hadolint | Exact source revision, build scripts, and required dependency sources | Upstream build metadata and `ThirdPartyNotices.txt`, checked against the distributed build |
-| bubblewrap | Source for the bundled version, including downstream patches and required linked-library sources | Installed package provenance and upstream build recipe, with `bwrap --version` as a cross-check |
-| Ubuntu base and apt packages with source obligations | Exact distro source package, including original archives, packaging files, and patches | Installed binary-to-source package mapping, source version, origin, and archive checksums for each architecture |
+**What source is owed.** A GPL or LGPL binary owes its **whole** Corresponding Source: everything compiled into it, including permissively licensed modules. golangci-lint, for example, owes the source of all 208 of its Go modules. An MPL-2.0 module owes only its own source. A component under a dual license that includes a permissive option owes none, once that option is elected. Elections are recorded in `scripts/source-roots.tsv` (for example node's bundled zstd, `BSD-3-Clause OR GPL-2.0-only`, and `spdx/tools-golang` in dockerd, `Apache-2.0 OR GPL-2.0-or-later`).
 
-Each required source package becomes a versioned archive, and the archives are layers of a source artifact. Deduplicate shared source packages by checksum. Measure the complete bundle size during implementation; estimates covering only the three copied tools exclude distro packages and their patches.
+### Source images
 
-Select sources from each platform's **built image inventory** and verify its recorded provenance. Preserve separate per-platform inventories because versions or patches can differ across architectures. Missing or ambiguous source provenance is an error to resolve, not a reason to substitute the latest upstream source.
+Source is published as one **source image per root program per exact version**. A root program is the unit whose source, once fetched, is complete on its own: "clone this to have all the source". Source images are reused across every image release that ships the same version, so an unchanged component is never collected or uploaded twice.
 
-### Reusing unchanged source archives
+- **Format:** a regular OCI image built `FROM scratch`, holding `/source/<root>/` and `/source/SOURCE.json`, the provenance record ([data model](data-model.md#source-image)). Anyone can pull it with standard tools. It's built reproducibly (`SOURCE_DATE_EPOCH`, rewritten timestamps, deterministic tar), so identical inputs produce an identical digest.
+- **Location and tag:** in the image's own repository, tagged `source-<root>-<version>-<key8>`. `<root>` and `<version>` are sanitized to the tag character set (`[A-Za-z0-9_.-]`, 128 characters at most). `<key8>` is the start of the SHA-256 of the canonical identity: kind, root, exact version, exact reference (commit, `.dsc` digest, or archive digests), and the revision of the recipe that builds it. A recipe change produces a new tag. The full key is an image annotation. Consumers' Dependabot ignores these tags: it only proposes tags with the same prefix and format as the pinned one.
+- **Immutable:** an absent tag is built and pushed, an existing tag with the expected digest is reused, and a different digest fails without overwriting.
 
-Source archives are reusable per component across image releases. A weekly or manual image build must not regenerate an archive merely because the image digest or build date changed.
+**Which roots, and how each gets its complete source.** Roots are derived from each platform's `/legal/manifest.tsv`. Only the non-apt roots need an entry in `scripts/source-roots.tsv` (root, kind, repository, ref pattern, the components and binaries it covers, and its dependency vendoring).
 
-- **Stable lookup key:** hash a canonical record containing the component name, binary SHA-256, platform, exact source/dependency/patch provenance, and the revision of that component's source-packaging recipe. Exclude image digests, workflow run IDs, dates, and unrelated component versions. Correcting source coverage or the packaging recipe must invalidate the key even if the binary is unchanged.
-- **Persistent registry storage:** store the archive and its provenance/checksum record in an OCI artifact under an immutable `source-cache-<component>-<key>` tag in the image repository, mirrored to both registries. This survives eviction of GitHub Actions or BuildKit caches. It contains files, not a runnable environment.
-- **Lookup before collection:** resolve the key and validate its recorded inputs and archive descriptors before downloading source or assembling a bundle. On a hit, reuse the existing blob digest and bytes. A missing artifact triggers collection for that component only. Authentication failures, lookup errors, or mismatched metadata fail explicitly rather than being treated as a cache miss.
-- **Deterministic packaging:** sort archive entries, normalize timestamps and ownership, and use fixed compression settings. Keep run-specific metadata outside component archives, so rebuilding from identical inputs can reproduce the same blob digest.
-- **New image attachments:** create a new small subject-specific manifest referencing existing archive blobs and the new image's inventory. A changed subject requires new attachment metadata, not new component source layers. Copy only blobs missing from the destination registry. Identical source archives from different platform keys can share the same content digest.
-- **Retention:** keep cached archives and their lookup records while any retained publication needs them. Cleanup must follow shared references; a weekly build must never replace or delete another release's source archive.
+| Root kind | Which components | Recipe | Verification |
+| --- | --- | --- | --- |
+| `apt` | Every Ubuntu or PPA package whose copyright lists a copyleft license, or isn't machine-readable. About 82 source packages, including git from the git-core PPA | `apt-get source --download-only <source>=<version>`: the `.dsc`, original archives, and Debian/Ubuntu packaging (patches and build scripts) | The `.dsc` signature and the checksums in the archive's signed `Sources` index |
+| `git` + `go` | Go programs owing source: golangci-lint (GPL), gomplate and betterleaks (MPL modules), and the Docker programs with MPL modules: moby (`dockerd`, `docker-proxy`), buildx, containerd, runc. Docker's apt repository publishes **no source packages**, so these come from upstream | Fetch the exact commit (`git fetch --depth 1 <commit>`), export with `git archive`, then vendor the dependencies (`go mod vendor`) unless the repository already commits `vendor/` (moby, buildx, containerd, runc do) | The commit against the binary's build info (`vcs.revision`, or the version/commit linker flags); every vendored module's version and `h1:` hash against `go version -m` |
+| `git` + `haskell` | hadolint (GPL) | The exact tag, plus every Haskell dependency at the version the release was built with, from Hackage | **Open:** the repository pins dependencies only through `cabal.project` and `devenv.lock`; the exact set has to come from the release build |
+| `bundle` | The copyleft parts of Codex: bubblewrap (LGPL, vendored at `codex-rs/vendor/bubblewrap`), and the voice libraries (GStreamer, GLib, proxy-libintl; LGPL) | Sparse checkout of `codex-rs/vendor/bubblewrap` and `third_party/voice/` (the build scripts) at `rust-v<version>`, plus the source archives listed in the package's `sources.json` | Archive SHA-256s from `sources.json`; the commit against the tag |
+| — | pebble (GPL, shipped unpackaged in Ubuntu's base image) | **Not available:** the commit in its build info (`2cbd1b20d20a`) isn't in `canonical/pebble` or on the Go proxy | Open question |
 
-For example, if hadolint and golangci-lint remain unchanged for ten weekly images, collect each source archive once and reuse its blob in all ten publications. Updated apt packages or a new agent release do not invalidate those two entries. These rules are design requirements; the repository does not yet implement the cache.
+A source image contains the source as published (Debian source packages as their original files, git as an exported tree, archives as downloaded), plus the vendored dependencies. A root that can't be produced fails the `sources` job; the image stays untagged (see [Publishing](#publishing)).
 
 ### Publishing
 
-Both registries distribute the image publicly, so **both carry matching source artifacts** (see [maintenance.md](maintenance.md#workflow)). The publish workflow builds the image once. Testing runs alongside source attachment and promotion and does not control either operation.
+Both registries distribute the image publicly, so **both carry the same source images and source indexes** (see [maintenance.md](maintenance.md#workflow)). The image is built once. Testing runs alongside source publication and promotion and does not control either.
 
-1. **`build`** builds, pushes, and tags the `image` target on GHCR, recording the digest and each platform's inventory.
-2. **`attach-ghcr`** runs immediately after `build`:
-   1. Extract `/legal/manifest.tsv` from each platform image under the recorded digest. Resolve the [per-component source cache](#reusing-unchanged-source-archives) first. Run `scripts/build-source-bundles.sh` only for missing entries, in a separate environment containing the source-collection tools. Reuse validated archives by digest; never rebuild the runtime image to collect its source.
-   2. Resolve the subjects: the index digest, plus every per-platform manifest in it. Skip the `unknown/unknown` entries, which are `bake.yml`'s attestation manifests, not images.
-   3. Assemble and validate all required archives before running **one** `oras attach` per subject, using `--artifact-type application/vnd.frithuz.devcontainer.source.v1`. Attach each platform's sources and inventory to its manifest, and the union of both platforms' sources and inventories to the index. Shared blobs are deduplicated. Include archive checksums and provenance in the artifact.
-   4. A re-run checks `oras discover` and validates existing artifact contents against the inventory before skipping a subject. An incomplete or mismatched artifact is a reported error; mere presence is insufficient.
-3. **`promote`**, which depends on attachment but not tests, copies the same image to Quay with its referrers (`oras cp -r`). It confirms that every image subject has its source artifact through the native Referrers API, then applies the tags.
+1. **`build`** pushes the `image` target to GHCR under its recovery tag only (`build-<publication-id>`), with no public tags, recording the digest.
+2. **`sources`** runs after `build`:
+   1. Extract `/legal/manifest.tsv` from each platform image under the recorded digest, and derive the root programs and versions that owe source.
+   2. For each root, compute its tag and check GHCR. Existing tags are reused; registry errors fail the check rather than counting as absent. Build and push only the missing ones, with the `source` bake target, in an environment separate from the runtime image.
+   3. Attach **one source index per subject**: the image index, and each platform manifest (skipping `bake.yml`'s `unknown/unknown` attestation manifests). A source index is an OCI image index of artifact type `application/vnd.frithuz.devcontainer.source.v1`, with the subject set, listing that platform's source images by digest. The index's source index covers both platforms. Being in the same repository, the source images are part of the referrer's graph.
+   4. A re-run validates an existing source index against the manifests before skipping its subject; a mismatch is a reported error.
+3. **`promote`**, which depends on `sources` but not on tests, copies the image to Quay with its referrers (`oras cp -r`). That brings the source indexes and, through them, the source images, by digest, skipping blobs Quay already has. It confirms each subject's source index through Quay's Referrers API.
+4. **Tags** are applied in both registries only after source is published in that registry: the date tag, `:latest`, and `:main` on GHCR after `sources`, and on Quay after `promote`.
 
-**Source gaps:**
-
-- **Quay tags follow attachment.** Source is checked before consumer-facing tags are applied. The digest-only copy itself is public while the copy proceeds.
-- **GHCR publishes before attachment.** The image is public from the initial push until `attach-ghcr` completes without its source referrer. A collection failure can extend that window. Retry attachment for the same digest and alert on unresolved failures; do not claim that removing a tag or passing tests addresses source availability. This delivery window needs coverage in the compliance review below. Public publishing is the chosen design; there is no private staging step.
-- **Recovery:** test failures leave the image and source available in both registries. Attachment and copy failures are repaired using the original digest, as described in [synchronization and recovery](integrations/ghcr.md#synchronization-and-recovery).
+No public tag points at an image before its complete source is in the same repository. The untagged image is reachable by digest from the moment it's pushed, as any pushed manifest is; consumers find images through tags.
 
 **How each registry stores referrers:**
 
 - **Quay** implements the OCI Referrers API natively. `GET /v2/<repo>/referrers/<digest>` returns an OCI image index, so artifacts are found through their `subject` link, with no tags involved. `--distribution-spec v1.1-referrers-api` makes `oras` use the API only, so a Quay-side problem fails loudly instead of silently creating fallback tags.
-- **GHCR** has no Referrers API. Artifacts are listed in an index stored under the tag `sha256-<digest>`. GHCR rejects registry `DELETE`s with 405, so a subject's fallback index must never need rewriting. Hence one attach per subject, and re-runs that skip subjects that already have the artifact.
+- **GHCR** has no Referrers API. Artifacts are listed in an index stored under the tag `sha256-<digest>`. GHCR rejects registry `DELETE`s with 405, so a subject's fallback index must never need rewriting. Hence one source index per subject, attached once, and re-runs that skip subjects that already have it.
 
 ### Finding the source
 
-`/legal/SOURCE.md` in the image gives the directions §6(d) requires "next to the object code". `oras` ships in the image, so this works from inside the container. The image can't know its own digest at build time, so the instructions start from the digest the user pulled. The same commands work for either registry: `oras discover` uses the Referrers API on Quay and the tag fallback on GHCR automatically.
+`/legal/SOURCE.md` in the image gives the directions next to the object code. `oras` ships in the image, so this works from inside the container. The image can't know its own digest at build time, so the instructions start from the digest the user pulled. The same commands work for either registry: `oras discover` uses the Referrers API on Quay and the tag fallback on GHCR.
 
 ```sh
-digest=$(docker inspect --format '{{index .RepoDigests 0}}' <registry>/<repo>:<tag>)
-oras discover --artifact-type application/vnd.frithuz.devcontainer.source.v1 "$digest"
-oras pull "<registry>/<repo>@<referrer-digest>"
+image=<registry>/<repo>@<digest>
+oras discover --artifact-type application/vnd.frithuz.devcontainer.source.v1 "$image"
+oras manifest fetch "<registry>/<repo>@<source-index-digest>" | jq -r '.manifests[] | .digest + "  " + .annotations["org.opencontainers.image.title"]'
+docker create --name source "<registry>/<repo>@<source-image-digest>" none
+docker cp source:/source ./source && docker rm source
 ```
 
-The same directions appear in the Quay repository description and the GHCR package description.
+Each source image is also reachable by its `source-*` tag. The same directions appear in the Quay repository description and the GHCR package description.
 
 ### Retention
 
-Until a retention policy is adopted, keep all published images, source archives, cache records, and publication history in both registries with no automatic expiry or age/count limit. Durable records and their evidence belong in the registries; GitHub workflow artifacts are temporary transport, not the long-term record store. See the [registry record draft](data-model.md#publication-intent).
+Until a retention policy is adopted, keep all published images, source images, source indexes, and publication history in both registries with no automatic expiry or age/count limit. Durable records and their evidence belong in the registries; GitHub workflow artifacts are temporary transport, not the long-term record store. See the [registry record draft](data-model.md#publication-intent).
 
-Source has to stay available as long as the image is, **in each registry**. Any cleanup of old images, such as pruning old `:YYYYMMDD` snapshots, must delete referrer artifacts **only together with their image, never before it**:
+Source has to stay available as long as the image is, **in each registry**. Any cleanup of old images, such as pruning old `:YYYYMMDD` snapshots, must keep source **at least as long as every image that references it**:
 
-- **Quay:** source artifacts are untagged manifests linked to their image by `subject`. Cleanup must never delete untagged manifests that are the `subject`-linked referrers of an image that's still published.
-- **GHCR:** source artifacts are reached through `sha256-<digest>` fallback tags. Cleanup must keep those tags, and the versions they point to, for as long as their subject image is kept.
+- **Source images** are tagged (`source-*`) and shared by many releases. Delete one only when no retained image's source index references it.
+- **Source indexes on Quay** are untagged manifests linked to their image by `subject`. Never delete one while its subject is published.
+- **Source indexes on GHCR** are reached through `sha256-<digest>` fallback tags. Keep those tags, and the versions they point to, for as long as their subject image is kept.
 
-Cleanup must account for shared platform manifests and source artifacts across retained releases. Determine reachability from all retained publications before deleting anything; never recursively delete a release's children merely because one index is removed. Test failures do not trigger deletion.
+Determine reachability from all retained publications before deleting anything. A platform manifest can be shared by multiple releases. Never recursively delete a release's children merely because one index is removed. Test failures do not trigger deletion.
 
 ## Transitive dependencies
 
@@ -180,16 +213,27 @@ Most components are statically linked Go or Rust binaries. Those binaries embed 
 
 Claude Code stays **preinstalled**. Anthropic's [legal and compliance documentation](https://code.claude.com/docs/en/legal-and-compliance#can-customers-offer-claude-code-in-their-products) describes preinstallation under its Commercial Terms: keep the binary unmodified, preserve its built-in authentication methods, and have end users authenticate with their own credentials under the applicable terms. Do not resell or intermediate their usage. Follow the vendor's naming and branding conditions too.
 
-Record the applicable terms and required shipped notices in `/legal/attribution/claude/`, using a proprietary license reference in the inventory rather than inventing an open-source license. Confirm the distribution setup meets those terms before the first public release. Runtime installation is not the planned delivery method.
+`collect-legal.sh` records Anthropic's own notice (`LICENSE.md`, which points to the legal agreements at https://code.claude.com/docs/en/legal-and-compliance) in `/legal/attribution/claude/`, and uses a proprietary license reference (`LicenseRef-Anthropic-Terms`) in the inventory rather than inventing an open-source license. Confirm the distribution setup meets those terms before the first public release. Runtime installation is not the planned delivery method.
 
 ## Enforcement
 
 - **Project license:** `/legal/LICENSE` must match the repository's root `LICENSE`, and the inventory must distinguish the project's `CC0-1.0` files from third-party components. `/legal/README.md` and registry descriptions must explain that scope.
 - **Build inventory:** every component must have a license identifier and notice locations in `manifest.tsv`. Non-apt components have `/legal/attribution/<component>/` entries; apt/base packages reference their preserved copyright files. Proprietary tools record applicable terms and provenance. Missing inventory or required notices fail packaging.
-- **Source collection:** every component with source obligations maps to its exact source and patches. Validate archive checksums and complete coverage for both architectures before attachment. Collection errors fail attachment and trigger recovery; runtime test results are independent.
+- **Source collection:** every copyleft component maps to a root program whose source image exists in the same repository, verified as described in [Source images](#source-images), for both architectures, before public tags are applied. Collection errors fail the `sources` job and trigger recovery; runtime test results are independent.
 - **Adding a component** requires adding its attribution in the same PR.
-- **Vendored files:** when Dependabot bumps a component with vendored license files, the license text rarely changes, but a change of license (e.g. a relicense) must be caught. A scheduled job compares each vendored file against the upstream file at the pinned version, and opens an issue on drift.
+- **Fetched files:** license files are fetched from the upstream tag of the installed version on every build, so there are no committed copies to drift. A failed fetch fails the build. When Dependabot bumps a tool, review its `SOURCE` checksums in `/legal/attribution` for a license change.
 
 ## Open questions
 
-1. **Distribution compliance review.** Confirm the source delivery mechanism and availability during initial public pushes, coverage for the actual GPL/LGPL versions, complete transitive notices, and the Claude Code terms for this distribution before the first public release. The project's CC0 dedication does not resolve these questions.
+1. **Distribution compliance review.** Before the first public release, confirm: source images in the image's own repository, linked by a source index, as "the same place" under GPLv2/LGPL-2.x and as §6(d) directions under GPLv3; coverage for the actual GPL/LGPL/MPL versions and the recorded dual-license elections; complete transitive notices; and the Claude Code terms for this distribution. The project's CC0 dedication does not resolve these questions.
+3. **Copyleft source gaps:**
+   - **pebble:** its exact source isn't public. Remove it from the image (which means not shipping Ubuntu's base layer unchanged), ship it and accept the gap, or ask Canonical to publish the commit.
+   - **hadolint:** the exact Haskell dependency set of the release build has to be established before its source image can be built.
+   - **Unknown licenses:** the licenses of uv's and Codex's Rust crates, hadolint's Haskell packages, and what Claude Code bundles haven't been determined, so they may add copyleft roots.
+2. **License gaps found during implementation** (reported by `collect-legal.sh`, which doesn't fail on them yet):
+   - Ten bundled npm/pnpm modules ship no license text, only a `license` field (`@npmcli/agent`, `@sigstore/verify`, `spdx-exceptions`, `spdx-license-ids`, `chownr`, `get-pnpm`, `isexe`, `minipass`, `tar`, `yallist`).
+   - jq's `COPYING` doesn't cover its bundled oniguruma.
+   - Thirteen apt packages (from seven source packages: gcc-16, libxcrypt, libgcrypt20, gnutls28, krb5, libtasn1-6, ubuntu-keyring) have copyright files that aren't machine-readable, so their license is `NOASSERTION`. All of them mention GPL or LGPL, so their source is mirrored regardless.
+   - hadolint, golangci-lint, and proxy-libintl ship a license text without an "or later" statement; `-only` is recorded pending review.
+   - Transitive notices are collected for every Go module, but not yet for Rust binaries (uv, git-cliff, ripgrep, Codex) or Haskell (hadolint).
+   - Node's bundled `merve` has no known license; it's recorded as `NOASSERTION`.

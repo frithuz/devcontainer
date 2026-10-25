@@ -10,9 +10,9 @@ Use JSON for authoritative records. Arrays and nested objects represent multiple
 
 | Record | Location | Purpose |
 | --- | --- | --- |
-| `inventory` | `/legal/inventory.json`, also a layer in source artifacts | Exact installed components and source requirements, per platform |
-| `source-cache` | Tagged OCI artifact | Reusable source archives and the inputs that identify them |
-| `source-bundle` | OCI artifact attached to an image index or platform manifest | Maps inventories and components to the source archives supplied for that image |
+| `inventory` | `/legal/inventory.json`, also a layer in source indexes | Exact installed components and source requirements, per platform |
+| `source-image` | `/source/SOURCE.json` in a tagged `FROM scratch` source image | Complete source of one root program at one exact version, and the inputs that identify it; reused across releases |
+| `source-index` | Layer of the source index referrer attached to an image index or platform manifest | Maps that image's inventories and components to the source images supplied for it |
 | `publication` | Tagged OCI artifact, created before building | Immutable publication intent and recovery identity |
 | `publication-event` | Separately tagged OCI artifact per operation attempt | Build results, attachment results, test results, and synchronization observations |
 
@@ -33,7 +33,7 @@ Each JSON record starts with `schemaVersion: 1` and `kind`, using one of the nam
 
 Registry-local descriptors omit the registry hostname, so the same record bytes work in both registries. Explicit upstream references include their repository or download URL. Sizes and counters are integers from zero through `2^53 - 1`; numeric GitHub IDs are decimal strings.
 
-Use an [OCI image manifest](https://github.com/opencontainers/image-spec/blob/main/manifest.md) with the specified `artifactType`, an empty OCI config, and a JSON layer named `record.json` plus the supporting layers. Only source bundles set the OCI `subject` field. Layer names become `org.opencontainers.image.title` annotations. Never put a record's own artifact digest in that record. An existing immutable tag is an idempotent success only when its descriptor and validated contents agree; otherwise report a conflict.
+Use an [OCI image manifest](https://github.com/opencontainers/image-spec/blob/main/manifest.md) with the specified `artifactType`, an empty OCI config, and a JSON layer named `record.json` plus the supporting layers. Only source indexes set the OCI `subject` field. Layer names become `org.opencontainers.image.title` annotations. Never put a record's own artifact digest in that record. An existing immutable tag is an idempotent success only when its descriptor and validated contents agree; otherwise report a conflict.
 
 For content-derived keys, use SHA-256 over [RFC 8785 canonical JSON](https://www.rfc-editor.org/rfc/rfc8785). Before canonicalization, sort set-like arrays by their stable identifier, path, or digest as specified below, and reject duplicate entries. Preserve ordered arrays such as patch application order. Do not normalize version strings or source URLs. Artifact descriptors always hash the actual stored bytes, not a reserialized approximation.
 
@@ -47,7 +47,7 @@ For content-derived keys, use SHA-256 over [RFC 8785 canonical JSON](https://www
 | `components` | `Component[]`, sorted by `id` |
 | `sources` | `Source[]`, sorted by `id` |
 
-An inventory cannot contain its own final image digest: embedding that digest would change the image. The source bundle and build event bind inventory bytes to the resulting image manifest. Do not put workflow timestamps or run IDs in the inventory.
+An inventory cannot contain its own final image digest: embedding that digest would change the image. The source index and build event bind inventory bytes to the resulting image manifest. Do not put workflow timestamps or run IDs in the inventory.
 
 ### Component
 
@@ -113,39 +113,47 @@ component_id\tname\tversion\tarchitecture\tlicense_expression\tnotice_paths\tsou
 
 The displayed `\t` sequences represent actual tab separators. Encode each string cell as a compact JSON string, list cells as compact JSON arrays, and the boolean as JSON `true`/`false`. JSON escaping prevents embedded tabs/newlines from creating extra cells or records. Rows follow component ID order. The summary is never independently edited or used as a cache key.
 
-## Source cache
+## Source image
+
+A source image holds the complete source of one root program at one exact version (see [legal.md](legal.md#source-images)). It's a regular OCI image built `FROM scratch`, so standard tools can pull and unpack it, with its record at `/source/SOURCE.json` and the source under `/source/<root>/`.
 
 | Field | Type and meaning |
 | --- | --- |
-| `schemaVersion`, `kind` | `1`, `"source-cache"` |
-| `key` | `Digest`; hash of canonical `inputs` below |
-| `inputs` | `{ component: { name, version }, platform, payloads: Descriptor[], sources: Source[] }` |
-| `archives` | `{ layer: Layer, sourceIds: ID[] }[]`, sorted by layer name |
+| `schemaVersion`, `kind` | `1`, `"source-image"` |
+| `key` | `Digest`; hash of canonical `identity` |
+| `identity` | `{ kind: "apt" \| "git" \| "bundle", root: string, version: string, ref: object, recipe: { repository, revision, path, digest } }` |
+| `inputs` | `{ name, role, url, digest, size }[]`, sorted by name; `role` is `source`, `packaging`, `patch`, `build-recipe`, or `dependency` |
+| `vendored` | `{ ecosystem: "go" \| "haskell", path: string, modules: { path, version, sum }[] }` or `null`; dependencies included in the tree, sorted by path |
 
-`inputs.sources` contains the complete source dependency closure, including recipe identities, sorted by source ID. `inputs.payloads` contains the component's payload listing descriptor and any containing binary payload descriptors, deduplicated and sorted by digest. Their contents record the actual installed file hashes. Preserve these listing files as artifact layers so cache hits can validate the inputs. Exclude destination registry locations, image digests, workflow IDs, timestamps, and unrelated components; retain exact upstream source locations.
+`identity.ref` is, by kind:
 
-The key includes the component name rather than its inventory-local ID, so moving a component within an inventory does not invalidate it. Source IDs must be assigned consistently by source identity across inventories. Recipe revisions are the last commits affecting the relevant recipe and its helpers, not automatically each new repository HEAD.
+| `kind` | `ref` |
+| --- | --- |
+| `apt` | `{ repository, suite, package, version, dscDigest }`; the source package as published in the archive's signed `Sources` index |
+| `git` | `{ repository, commit, tag }`; `commit` is the full ID, `tag` is informational. `subpaths` (sorted) is set for sparse checkouts |
+| `bundle` | `{ parts: ({ type: "git", repository, commit, subpaths } \| { type: "archive", url, digest })[] }`, sorted |
 
-Each archive has media type `application/gzip` and contains a deterministic tar archive: sorted entries, zero timestamps, numeric UID/GID zero, normalized modes with executable bits preserved, and gzip without filename/timestamp headers using a fixed compression level. Record compression/tool versions in the packaging recipe. Every required source in the closure must be covered by at least one archive. Verify layer digests and sizes on retrieval.
+The key excludes image digests, publication IDs, dates, and the components that happen to use the source. Those belong in the source index, so the same source image serves every release. Recipe revisions are the last commits affecting the recipe and its helpers, not automatically each new repository HEAD; a corrected recipe changes the key even when the source didn't change.
 
-Store this as an artifact of type `application/vnd.frithuz.devcontainer.source-cache.v1`, with its record and archives as layers. The immutable tag is `source-cache-<key-hex>`; the component name is in the record, keeping the tag bounded and avoiding name-sanitization collisions. This shortens the tag form previously proposed in [legal.md](legal.md#reusing-unchanged-source-archives).
+The image is tagged `source-<root>-<version>-<key-hex[0:8]>`, with `<root>` and `<version>` sanitized to `[A-Za-z0-9_.-]` and the tag kept to 128 characters, truncating the readable part first. It carries the annotations `org.opencontainers.image.source`, `.version`, `.revision` (for `git`), and `vnd.frithuz.devcontainer.source.key` (the full key). The record and the archive layers are deterministic: sorted entries, fixed timestamps (`SOURCE_DATE_EPOCH`), numeric UID/GID zero, normalized modes with executable bits preserved, and fixed compression settings. Identical inputs reproduce the same digest. An existing tag is an idempotent success only when its digest and annotations agree; anything else is a conflict.
 
-## Source bundle
+Verify every input against its recorded digest when building, and the vendored modules against the binary's embedded module list (`go version -m`) for Go roots.
+
+## Source index
 
 | Field | Type and meaning |
 | --- | --- |
-| `schemaVersion`, `kind` | `1`, `"source-bundle"` |
+| `schemaVersion`, `kind` | `1`, `"source-index"` |
 | `subject` | Image index or platform manifest `Descriptor` |
 | `inventories` | `{ platform: Platform, image: Descriptor, layer: Layer }[]`, sorted by architecture |
-| `supportingFiles` | `{ inventoryDigest: Digest, path: string, layer: Layer }[]`, sorted by inventory digest then original absolute image path |
-| `components` | `{ inventoryDigest: Digest, componentId: ID, cacheArtifact: Descriptor, archiveDigests: Digest[] }[]`, sorted by inventory digest then component ID |
-| `archives` | `Layer[]`, deduplicated by digest and sorted by digest |
+| `components` | `{ inventoryDigest: Digest, componentId: ID, sourceImages: Descriptor[], decision: string }[]`, sorted by inventory digest then component ID; `decision` explains coverage, including dual-license elections and documented gaps |
+| `sourceImages` | `{ image: Descriptor, tag: string, key: Digest }[]`, deduplicated and sorted by key |
 
-The existing artifact type remains `application/vnd.frithuz.devcontainer.source.v1`. Its OCI manifest `subject` must equal the record's `subject`. The layers contain the record, inventories, all inventory-referenced payload/provenance/notice files, and the archive bytes. `supportingFiles` maps their original image paths to artifact layers. Assign unique artifact filenames when two platform inventories refer to the same in-image path; identical blobs can be deduplicated while preserving both mappings.
+The referrer is an OCI image index with `artifactType` `application/vnd.frithuz.devcontainer.source.v1` and `subject` set. Its `manifests` are the source images, by digest, each annotated with its `org.opencontainers.image.title` (root and version), plus one artifact manifest carrying this record as `record.json` and the inventories as layers. Because the source images are in the same repository and part of the referrer's graph, `oras cp -r` copies them with the image.
 
-A platform bundle contains exactly its inventory. An index bundle contains the inventories for every supported platform image in the index, excluding attestation manifests. For every component requiring source, validate that the mapping and source closure are complete. Each `archiveDigests` entry must resolve to an included archive layer and to the named cache artifact. Cache artifacts are independently tagged and mirrored; JSON references alone do not make registries copy or retain them.
+A platform source index covers exactly its inventory. The index-level source index covers every supported platform in the image index, excluding attestation manifests. For every component that owes source, validate that each referenced source image exists, matches its key, and covers the component; unresolved components fail the `sources` job.
 
-Create one source attachment per subject as specified in [legal.md](legal.md#publishing). Validate an existing attachment before skipping it on retry. Conflicting contents fail explicitly. Publication events are separately tagged artifacts and do not add further referrers to the image's GHCR fallback index.
+Create one source index per subject as specified in [legal.md](legal.md#publishing). Validate an existing one before skipping it on retry. Conflicting contents fail explicitly. Publication events are separately tagged artifacts and do not add further referrers to the image's GHCR fallback index.
 
 ## Publication intent
 
@@ -216,10 +224,10 @@ Example intent (illustrative repository, run, and revision):
 
 | Stage | `details` |
 | --- | --- |
-| `build` | `{ platforms: { platform: Platform, image: Descriptor, inventory: Layer }[], supportingFiles: { inventoryDigest: Digest, path: string, layer: Layer }[] }`; a success lists both platform manifests and includes inventory/supporting files as layers, with the same mapping rules as source bundles |
-| `source` | `{ attachments: { subject: Descriptor, artifact: Descriptor }[], caches: Descriptor[] }`; a success covers the index and both platform images |
+| `build` | `{ platforms: { platform: Platform, image: Descriptor, inventory: Layer }[], supportingFiles: { inventoryDigest: Digest, path: string, layer: Layer }[] }`; a success lists both platform manifests and includes inventory/supporting files as layers |
+| `source` | `{ attachments: { subject: Descriptor, artifact: Descriptor }[], sourceImages: { image: Descriptor, tag: string, built: boolean }[] }`; a success covers the index and both platform images; `built` is `false` for reused source images |
 | `verify` | `{ platform: Platform, user: "agent" \| "root", suite: string, report: Layer }`; one event per suite/platform/user; report is also an evidence layer |
-| `sync` | `{ destination: string, checkedArtifacts: Descriptor[], tags: { name: string, digest: Digest }[] }`; describes verified remote state, including source/cache/record artifacts copied during this operation |
+| `sync` | `{ destination: string, checkedArtifacts: Descriptor[], tags: { name: string, digest: Digest }[] }`; describes verified remote state, including source images, source indexes, and record artifacts copied during this operation |
 
 Failed/cancelled events may contain partial or empty result arrays. A failed verification still includes its report; a cancellation before report creation uses `details: null`. No stage failure is interpreted as success, and missing events mean unknown, not passing. Once an image digest is known, all events must agree with the immutable build binding.
 
@@ -230,7 +238,7 @@ The event artifact has no OCI `subject`. Its JSON descriptor links it to the int
 ## Mirroring and recovery
 
 1. Read the immutable publication intent and resolve its recovery image tag. Validate the index and platform descriptors; recover a missing build event from the published image and its embedded inventories after confirming revision/platform identity.
-2. Read events, but verify current registry state before acting. Collect and attach only missing source, then copy missing images, caches, records, evidence, and source artifacts by digest. Registry copying must enumerate the JSON-linked artifacts explicitly.
+2. Read events, but verify current registry state before acting. Build only missing source images and attach only missing source indexes, then copy missing images, source images, records, and evidence by digest. Registry copying must enumerate the JSON-linked artifacts explicitly.
 3. Check every destination tag before assigning it. Immutable conflicts fail. Mutable tags are ordered by original publication creation time, with original run ID as a numeric tie-breaker, separately for each tag. Recovery must not move them behind a newer publication that has already assigned that tag.
 4. Write fresh observation events for completed recovery work. Existing events remain historical facts. A newer test result does not erase an earlier failure, and test results never gate synchronization.
 5. Mirror events produced after image promotion as a separate repairable operation. A sync event enumerates the artifacts it actually checked and cannot include itself. Copy that event after writing it and validate its digest in both registries without requiring another self-referential completion record.
@@ -239,7 +247,7 @@ Publication and repair workflows share the existing concurrency group for tag mu
 
 ## Retention and validation
 
-There is currently **no retention limit**. Keep image recovery tags, snapshot images, publication intents, all events and reports, source-cache tags, source attachments, and GHCR fallback tags in both registries. Do not configure automated cleanup. Tagged roots protect the records from ordinary untagged-artifact cleanup; source-referrer persistence still requires the checks described in [Quay setup](integrations/quayio.md#5-verify).
+There is currently **no retention limit**. Keep image recovery tags, snapshot images, publication intents, all events and reports, source images (`source-*` tags), source indexes, and GHCR fallback tags in both registries. Do not configure automated cleanup. Tagged roots protect the records from ordinary untagged-artifact cleanup; source-referrer persistence still requires the checks described in [Quay setup](integrations/quayio.md#5-verify).
 
 Any future cleanup policy must trace actual OCI layers and all JSON descriptor references before deleting records or shared artifacts. Unlimited project retention is a policy, not a guarantee about registry quotas or service availability.
 

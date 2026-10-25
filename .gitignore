@@ -1,0 +1,10 @@
+# Local `docker buildx bake preflight` export.
+out/
+
+# /legal content generated inside the image by scripts/collect-legal.sh. The repository's
+# legal/ holds only README.md, SOURCE.md, and claude/; never commit or copy these back in.
+/legal/attribution/
+/legal/go/
+/legal/manifest.tsv
+/legal/provenance/
+/legal/sbom/

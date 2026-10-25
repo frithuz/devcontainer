@@ -8,20 +8,20 @@
 ├── Dockerfile                  # Multi-stage image definition (stages `image` and `preflight`)
 ├── docker-bake.hcl             # Bake targets `image` and `preflight`, shared by ci.yml and publish.yml
 ├── .dockerignore
-├── .devcontainer/
-│   └── devcontainer.json       # For developing *this* repo; builds the local Dockerfile
 ├── rootfs/
 │   ├── etc/devcontainer/env.sh # Non-interactive shell environment (BASH_ENV target)
 │   └── usr/local/bin/start-dockerd # Starts dockerd for DinD; refuses on macOS VM backends
-├── tools/
-│   ├── package.json            # npm-distributed CLIs (pnpm)
-│   └── package-lock.json
 ├── legal/
-│   └── attribution/<component>/ # Vendored upstream license files for binary-only images
+│   ├── README.md               # Copied to /legal/README.md
+│   └── SOURCE.md               # Copied to /legal/SOURCE.md
 ├── scripts/
 │   ├── install-gh.sh           # Scripted installs, one script per tool, only where needed
 │   ├── collect-legal.sh        # Gathers notices + records all components and exact source provenance
-│   └── build-source-bundles.sh # Builds copyleft source bundles from a manifest.tsv (preflight + attach)
+│   ├── legal-components.tsv    # Copied tools: stage, license, version command, notices (read by collect-legal.sh)
+│   ├── source-roots.tsv        # Non-apt root programs that owe source: kind, repository, ref, covers, vendoring
+│   ├── plan-sources.sh         # Derives the source images an image needs from its manifest.tsv; --check resolves them
+│   └── build-source-image.sh   # Fetches and verifies one root program's complete source (run by Dockerfile.source)
+├── Dockerfile.source           # FROM scratch source image for one root program (bake target `source`)
 ├── sandboxes/                  # Docker Sandboxes kits built on the image (used from git, not published)
 │   ├── claude/
 │   │   ├── claude.yaml         # Kit descriptor (capabilities, network policy, credentials)
@@ -69,15 +69,17 @@ Digests must be **multi-arch index digests**, not per-platform manifest digests.
 
 Anything that has to be fetched or installed by script, and doesn't need to live in a user's home directory, runs in a throwaway builder stage. The final image receives only `COPY --from=` output.
 
-- `npm-tools`: runs `npm ci` in `tools/` using the `node` source stage, producing `/opt/tools`.
-- `gh`: downloads a pinned `gh` release tarball and verifies its SHA-256 checksum.
+- `pnpm-dist`: adds the `pn`, `pnpx`, and `pnx` hard links next to the binary from the `pnpm` source stage (see [tooling.md](tooling.md#notes-per-tool)).
+- `apt-keys`: fetches the git-core PPA and Docker repository signing keys and checks their fingerprints, so `gnupg` stays out of the final image.
+- `gh`: downloads the latest `gh` release tarball and verifies it against the release's published checksums (see [tooling.md](tooling.md#notes-per-tool)).
 
 ### 3. Final stage (`image`)
 
 ```text
 FROM ubuntu:26.04@sha256:<digest>
   1. apt: runtime packages (ca-certificates, curl, bash, sudo-rs, openssh-client, less, locales, ...)
-     plus the shared libraries the copied Python links against (see "Binary compatibility")
+     plus the shared libraries the copied Node (libatomic1) and Python link against (see "Binary compatibility"),
+     tzdata, netbase, and media-types, and the python3 shim (see "Default PATH")
   2. apt: git from the git-core PPA (latest stable)
   3. apt: Docker Engine from Docker's apt repository (docker-ce, docker-ce-cli,
      docker-buildx-plugin, docker-compose-plugin, containerd.io)
@@ -93,36 +95,33 @@ FROM ubuntu:26.04@sha256:<digest>
   11. configure pnpm (ENV pnpm_config_*, shared PNPM_HOME) (see "pnpm configuration")
   12. USER agent: run the Claude Code and Codex standalone installers
   13. USER root: symlink /usr/local/bin/{claude,codex} → /home/agent/.local/bin/{claude,codex}
-  14. USER root: assemble /legal (root LICENSE → /legal/LICENSE, image-sourced licenses, vendored legal/,
-      collect-legal.sh) (see legal.md)
+  14. USER root: assemble /legal (root LICENSE → /legal/LICENSE, legal/, image-sourced licenses,
+      collect-legal.sh fetching the rest from upstream) (see legal.md)
   15. USER agent, WORKDIR /home/agent/workspace, CMD ["/bin/bash"]
 ```
 
 apt is used only for what can't be copied in: base OS packages (including `sudo-rs` and `locales`), git, and Docker Engine. All apt installs use `--no-install-recommends`, and the apt lists are removed in the same layer.
 
-The agent installers run near the end so refreshing them does not invalidate earlier toolchain copies. A weekly build explicitly invalidates apt and agent installation layers using a refresh build argument; otherwise unchanged `RUN` instructions can remain cached indefinitely. Other builds may reuse those layers. See [weekly refresh](maintenance.md#workflow).
+The agent installers run near the end so refreshing them does not invalidate earlier toolchain copies. A weekly build explicitly invalidates the apt, `gh`, and agent installation layers using a refresh build argument; otherwise unchanged `RUN` instructions can remain cached indefinitely. Other builds may reuse those layers. See [weekly refresh](maintenance.md#workflow).
 
 For pinned standalone binaries such as hadolint and golangci-lint, use `COPY --link --from=<stage>` into stable destinations with fixed ownership and modes. BuildKit can reuse these independent copy layers when earlier apt layers change. Keep refresh arguments out of their source stages and avoid later commands that rewrite those binaries. Confirm destination paths are real directories: `COPY --link` cannot follow destination symlinks from earlier layers. See [Docker's `COPY --link` behavior](https://docs.docker.com/reference/dockerfile/#copy---link).
 
-The source archives have a separate [persistent per-component registry cache](legal.md#reusing-unchanged-source-archives). Reusing a binary copy layer and reusing its source archive are independent: both should remain reusable when only unrelated packages change.
+Copyleft source is published as separate [source images](legal.md#source-images), one per root program and exact version. Reusing a binary copy layer and reusing its source image are independent: both should remain reusable when only unrelated packages change.
 
 ### 4. Preflight stage (`preflight`)
 
-`preflight` is built `FROM` the `image` stage for PR CI and local checks and is never published. It does two things:
+`preflight` is built `FROM` the `image` stage for PR CI and local checks and is never published. It **runs `test/smoke.sh`** as `agent` and as root (see [maintenance.md](maintenance.md#preflight-checks-testsmokesh)). A failing check fails the build.
 
-1. **Runs `test/smoke.sh`** as `agent` and as root (see [maintenance.md](maintenance.md#preflight-checks-testsmokesh)). A failing check fails the build.
-2. **Builds the copyleft source bundles** with `scripts/build-source-bundles.sh`, using the versions in the image's `/legal/manifest.tsv` (see [legal.md](legal.md#what-the-source-bundle-contains)).
+A final `FROM scratch` stage exports the test report and the image's `/legal/manifest.tsv` as local build output. `docker/github-builder` builds with `output: local` and uploads it as a GitHub artifact. CI then runs `scripts/plan-sources.sh --check` on that manifest: it derives every root program that owes source and resolves each one's exact inputs (commit, source package, archives) without building the source images, so a missing upstream source fails the PR.
 
-A final `FROM scratch` stage exports only the bundles, the `manifest.tsv` they were built from, and the test report, as local build output. `docker/github-builder` builds with `output: local` and uploads it as a GitHub artifact.
-
-Publishing builds `image` once and records its digest. It does not build `preflight` first or rely on cache reuse to establish image identity. The complete smoke suite then runs against that published digest on both architectures, while source collection and copying to Quay proceed independently. Source-collection tools run in a separate helper environment using the image's inventory. Test failures remain visible without blocking synchronization. See [the publish workflow](maintenance.md#workflow).
+Publishing builds `image` once and records its digest. It does not build `preflight` first or rely on cache reuse to establish image identity. The complete smoke suite then runs against that published digest on both architectures, while source publication and copying to Quay proceed independently. Source images are built from `Dockerfile.source`, separately from the runtime image, using the image's inventory. Test failures remain visible without blocking synchronization. See [the publish workflow](maintenance.md#workflow).
 
 ## Binary compatibility
 
 Binaries copied from upstream images have to run on Ubuntu's glibc. Rules:
 
 - Prefer **statically linked** binaries (most Go tools: hadolint, shfmt, gomplate, golangci-lint, betterleaks, gh, oras; plus uv).
-- For dynamically linked tools (Node, Python, git-cliff), copy from a **glibc** (Debian-based) image whose glibc is no newer than Ubuntu 26.04's. Never copy dynamic binaries out of Alpine/musl images.
+- For dynamically linked tools (Node, Python, git-cliff, pnpm), copy from a **glibc** (Debian-based) image whose glibc is no newer than Ubuntu 26.04's. Never copy dynamic binaries out of Alpine/musl images.
 - **Python** needs the most care. The official image builds CPython against Debian's shared libraries, so the final stage must install the Ubuntu packages that provide the same sonames: OpenSSL 3, libffi, SQLite, zlib, bzip2, xz/lzma, readline, ncurses, expat, uuid, and gdbm. The exact package list is taken from the source image (`ldd` on the interpreter and on `lib-dynload/*.so`) during implementation. A missing library doesn't break `python3 --version`; it surfaces only when the matching stdlib module is imported. That's why the smoke test imports them.
 - `test/smoke.sh` runs every binary on both architectures in CI, which catches incompatibilities.
 
@@ -134,7 +133,7 @@ Binaries copied from upstream images have to run on Ubuntu's glibc. Rules:
 | `/go` | `GOPATH`: module cache (`pkg/mod`), `src`, and `go install` output (`bin`). `root:staff`, group-writable, setgid |
 | `/usr/local/lib/node_modules/npm` | npm, bundled with Node |
 | `/usr/local/lib/python3.15`, `/usr/local/lib/libpython3.15.so*`, `/usr/local/include/python3.15` | CPython stdlib, shared library, and headers (copied from the `python` image) |
-| `/opt/tools` | Locked npm CLIs (pnpm) |
+| `/opt/pnpm` | pnpm standalone binary, its hard-linked aliases, and bundled `dist/` (copied from the `pnpm` image) |
 | `/usr/local/share/pnpm` | `PNPM_HOME`: pnpm global packages and content-addressable store. `root:staff`, group-writable, setgid |
 | `/usr/local/bin/*` | Standalone tool binaries, plus symlinks to every primary command |
 | `/home/agent/.local/share/claude/` | Claude Code versions (owned by `agent` so it can self-update) |
@@ -163,7 +162,7 @@ Standalone binaries are copied straight into `/usr/local/bin`. Everything else g
 | `node` | copied directly |
 | `python3`, `python`, `pip3`, `pip`, `python3.15`, `pip3.15` | copied directly with the `python` image's `/usr/local/bin` entries (including its `python` → `python3` symlinks) |
 | `npm`, `npx` | `/usr/local/lib/node_modules/npm/bin/*-cli.js` (same layout as the `node` image) |
-| `pnpm`, `pnpx` | `/opt/tools/node_modules/.bin/*` |
+| `pnpm`, `pn`, `pnpx`, `pnx` | `/opt/pnpm/*` (hard links to one binary) |
 | `claude` | `/home/agent/.local/bin/claude` |
 | `codex` | `/home/agent/.local/bin/codex` |
 | `git`, `docker`, `dockerd`, `containerd` | n/a (apt installs to `/usr/bin`) |
@@ -172,7 +171,7 @@ The agent links are deliberately **chained**: `/usr/local/bin/claude` → `~/.lo
 
 The `go` and `gofmt` links are made with `ln -sf /usr/local/go/bin/* /usr/local/bin/`, so any other binary the toolchain ships is linked too.
 
-Ubuntu's own `/usr/bin/python3` isn't installed unless an apt package pulls it in. If one does, `/usr/local/bin/python3` takes precedence, because `/usr/local/bin` comes first on the default `PATH`.
+Ubuntu's own `/usr/bin/python3` isn't installed. Ubuntu's `sudo-rs` depends on `python3:any` (for an apport hook), which would pull in Ubuntu's Python 3.14. To prevent that, the first apt step installs `devcontainer-python3-shim`, a metadata-only local package with `Provides: python3` and `Multi-Arch: allowed`, the form that satisfies a `:any` dependency. It owns no files and its `Provides` is unversioned, so a package that needs Ubuntu's real `python3` (for example `python3-yaml`) still installs it alongside without conflict. If that happens, `/usr/local/bin/python3` still takes precedence, because `/usr/local/bin` comes first on the default `PATH`.
 
 Executables installed with `go install` land in `/go/bin`, which is outside the default `PATH`. That's acceptable: they're the user's own installs, not image-provided commands.
 
@@ -212,7 +211,7 @@ pnpm's config file is per-user (`~/.config/pnpm/config.yaml`). A per-user file d
 | `pnpm_config_prefer_offline` | `true` | Serve from the store first, and hit the network only on a miss |
 | `pnpm_config_prefer_frozen_lockfile` | `true` | Skip resolution when the lockfile is current. Global-safe form; plain `frozen-lockfile` is rejected in global config |
 | `pnpm_config_verify_store_integrity` | `true` | Keep store integrity verification on |
-| `pnpm_config_update_notifier` | `false` | No update nag. pnpm's version comes from `tools/` |
+| `pnpm_config_update_notifier` | `false` | No update nag. pnpm's version comes from the pinned `pnpm` image |
 
 With the fetch-retry values the backoff is 3.75 s, 7.5 s, 15 s, 30 s, 60 s, 120 s, which rides out registry hiccups without hammering the registry.
 
@@ -224,7 +223,7 @@ These rely on two things the first build must confirm: that the installed pnpm v
 
 Docker Sandboxes dictates the user model, and the other contexts adapt to it:
 
-- Non-root user **`agent`**, UID/GID **1000**, home **`/home/agent`**, present in `/etc/passwd`, with passwordless `sudo` and membership in the `docker` and `staff` groups (`staff` grants write access to [`GOPATH`](#go-workspace)). The stock Ubuntu `ubuntu` user (UID 1000) is renamed rather than kept alongside.
+- Non-root user **`agent`**, UID/GID **1000**, home **`/home/agent`**, present in `/etc/passwd`, with passwordless `sudo` and membership in the `docker` and `staff` groups (`staff` grants write access to [`GOPATH`](#go-workspace)). The stock Ubuntu `ubuntu` user (UID 1000) is renamed rather than kept alongside. Its supplementary groups (`adm`, `sudo`, `cdrom`, ...) are replaced, not kept, so `agent` belongs only to `docker` and `staff`.
 - `sudo` is provided by **[sudo-rs](https://github.com/trifectatechfoundation/sudo-rs)**, the memory-safe Rust implementation that Ubuntu ships as its default `sudo`. The original `sudo` package is not installed. See [sudo configuration](#sudo-configuration).
 - The image's default `USER` is `agent`.
 - Devcontainers set `remoteUser: agent`.

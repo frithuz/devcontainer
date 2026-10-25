@@ -45,7 +45,6 @@ this repository.
 | tests                                  | `test`                          |
 | CI workflows                           | `.github/workflows` or `ci.yml` |
 | documentation                          | `docs` (or `docs/usage.md`)     |
-| `tools/` (npm CLIs)                    | `tools`                         |
 | agent instructions or skills           | `AGENTS.md`, `.agents`          |
 
 - When a change spans several areas, list them comma-separated

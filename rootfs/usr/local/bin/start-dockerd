@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Start the in-container Docker daemon (Docker-in-Docker) and wait for its socket.
+# Never use this on a macOS host; mount the host socket instead (docs/usage.md).
+set -euo pipefail
+
+readonly socket=/var/run/docker.sock
+readonly log=/var/log/dockerd.log
+readonly timeout_seconds=${START_DOCKERD_TIMEOUT:-30}
+
+die() {
+	echo "start-dockerd: $*" >&2
+	exit 1
+}
+
+as_root=()
+if [[ $(id -u) -ne 0 ]]; then
+	as_root=(sudo -n)
+fi
+
+# A mounted host socket is often root-owned, so also check through sudo.
+if docker info >/dev/null 2>&1 || "${as_root[@]}" docker info >/dev/null 2>&1; then
+	echo "start-dockerd: a Docker daemon is already reachable; nothing to do" >&2
+	exit 0
+fi
+
+kernel=$(uname -r)
+case "$kernel" in
+*linuxkit* | *orbstack*)
+	die "refusing to start dockerd on a macOS VM backend (kernel $kernel); mount the host Docker socket instead"
+	;;
+esac
+
+# shellcheck disable=SC2016 # $1 expands in the inner shell.
+"${as_root[@]}" bash -c 'nohup dockerd >>"$1" 2>&1 </dev/null &' bash "$log"
+
+for ((i = 0; i < timeout_seconds; i++)); do
+	if [[ -S $socket ]] && "${as_root[@]}" docker -H "unix://$socket" info >/dev/null 2>&1; then
+		exit 0
+	fi
+	sleep 1
+done
+
+die "dockerd did not become ready within ${timeout_seconds}s; see $log"
