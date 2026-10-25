@@ -70,10 +70,13 @@ some-job:
         OP_ENVIRONMENT_ID: ${{ vars.OP_ENVIRONMENT_ID_SOME_JOB }}
         OP_INTEGRATION_KEY: ${{ secrets.OP_INTEGRATION_KEY }}
     - name: Use a credential
-      run: some-tool --token "${{ steps.op.outputs.SOME_TOKEN }}"
+      env:
+        SOME_TOKEN: ${{ steps.op.outputs.SOME_TOKEN }}
+      run: some-tool --token "$SOME_TOKEN"
 ```
 
 - Prefer **step outputs** (`steps.<id>.outputs.<name>`) over `export-env: true`. Exported variables reach every later step in the job, while step outputs only go where they're referenced.
+- For shell commands, pass outputs through the consuming step's `env` and quote the variable expansion. Don't interpolate secrets directly into `run:` scripts, where their contents could be interpreted as shell code.
 - Pin the action by commit SHA. Dependabot's `github-actions` ecosystem keeps it current.
 - Load credentials in the step right before they're used, and keep such jobs small.
 

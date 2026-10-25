@@ -24,13 +24,15 @@ Each tool gets one of four install methods, in order of preference:
 | betterleaks | COPY | `ghcr.io/betterleaks/betterleaks` (dual-arch) | `/usr/local/bin/betterleaks` | Dependabot `docker` |
 | pnpm | npm | `pnpm` | `/opt/tools` | Dependabot `npm` |
 | GitHub CLI | Script | GitHub release tarball + SHA-256 | `/usr/local/bin/gh` | Scheduled check (see maintenance) |
-| git | Script (apt) | `ppa:git-core/ppa` | system | Picked up on each rebuild |
-| Docker Engine (`docker-ce`, `docker-ce-cli`, `docker-buildx-plugin`, `docker-compose-plugin`, `containerd.io`) | Script (apt) | Docker's apt repository (`download.docker.com`) | `/usr/bin/docker`, `/usr/bin/dockerd`, CLI plugins | Picked up on each rebuild |
-| sudo-rs | Script (apt) | Ubuntu archive (`sudo-rs`) | `/usr/bin/sudo` | Picked up on each rebuild |
-| Claude Code | Installer | `https://claude.ai/install.sh` | `/home/agent/.local/bin/claude` | Self-updates; latest at build |
-| Codex | Installer | `https://chatgpt.com/codex/install.sh` | `/home/agent/.local/bin/codex` | Self-updates; latest at build |
+| git | Script (apt) | `ppa:git-core/ppa` | system | Weekly refresh; cache reusable otherwise |
+| Docker Engine (`docker-ce`, `docker-ce-cli`, `docker-buildx-plugin`, `docker-compose-plugin`, `containerd.io`) | Script (apt) | Docker's apt repository (`download.docker.com`) | `/usr/bin/docker`, `/usr/bin/dockerd`, CLI plugins | Weekly refresh; cache reusable otherwise |
+| sudo-rs | Script (apt) | Ubuntu archive (`sudo-rs`) | `/usr/bin/sudo` | Weekly refresh; cache reusable otherwise |
+| Claude Code | Installer | `https://claude.ai/install.sh` | `/home/agent/.local/bin/claude` | Weekly installer refresh; can self-update |
+| Codex | Installer | `https://chatgpt.com/codex/install.sh` | `/home/agent/.local/bin/codex` | Weekly installer refresh; can self-update |
 
 License and notice files for every component not installed with apt ship in `/legal/attribution`. apt packages keep theirs in `/usr/share/doc` (see [legal.md](legal.md)).
+
+All listed tools remain preinstalled. The generated legal inventory also covers base-image and apt packages, their exact source provenance, and required transitive notices. Required source archives are published separately alongside the image.
 
 Every primary command also resolves from `/usr/local/bin`, by copy or by symlink. See [architecture.md](architecture.md#default-path).
 
@@ -44,11 +46,11 @@ The "Location in image" column is where each binary ends up. The path *inside ea
 - **oras.** An OCI registry client. The image's own copyleft source bundles are published as OCI referrer artifacts, so shipping `oras` means anyone holding the image can fetch that source from inside it (see [legal.md](legal.md#finding-the-source)). It's also generally useful for pushing and pulling OCI artifacts.
 - **Node.** Pinned to the 26 line. Moving to a new major is a deliberate tag change, not something Dependabot auto-merges. Corepack isn't used, since current Node releases no longer ship it. pnpm comes from the npm lockfile instead.
 - **pnpm.** Installing from a lockfile (`npm ci`) instead of `npm i -g pnpm@ver` gives integrity-hash verification and makes the package visible to Dependabot. Its global configuration (bin dir, shared store, fetch retries, CI install behavior) is described in [architecture.md](architecture.md#pnpm-configuration).
-- **Claude Code and Codex.** The goal is availability, not version control. The standalone installers run as `agent` in the final stage, so the binaries land in `agent`'s home with the ownership they need to self-update. Build-time version is whatever was latest when the image was built. The smoke test only checks that they're present and runnable. These are the only `curl | sh` installs allowed in the repository. Details are in [Agent installers](#agent-installers).
+- **Claude Code and Codex.** The goal is availability, not version control. The standalone installers run as `agent` in the final stage, so the binaries land in `agent`'s home with the ownership they need to self-update. Weekly builds invalidate the installer cache to fetch current versions; other builds may retain the cached version. The smoke test checks that they're present and runnable. These are the only `curl | sh` installs allowed in the repository. Details are in [Agent installers](#agent-installers).
 - **gh.** There's no official image. The install script takes a version and per-arch SHA-256 sums from the `ARG`s at the top of the Dockerfile and verifies them against the downloaded tarball.
 - **sudo-rs.** It comes from the Ubuntu archive because it's a setuid system binary tied to PAM and the distro's config, so copying it in from an image isn't appropriate. `sudo` must resolve to sudo-rs (`sudo --version` reports `sudo-rs`), and the original `sudo` package must not be installed alongside it.
 - **Docker Engine.** Installed from Docker's official apt repository, not Ubuntu's `docker.io` package. The repo's signing key is added to `/etc/apt/keyrings/docker.asc`, and its fingerprint is checked against the published value before use. The repository is keyed to the Ubuntu codename (from `/etc/os-release`), so the first build has to confirm that Docker publishes packages for 26.04. Copying static binaries out of `docker:dind` was ruled out: that image is Alpine-based, and the apt packages bring the systemd-free plumbing (`containerd`, `runc`, iptables dependencies) that DinD needs. See [architecture.md](architecture.md#docker) for how the daemon is run.
-- **git.** Ubuntu's archive version lags behind upstream, and copying git out of another distro's image drags along its shared libraries and helpers. The git-core PPA is the least-bad option. The trade-off: the version isn't pinned, so it floats to the PPA's latest whenever the image is rebuilt. It also satisfies the sandbox requirement for `git`.
+- **git.** Ubuntu's archive version lags behind upstream, and copying git out of another distro's image drags along its shared libraries and helpers. The git-core PPA is the least-bad option. The trade-off: the version isn't pinned, so it floats to the PPA's latest when the apt installation layer is refreshed. Weekly builds force that refresh. It also satisfies the sandbox requirement for `git`.
 
 ## Agent installers
 

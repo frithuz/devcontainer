@@ -4,6 +4,7 @@
 
 ```text
 .
+├── LICENSE                     # CC0-1.0 for this project's own files; copied to /legal/LICENSE
 ├── Dockerfile                  # Multi-stage image definition (stages `image` and `preflight`)
 ├── docker-bake.hcl             # Bake targets `image` and `preflight`, shared by ci.yml and publish.yml
 ├── .dockerignore
@@ -19,7 +20,7 @@
 │   └── attribution/<component>/ # Vendored upstream license files for binary-only images
 ├── scripts/
 │   ├── install-gh.sh           # Scripted installs, one script per tool, only where needed
-│   ├── collect-legal.sh        # Gathers install-artifact licenses + writes /legal/manifest.tsv
+│   ├── collect-legal.sh        # Gathers notices + records all components and exact source provenance
 │   └── build-source-bundles.sh # Builds copyleft source bundles from a manifest.tsv (preflight + attach)
 ├── sandboxes/                  # Docker Sandboxes kits built on the image (used from git, not published)
 │   ├── claude/
@@ -29,13 +30,13 @@
 │       ├── codex.yaml
 │       └── codex.dockerfile
 ├── test/
-│   ├── smoke.sh                # In-build checks, run by the preflight stage
+│   ├── smoke.sh                # PR preflight checks + tests against the published digest
 │   └── runtime.sh              # Checks that need a running container (DinD)
 ├── .github/
 │   ├── dependabot.yml
 │   └── workflows/
 │       ├── ci.yml              # PRs: lint, preflight via docker/github-builder bake.yml, runtime checks
-│       └── publish.yml         # main pushes + schedule: preflight, build to GHCR (bake.yml), attach, verify, promote to Quay
+│       └── publish.yml         # main pushes + schedule: build once to GHCR, test alongside attachment + Quay sync
 ├── README.md
 └── docs/
 ```
@@ -92,22 +93,29 @@ FROM ubuntu:26.04@sha256:<digest>
   11. configure pnpm (ENV pnpm_config_*, shared PNPM_HOME) (see "pnpm configuration")
   12. USER agent: run the Claude Code and Codex standalone installers
   13. USER root: symlink /usr/local/bin/{claude,codex} → /home/agent/.local/bin/{claude,codex}
-  14. USER root: assemble /legal (image-sourced licenses, vendored legal/, collect-legal.sh) (see legal.md)
+  14. USER root: assemble /legal (root LICENSE → /legal/LICENSE, image-sourced licenses, vendored legal/,
+      collect-legal.sh) (see legal.md)
   15. USER agent, WORKDIR /home/agent/workspace, CMD ["/bin/bash"]
 ```
 
 apt is used only for what can't be copied in: base OS packages (including `sudo-rs` and `locales`), git, and Docker Engine. All apt installs use `--no-install-recommends`, and the apt lists are removed in the same layer.
 
-The agent installers run last. They aren't pinned, so they're the layer most likely to change between builds, and putting them last keeps every earlier layer cached.
+The agent installers run near the end so refreshing them does not invalidate earlier toolchain copies. A weekly build explicitly invalidates apt and agent installation layers using a refresh build argument; otherwise unchanged `RUN` instructions can remain cached indefinitely. Other builds may reuse those layers. See [weekly refresh](maintenance.md#workflow).
+
+For pinned standalone binaries such as hadolint and golangci-lint, use `COPY --link --from=<stage>` into stable destinations with fixed ownership and modes. BuildKit can reuse these independent copy layers when earlier apt layers change. Keep refresh arguments out of their source stages and avoid later commands that rewrite those binaries. Confirm destination paths are real directories: `COPY --link` cannot follow destination symlinks from earlier layers. See [Docker's `COPY --link` behavior](https://docs.docker.com/reference/dockerfile/#copy---link).
+
+The source archives have a separate [persistent per-component registry cache](legal.md#reusing-unchanged-source-archives). Reusing a binary copy layer and reusing its source archive are independent: both should remain reusable when only unrelated packages change.
 
 ### 4. Preflight stage (`preflight`)
 
-`preflight` is built `FROM` the `image` stage and is never published. It does two things in the build itself, so they run wherever the target is built: in PR CI, and before every publish.
+`preflight` is built `FROM` the `image` stage for PR CI and local checks and is never published. It does two things:
 
 1. **Runs `test/smoke.sh`** as `agent` and as root (see [maintenance.md](maintenance.md#preflight-checks-testsmokesh)). A failing check fails the build.
 2. **Builds the copyleft source bundles** with `scripts/build-source-bundles.sh`, using the versions in the image's `/legal/manifest.tsv` (see [legal.md](legal.md#what-the-source-bundle-contains)).
 
 A final `FROM scratch` stage exports only the bundles, the `manifest.tsv` they were built from, and the test report, as local build output. `docker/github-builder` builds with `output: local` and uploads it as a GitHub artifact.
+
+Publishing builds `image` once and records its digest. It does not build `preflight` first or rely on cache reuse to establish image identity. The complete smoke suite then runs against that published digest on both architectures, while source collection and copying to Quay proceed independently. Source-collection tools run in a separate helper environment using the image's inventory. Test failures remain visible without blocking synchronization. See [the publish workflow](maintenance.md#workflow).
 
 ## Binary compatibility
 
@@ -135,6 +143,7 @@ Binaries copied from upstream images have to run on Ubuntu's glibc. Rules:
 | `/legal` | License and notice files for every redistributed component (see [legal.md](legal.md)) |
 | `/usr/local/bin/start-dockerd` | Starts the in-container Docker daemon (see [Docker](#docker)) |
 | `/var/lib/docker` | Docker daemon state. Expected to be a mounted volume when DinD is used, never a layer of the image |
+| `/var/lib/containerd` | Containerd image storage when configured; also requires exclusive mounted storage for DinD |
 
 Platform tools live in system paths and work for any UID. The agent CLIs are the deliberate exception. Their standalone installers install per-user and update in place, so they belong to `agent`.
 
@@ -242,12 +251,13 @@ Dropping `secure_path` gives up no real protection here. Its job is to stop a us
 
 ## Docker
 
-The image ships the full Docker Engine, so CI jobs can build and run containers inside it (Docker-in-Docker, "DinD"). Having the packages installed doesn't mean a daemon is running:
+The image ships the full Docker Engine. Ordinary GitHub Actions jobs use the runner's daemon through its mounted socket; dedicated DinD tests and Linux devcontainers can use the image's own server. Having the packages installed doesn't mean a daemon is running:
 
 - **No daemon starts automatically.** There's no `ENTRYPOINT`, and nothing in `BASH_ENV` starts `dockerd`. A context that wants DinD runs `start-dockerd` explicitly.
 - **`start-dockerd`** (from `rootfs/`) starts `dockerd` in the background, through `sudo` when not root, and waits for `/var/run/docker.sock` to accept connections. It does nothing if a daemon is already reachable.
-- **DinD needs a privileged container** and a volume at `/var/lib/docker`. overlay2 can't stack on the container's own overlayfs. Both are set by the consumer (see [usage.md](usage.md)), not by the image.
+- **DinD needs a privileged container** and exclusive volumes for daemon data, including `/var/lib/docker` and `/var/lib/containerd` when used by the configured image store. Each daemon gets its own storage; never reuse a fixed volume name across active devcontainers. The consumer configures these mounts (see [usage.md](usage.md)).
 - **The CLI works without the daemon.** `docker`, `docker buildx`, and `docker compose` can target any daemon through a mounted socket or `DOCKER_HOST`.
+- **DinD tests must select and verify the local daemon.** They use a dedicated container with no host socket mount, clear inherited remote-daemon selection, and verify the responding daemon belongs to that container. Otherwise `start-dockerd` can correctly return without starting anything, and the test would exercise the host daemon instead.
 
 ### Never run DinD on macOS hosts
 
@@ -291,4 +301,6 @@ The `com.docker.sandbox/sbx@1` capability is declared in each kit descriptor und
 
 ## Image metadata
 
-The image carries OCI labels (`org.opencontainers.image.source`, `.revision`, `.version`, `.created`) and a `devcontainer.metadata` label. The latter holds the default `remoteUser: agent` and similar settings, so a consumer's `devcontainer.json` can stay minimal.
+The image carries OCI labels (`org.opencontainers.image.source`, `.revision`, `.version`, `.created`, `.licenses`) and a `devcontainer.metadata` label. The latter holds the default `remoteUser: agent` and similar settings, so a consumer's `devcontainer.json` can stay minimal.
+
+Set `org.opencontainers.image.licenses="CC0-1.0"` for the project's own contribution, following Docker's repository-license convention. Use the same value for corresponding manifest/index annotations. Bundled software retains its individual licenses, recorded in `/legal`; see [legal metadata](legal.md#packaging-and-metadata) for the rationale and scope.

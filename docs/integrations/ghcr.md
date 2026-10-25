@@ -1,6 +1,6 @@
 # GHCR (mirror)
 
-`ghcr.io/<owner>/devcontainer` is a **public mirror** of the image. `docker/github-builder`'s `bake.yml` builds and pushes here first, and the `promote` job then copies the image to Quay. **Quay (`quay.io/frithuz/devcontainer`) is the source of truth.** GHCR carries the same images, tags, signatures, and source artifacts.
+`ghcr.io/<owner>/devcontainer` is the **public build destination and mirror** of the image. `docker/github-builder`'s `bake.yml` builds and pushes here first, and the `promote` job copies that digest to Quay while tests run independently. GHCR and Quay carry the same images, tags, signatures, and source artifacts after synchronization completes. There is no private staging package.
 
 The mirror exists for two reasons:
 
@@ -9,20 +9,20 @@ The mirror exists for two reasons:
 
 ## How the two registries differ
 
-| | Quay (source of truth) | GHCR (mirror) |
+| | Quay (default distribution registry) | GHCR (build destination and mirror) |
 | --- | --- | --- |
-| Gets new tags | Only after `verify` passes and source is attached | Immediately, from `bake.yml` |
+| Gets new tags | After source attachment and copying, independently of tests | Immediately, from `bake.yml` |
 | Referrers (signatures, source) | Native OCI Referrers API | Referrers tag fallback (`sha256-<digest>` tags) |
 | How artifacts show in the UI | Linked to their image | As extra `sha256-*` tags and untagged versions |
-| On a failed check | Unchanged | Rolled back to match Quay ([below](#rollback)) |
+| On a failed test | Receives and keeps the image | Keeps the image |
 | Deletion | Registry API / Quay UI | GitHub Packages REST API only (registry `DELETE` returns 405) |
 
-Because `bake.yml` tags GHCR directly, a new image is public on GHCR **before** `verify` and source attachment run. That gap is normally a few minutes. The `attach-ghcr` job runs immediately after the push to keep it short, and any later failure rolls GHCR back. Quay never has that gap.
+Because `bake.yml` tags GHCR directly, a new image is public before tests finish and before source attachment. `attach-ghcr` runs immediately after the push, and `promote` follows it without waiting for `verify`. A failing test is reported without reverting tags or deleting the image. Attachment and copy failures are retried and alerted separately; see [recovery](#synchronization-and-recovery).
 
 ## Setup (once)
 
 1. **First push creates the package.** The `build` job pushes with `GITHUB_TOKEN`, which creates `devcontainer` under the repository owner, linked to this repository. Public visibility is fine. If GitHub creates it as private, change it to **Public** in **Package settings** (that change is one-way).
-2. **Grant the repository Admin.** In **Package settings → Manage Actions access**, give this repository the **Admin** role. `GITHUB_TOKEN` can only *delete* package versions when the repository has Admin on the package, and rollback and retention both delete. Add no other repositories.
+2. **Grant the repository Write.** In **Package settings → Manage Actions access**, give this repository write access for publishing and attaching artifacts. Retention deletion, when implemented, requires the **Admin** role. Add no other repositories.
 3. **Restrict people.** Under **Manage access**, grant no users or teams beyond the owner's admins. All writes come from this repository's workflow.
 
 ## Workflow permissions
@@ -33,7 +33,6 @@ Because `bake.yml` tags GHCR directly, a new image is public on GHCR **before** 
 | `attach-ghcr` | `contents: read`, `packages: write` | `oras login ghcr.io` with `GITHUB_TOKEN` |
 | `verify` | `contents: read`, `packages: read` | none needed (public), or `container.credentials` with `GITHUB_TOKEN` |
 | `promote` | `contents: read`, `packages: read`, `id-token: write` (Quay federation) | `oras login ghcr.io` with `GITHUB_TOKEN` |
-| `rollback-ghcr` | `contents: read`, `packages: write` | `oras` and the GitHub REST API (`gh api`) with `GITHUB_TOKEN` |
 
 `secrets.GITHUB_TOKEN` is created by GitHub for each run and expires when the run ends. It isn't a stored secret.
 
@@ -46,25 +45,25 @@ GHCR is a public distribution point, so it needs the copyleft source just like Q
 
 `promote` then copies the image to Quay **with its referrers** (`oras cp -r`), so Quay receives the same signatures and source artifact, stored natively.
 
-## Rollback
+## Synchronization and recovery
 
-GHCR must never keep pointing at something Quay rejected. If `attach-ghcr`, `verify`, or `promote` fails, `rollback-ghcr` runs (`if: failure()`), and for each tag this run applied on GHCR:
+Record each publication's digest, tags, and source inventories so recovery can resume the same publication without a rebuild. The two registries cannot update atomically; synchronization is complete when tags resolve to the same digests and required artifacts are discoverable in both.
 
-- **The tag exists on Quay** (e.g. `:main`, `:latest`): point the GHCR tag back at the digest Quay's tag points to (`oras tag`). That digest is already on GHCR from an earlier run.
-- **The tag doesn't exist on Quay** (e.g. a new `:YYYYMMDD`): delete the failed GHCR version, together with its children and fallback-tag referrers, through the REST API:
+Store durable records, test reports, and recovery evidence in registry artifacts, mirrored to both registries. GitHub workflow artifacts may transport pending records, but are not their long-term home. The [data model draft](../data-model.md) specifies immutable publication intents and operation events, with explicit copying of records that are not image referrers.
 
-  ```text
-  GET    /orgs/<org>/packages/container/devcontainer/versions        (or /user/... for a user-owned package)
-  DELETE /orgs/<org>/packages/container/devcontainer/versions/<id>
-  ```
+- **Test failure:** preserve the result, logs, and affected digest, and open or update an issue. Continue synchronization and keep the image in both registries.
+- **Attachment or copy failure:** retry with bounded backoff, then mark publication incomplete and alert. Resume missing attachments or copies using the recorded digest. Do not delete images as recovery.
+- **Partial tagging:** retry missing tags. An existing date tag must match the recorded digest; a different digest is a conflict to report, never an overwrite.
+- **Older run recovery:** use the same concurrency group as publishing. Restore missing snapshots and artifacts, but never move a mutable tag back over a newer publication. Reconcile mutable tags to the latest recorded publication.
+- **Partial build push:** if the reusable workflow fails after uploading content, inspect the registry before retrying. Preserve any assigned snapshot digest and recover its publication record rather than blindly replacing its tag.
 
-  Delete referrers first, then the per-platform and attestation manifests, then the index.
-
-The workflow still fails and opens an issue. The next run fixes forward.
+The workflow summary reports test status and synchronization status separately. Failure in either is visible; test status does not control promotion.
 
 ## Retention
 
-GHCR follows **the same retention as Quay**: a snapshot is removed from GHCR when it's removed from Quay, never earlier, and its `sha256-*` referrer tags go with it. The policy itself is still to be decided ([maintenance.md](../maintenance.md#tags-and-schedule)). The GPL rule is the same in both places: source stays available as long as its image is ([legal.md](../legal.md#retention)).
+GHCR follows **the same retention as Quay**. Currently retain all snapshots, source/cache artifacts, publication records, and evidence without automatic expiry or age/count limits. A future deletion policy is still to be decided ([maintenance.md](../maintenance.md#tags-and-schedule)); under such a policy, a snapshot must never be removed from GHCR before Quay, and its required `sha256-*` referrer tags must remain while the image is retained. Source stays available as long as its image is ([legal.md](../legal.md#retention)).
+
+Before deleting manifests, calculate reachability from every retained index, tag, and publication awaiting synchronization. A platform manifest can be shared by multiple releases. Keep shared manifests, their source artifacts, and signatures until no retained publication needs them. Test failure is never a retention criterion.
 
 ## Known risk
 

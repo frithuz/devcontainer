@@ -2,7 +2,7 @@
 
 The image is published to **`quay.io/frithuz/devcontainer`**. This page covers the one-time setup in Quay and GitHub that the [publish workflow](../maintenance.md#publishing-publishyml) depends on.
 
-Quay is the **source of truth**. Only one job writes to it: **`promote`**, our own job. It copies the image, with its signatures and source artifact, from the [GHCR mirror](ghcr.md), confirms the source is attached, and applies the tags. It authenticates as a single robot account, **`frithuz+promote`**, using **OIDC federation only**. No Quay token is stored anywhere, in GitHub or elsewhere.
+Quay is the **default distribution registry**. Only one job writes to it: **`promote`**, our own job. It copies the image, with its signatures and source artifacts, from the [GHCR mirror](ghcr.md), confirms the source is attached, and applies the tags. Promotion runs independently of tests and continues when tests fail. It authenticates as a single robot account, **`frithuz+promote`**, using **OIDC federation only**. No Quay token is stored anywhere, in GitHub or elsewhere.
 
 ## 1. Organization
 
@@ -75,7 +75,7 @@ The job needs `id-token: write`. It requests a GitHub OIDC token, exchanges it f
 
 ```yaml
 promote:
-  needs: [build, attach-ghcr, verify]
+  needs: [build, attach-ghcr]
   runs-on: ubuntu-26.04
   permissions:
     contents: read
@@ -113,6 +113,7 @@ promote:
 - **Federation:** run `publish.yml` manually on `main` (`workflow_dispatch`). The Quay login step should print `Login Succeeded`. To check that it's rejected elsewhere, run the same login step from another branch: the exchange should fail with an auth error.
 - **No stored credentials:** the repository should have no Actions secrets, and the organization only `OP_INTEGRATION_KEY` if [1Password](1password.md) is ever adopted.
 - **Promotion:** after a run, the Quay tags point at the same digests as the GHCR tags, and the signatures verify against the Quay reference.
+- **Independent testing:** a deliberately failing test still allows `promote` to finish. The workflow reports the test failure and the successful sync separately. Copy failures retry and report incomplete synchronization; recovery uses the same digest ([GHCR recovery](ghcr.md#synchronization-and-recovery)).
 - **Referrers:** check that the source artifact is attached:
 
   ```sh

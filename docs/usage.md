@@ -16,10 +16,10 @@ The same image, with the same tags and digests, is published to two registries:
 
 | Registry | Use it for |
 | --- | --- |
-| `quay.io/frithuz/devcontainer` | **Default.** The source of truth: tags only ever point at verified images with their source attached |
+| `quay.io/frithuz/devcontainer` | **Default.** Receives the image and its source artifacts from GHCR while tests run independently |
 | `ghcr.io/<owner>/devcontainer` | **GitHub Actions.** Pulls stay inside GitHub's network, so they're fast and free |
 
-Digests are identical, so pinning `@sha256:<digest>` gives the same image from either one. GHCR gets a new image a few minutes before Quay, and rolls back if it fails verification. Pinning by digest avoids ever landing in that window.
+Digests are identical after synchronization, so pinning `@sha256:<digest>` gives the same image from either registry. GHCR receives a new image first; Quay follows as it is copied. Test failures are reported without blocking the copy or removing the image. Digest pinning fixes the contents you consume; it does not imply passing tests. Consumers that require passing tests should check the publish run's results for that digest.
 
 ## Editor devcontainers
 
@@ -64,11 +64,14 @@ Linux hosts may use either the host socket (as above) or DinD:
 {
   "privileged": true,
   "mounts": [
-    "source=devcontainer-docker,target=/var/lib/docker,type=volume"
+    "source=<unique-instance-id>-docker,target=/var/lib/docker,type=volume",
+    "source=<unique-instance-id>-containerd,target=/var/lib/containerd,type=volume"
   ],
   "postStartCommand": "start-dockerd"
 }
 ```
+
+Replace `<unique-instance-id>` with a name unique to this devcontainer instance. Each daemon must have exclusive use of its storage, including across different projects or worktrees. The second volume covers containerd image storage when enabled; confirm the configured data paths for the installed Engine version. See [Docker's data-directory guidance](https://docs.docker.com/engine/daemon/#daemon-data-directory).
 
 ## GitHub Actions
 
@@ -76,6 +79,9 @@ Linux hosts may use either the host socket (as above) or DinD:
 jobs:
   build:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
     container:
       image: quay.io/frithuz/devcontainer:<YYYYMMDD>@sha256:<digest>
       options: --user root
@@ -87,27 +93,31 @@ jobs:
 - `--user root` is required. GitHub mounts the workspace and runner tooling with ownership that a non-root container user can't write to.
 - If git complains about "dubious ownership" after checkout, add `git config --global --add safe.directory "$GITHUB_WORKSPACE"`. The image doesn't set this globally, so it doesn't weaken local devcontainers.
 - Every image-provided command is on the default `PATH`, so it works even though Actions ignores the image's `ENV PATH`. Tools you `go install` during a job need `$GOPATH/bin` added through `$GITHUB_PATH`.
-- `BASH_ENV` applies to `run:` steps that use bash too. This is intentional: CI sees the same environment as sandboxes.
+- Set `defaults.run.shell: bash`: container jobs otherwise default to `sh`, which doesn't load `BASH_ENV`. With bash, CI sees the same shell environment as sandboxes.
 - JavaScript actions need Node on the runner side, and GitHub injects its own copy. The image's Node is for your steps.
 - Actions sets `HOME=/github/home`. pnpm's configuration doesn't depend on `HOME`, because it's set through image `ENV` (see [pnpm configuration](architecture.md#pnpm-configuration)).
 - Avoid `actions/setup-python`, `setup-node`, and `setup-go`. They install separate toolchains that drift from the image's pinned ones.
 
-### Docker-in-Docker
+### Docker in CI
 
-Jobs that build or run containers start the image's own daemon:
+Ordinary GitHub Actions container jobs use the runner's Docker daemon through the socket mounted by the standard Actions runner. The image provides the CLI; the runner determines the server version. Custom runner backends must supply equivalent daemon access. Do not run `start-dockerd` for this setup:
 
 ```yaml
+    defaults:
+      run:
+        shell: bash
     container:
       image: quay.io/frithuz/devcontainer:<YYYYMMDD>@sha256:<digest>
-      options: --user root --privileged --volume /var/lib/docker
+      options: --user root
     steps:
-      - run: start-dockerd
+      - uses: actions/checkout@<sha>
+      - run: docker version
       - run: docker buildx build .
 ```
 
-- `--privileged` is required for `dockerd` to run.
-- `--volume /var/lib/docker` gives the daemon an anonymous volume, because its storage can't sit on the container's overlay filesystem.
-- GitHub-hosted runners are Linux, so the macOS restriction doesn't apply. Self-hosted runners on macOS must not use DinD.
+The repository separately tests the packaged Docker server using `test/runtime.sh`. On a Linux runner, it launches a dedicated privileged container with no host Docker socket mount and fresh, exclusive volumes for daemon storage. It explicitly selects the local socket, starts `dockerd`, and verifies that the responding daemon belongs to the test container before running nested-container checks. Volumes are cleaned up after the test. This avoids a false pass against the host daemon.
+
+The host-socket mount is part of the [standard runner implementation](https://github.com/actions/runner/blob/main/src/Runner.Worker/Container/ContainerInfo.cs). DinD tests remain prohibited on macOS hosts.
 
 ## Agent sandboxes (`sbx`)
 
