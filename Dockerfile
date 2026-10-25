@@ -54,6 +54,9 @@ EOF
 # Final image: the steps from docs/architecture.md, in order.
 FROM ubuntu:26.04@sha256:c098726dd9b9733f3e885f8de0ef375206a311b0a317eadc40d347b1115fb944 AS image
 
+# Selects the per-architecture apt lists cache: each architecture has its own lists.
+ARG TARGETARCH
+
 # Changes on scheduled builds, so every RUN below (apt and the agent installers) re-runs.
 # COPY layers don't consume it and stay cached.
 ARG REFRESH
@@ -62,7 +65,9 @@ ARG REFRESH
 # sudo-rs depends on python3:any (for an apport hook), which would pull in Ubuntu's own
 # Python. A local package declares that the copied Python provides python3. It owns only
 # its copyright file, so a package that needs Ubuntu's real python3 can still install it.
-RUN bash <<'EOF'
+# apt lists live in a cache mount shared by every apt step: never in a layer, and apt-get
+# update only fetches what changed since the last build.
+RUN --mount=type=cache,id=apt-lists-$TARGETARCH,target=/var/lib/apt/lists,sharing=locked bash <<'EOF'
 set -euxo pipefail
 export DEBIAN_FRONTEND=noninteractive
 shim=$(mktemp -d)
@@ -100,12 +105,11 @@ apt-get install -y --no-install-recommends \
   libatomic1 \
   libbz2-1.0 libdb5.3t64 libffi8 libgdbm6t64 liblzma5 libmpdec4 libncursesw6 \
   libreadline8t64 libsqlite3-0 libssl3t64 libtinfo6 libuuid1 libzstd1 zlib1g
-rm -rf /var/lib/apt/lists/*
 EOF
 
 # 2-3. git from the git-core PPA and Docker Engine from Docker's repository.
 COPY --link --from=apt-keys /keys/ /etc/apt/keyrings/
-RUN bash <<'EOF'
+RUN --mount=type=cache,id=apt-lists-$TARGETARCH,target=/var/lib/apt/lists,sharing=locked bash <<'EOF'
 set -euxo pipefail
 export DEBIAN_FRONTEND=noninteractive
 . /etc/os-release
@@ -129,13 +133,12 @@ apt-get install -y --no-install-recommends git
 apt-get install -y --no-install-recommends \
   docker-ce docker-ce-cli docker-buildx-plugin docker-compose-plugin containerd.io
 # No apt installs follow, so record the exact .deb URL and checksum of every installed
-# package (base image included) while the package lists are still present.
+# package (base image included) from the package lists.
 mkdir -p /legal/provenance
 # The python3 shim is this project's own package, not from a repository.
 mapfile -t packages < <(dpkg-query -W -f '${db:Status-Abbrev} ${binary:Package}=${Version}\n' | awk '$1 == "ii" && $2 !~ /^devcontainer-/ { print $2 }')
 apt-get download --print-uris "${packages[@]}" >/legal/provenance/apt-uris.txt
 [[ $(wc -l </legal/provenance/apt-uris.txt) -eq ${#packages[@]} ]]
-rm -rf /var/lib/apt/lists/*
 EOF
 
 # 4. Locale, with its ENV directly after so later steps run under it.
@@ -277,9 +280,15 @@ USER agent
 WORKDIR /home/agent/workspace
 CMD ["/bin/bash"]
 
-# Preflight: smoke tests run here (Phase 5); never published.
+# Preflight: smoke tests run here (Phase 5); never published. Also exports the image's
+# manifest.tsv, from which scripts/plan-sources.sh derives the source images.
 FROM image AS preflight-run
-RUN mkdir -p /tmp/out && echo "preflight placeholder" > /tmp/out/report.txt
+RUN bash <<'EOF'
+set -euxo pipefail
+mkdir -p /tmp/out
+echo "preflight placeholder" >/tmp/out/report.txt
+cp /legal/manifest.tsv /tmp/out/manifest.tsv
+EOF
 
 FROM scratch AS preflight
 COPY --from=preflight-run /tmp/out/ /

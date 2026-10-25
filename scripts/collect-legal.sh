@@ -244,8 +244,9 @@ sbom application codex "$codex_version" "pkg:github/openai/codex@$codex_tag" Apa
 	"https://github.com/openai/codex/tree/$codex_tag" "https://github.com/openai/codex/releases/tag/$codex_tag" -
 
 bwrap_dir=codex-rs/vendor/bubblewrap
-bwrap_version=$(curl -fsSL --retry 3 "https://raw.githubusercontent.com/openai/codex/$codex_tag/$bwrap_dir/meson.build" |
-	grep -m1 -oE "version[[:space:]]*:[[:space:]]*'[^']+'" | grep -oE "'[^']+'" | tr -d "'")
+# Download before searching: grep -m1 exiting early would make curl fail under pipefail.
+bwrap_meson=$(curl -fsSL --retry 3 "https://raw.githubusercontent.com/openai/codex/$codex_tag/$bwrap_dir/meson.build")
+bwrap_version=$(grep -m1 -oE "version[[:space:]]*:[[:space:]]*'[^']+'" <<<"$bwrap_meson" | grep -oE "'[^']+'" | tr -d "'")
 fetch bubblewrap openai/codex "$codex_tag" LGPL-2.0-or-later "$bwrap_dir/COPYING"
 row bubblewrap "${bwrap_version:-NOASSERTION}" "$arch" LGPL-2.0-or-later "$attribution/bubblewrap/COPYING" \
 	"embedded-in:codex source:https://github.com/openai/codex/tree/$codex_tag/$bwrap_dir"
@@ -383,12 +384,20 @@ go version -m /usr/bin /usr/sbin /usr/lib /usr/libexec /usr/local/bin /opt /home
 		END { done_bin() }' |
 	grep -v $'\t/usr/local/go/' | sort -u >"$go_mods"
 
-declare -A mod_bins mod_kind
+declare -A mod_bins mod_kind mod_rev
 # -X linker flags: '-X <pkg>.Version=<v>', '-X=<pkg>.Version=<v>', optionally quoted.
 x_version_flag='-X[= ]"?[^ "=]+/[^/ "=]+\.[Vv]ersion='
 x_flag_module='s/^-X[= ]"?//; s#/[^/]+\.[Vv]ersion=$##'
 x_flag_value='s/.*=//; s/\\*$//'
 while IFS=$'\t' read -r bin kind path ver; do
+	# The commit a main module was built from, for scripts/plan-sources.sh to check its tag
+	# against: vcs.revision, or a -X <pkg>.GitCommit=/Revision= linker flag (may be abbreviated).
+	if [[ $kind == mod ]]; then
+		rev=$(go version -m "$bin" | awk -F'\t' '$2 == "build" && $3 ~ /^vcs\.revision=/ { sub(/^vcs\.revision=/, "", $3); print $3; exit }') || true
+		if [[ -z $rev ]]; then
+			rev=$(go version -m "$bin" | grep -oE -- '-X[= ][\\"]*[^ "=\\]+\.(GitCommit|Revision)=[0-9a-f]{7,40}' | head -1 | sed 's/.*=//') || true
+		fi
+	fi
 	# A main module built outside module mode reports "(devel)" (and, built from a file list,
 	# the path "command-line-arguments"). Like SBOM scanners, take its module path and version
 	# from a -X <module>/<package>.Version=<v> linker flag.
@@ -403,7 +412,10 @@ while IFS=$'\t' read -r bin kind path ver; do
 	fi
 	key="$path@$ver"
 	mod_bins[$key]="${mod_bins[$key]:+${mod_bins[$key]},}$(basename "$bin")"
-	[[ $kind == mod ]] && mod_kind[$key]=main
+	if [[ $kind == mod ]]; then
+		mod_kind[$key]=main
+		[[ -n $rev && -z ${mod_rev[$key]:-} ]] && mod_rev[$key]=$rev
+	fi
 done <"$go_mods"
 rm -f "$go_mods"
 
@@ -458,14 +470,14 @@ for key in "${go_wanted[@]}"; do
 			reason=${mod_error[$key]:-not downloaded}
 		fi
 		gap "Go module $key (in ${mod_bins[$key]}) has no license files: $reason"
-		row "go-module:$path" "$ver" all NOASSERTION - "embedded-in:${mod_bins[$key]} ${mod_kind[$key]:+main-module }${mod_error[$key]:+error:${mod_error[$key]}}"
+		row "go-module:$path" "$ver" all NOASSERTION - "embedded-in:${mod_bins[$key]} ${mod_kind[$key]:+main-module }${mod_rev[$key]:+revision:${mod_rev[$key]} }${mod_error[$key]:+error:${mod_error[$key]}}"
 		continue
 	fi
 	for file in "${files[@]}"; do
 		install -D -m 0644 "$file" "$dest/${file#"$base"/}"
 	done
 	notices=$(find "$dest" -type f | sort | paste -sd' ' -)
-	row "go-module:$path" "$ver" all NOASSERTION "$notices" "embedded-in:${mod_bins[$key]} ${mod_kind[$key]:+main-module }$source"
+	row "go-module:$path" "$ver" all NOASSERTION "$notices" "embedded-in:${mod_bins[$key]} ${mod_kind[$key]:+main-module }${mod_rev[$key]:+revision:${mod_rev[$key]} }$source"
 done
 
 # --- Executables nobody accounts for ------------------------------------------------------

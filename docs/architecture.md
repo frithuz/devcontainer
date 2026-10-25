@@ -6,7 +6,7 @@
 .
 ├── LICENSE                     # CC0-1.0 for this project's own files; copied to /legal/LICENSE
 ├── Dockerfile                  # Multi-stage image definition (stages `image` and `preflight`)
-├── docker-bake.hcl             # Bake targets `image` and `preflight`, shared by ci.yml and publish.yml
+├── docker-bake.hcl             # Bake targets `image`, `preflight`, `source-plan`, and `source`, shared by CI and local builds
 ├── .dockerignore
 ├── rootfs/
 │   ├── etc/devcontainer/env.sh # Non-interactive shell environment (BASH_ENV target)
@@ -18,10 +18,12 @@
 │   ├── install-gh.sh           # Scripted installs, one script per tool, only where needed
 │   ├── collect-legal.sh        # Gathers notices + records all components and exact source provenance
 │   ├── legal-components.tsv    # Copied tools: stage, license, version command, notices (read by collect-legal.sh)
-│   ├── source-roots.tsv        # Non-apt root programs that owe source: kind, repository, ref, covers, vendoring
-│   ├── plan-sources.sh         # Derives the source images an image needs from its manifest.tsv; --check resolves them
-│   └── build-source-image.sh   # Fetches and verifies one root program's complete source (run by Dockerfile.source)
-├── Dockerfile.source           # FROM scratch source image for one root program (bake target `source`)
+│   ├── source-roots.tsv        # Non-apt root programs that owe source, documented gaps, and license elections
+│   ├── source-apt.tsv          # apt repositories: binary URL prefixes → source repository, suites, keyring
+│   ├── plan-sources.sh         # Derives the source images an image needs from its manifest.tsv and resolves their inputs
+│   ├── build-source-image.sh   # Fetches and verifies one root program's complete source (run by source.Dockerfile)
+│   └── build-sources.sh        # Local driver: plan, then build every source image (bake source-plan + sources)
+├── source.Dockerfile           # Source images: plan stage, per-kind fetch stages, FROM scratch `source`
 ├── sandboxes/                  # Docker Sandboxes kits built on the image (used from git, not published)
 │   ├── claude/
 │   │   ├── claude.yaml         # Kit descriptor (capabilities, network policy, credentials)
@@ -100,7 +102,7 @@ FROM ubuntu:26.04@sha256:<digest>
   15. USER agent, WORKDIR /home/agent/workspace, CMD ["/bin/bash"]
 ```
 
-apt is used only for what can't be copied in: base OS packages (including `sudo-rs` and `locales`), git, and Docker Engine. All apt installs use `--no-install-recommends`, and the apt lists are removed in the same layer.
+apt is used only for what can't be copied in: base OS packages (including `sudo-rs` and `locales`), git, and Docker Engine. All apt installs use `--no-install-recommends`. `/var/lib/apt/lists` is a cache mount shared by the apt steps (one per target architecture), so the lists never reach a layer and `apt-get update` only fetches what changed since the last build.
 
 The agent installers run near the end so refreshing them does not invalidate earlier toolchain copies. A weekly build explicitly invalidates the apt, `gh`, and agent installation layers using a refresh build argument; otherwise unchanged `RUN` instructions can remain cached indefinitely. Other builds may reuse those layers. See [weekly refresh](maintenance.md#workflow).
 
@@ -112,9 +114,9 @@ Copyleft source is published as separate [source images](legal.md#source-images)
 
 `preflight` is built `FROM` the `image` stage for PR CI and local checks and is never published. It **runs `test/smoke.sh`** as `agent` and as root (see [maintenance.md](maintenance.md#preflight-checks-testsmokesh)). A failing check fails the build.
 
-A final `FROM scratch` stage exports the test report and the image's `/legal/manifest.tsv` as local build output. `docker/github-builder` builds with `output: local` and uploads it as a GitHub artifact. CI then runs `scripts/plan-sources.sh --check` on that manifest: it derives every root program that owes source and resolves each one's exact inputs (commit, source package, archives) without building the source images, so a missing upstream source fails the PR.
+A final `FROM scratch` stage exports the test report and the image's `/legal/manifest.tsv` as local build output (`out/preflight/`, one directory per platform for a multi-platform build). `docker/github-builder` builds with `output: local` and uploads it as a GitHub artifact. CI then runs `scripts/plan-sources.sh --check` on those manifests: it derives every root program that owes source and resolves each one's exact inputs (commit, source package, archives) without building the source images, so a missing upstream source fails the PR.
 
-Publishing builds `image` once and records its digest. It does not build `preflight` first or rely on cache reuse to establish image identity. The complete smoke suite then runs against that published digest on both architectures, while source publication and copying to Quay proceed independently. Source images are built from `Dockerfile.source`, separately from the runtime image, using the image's inventory. Test failures remain visible without blocking synchronization. See [the publish workflow](maintenance.md#workflow).
+Publishing builds `image` once and records its digest. It does not build `preflight` first or rely on cache reuse to establish image identity. The complete smoke suite then runs against that published digest on both architectures, while source publication and copying to Quay proceed independently. Source images are built from `source.Dockerfile`, separately from the runtime image, using the image's inventory. Test failures remain visible without blocking synchronization. See [the publish workflow](maintenance.md#workflow).
 
 ## Binary compatibility
 

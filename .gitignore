@@ -1,4 +1,4 @@
-# Local `docker buildx bake preflight` export.
+# Local build output: preflight export (out/preflight/) and source images (out/sources/).
 out/
 
 # /legal content generated inside the image by scripts/collect-legal.sh. The repository's

@@ -1,0 +1,32 @@
+# Non-apt root programs that owe source, for scripts/plan-sources.sh (docs/legal.md#source-images).
+# apt packages need no entry: every copyleft or non-machine-readable apt package in manifest.tsv
+# is a root of its own, fetched from the repository listed in scripts/source-apt.tsv.
+# Columns (tab-separated):
+#   root, kind, repository, ref, covers, recipe, note
+# Per kind:
+#   git       ref: tag pattern, {version} = the main module's version in manifest.tsv.
+#             covers: "go-module:<main module>" then the binaries built from it; their Go modules
+#             in manifest.tsv must all be vendored in the source image.
+#             recipe: go-vendor (run `go mod vendor`) or vendored (the repository commits vendor/).
+#   bundle    ref: tag pattern, {version} = the first covered component's version.
+#             covers: components (globs). Copyleft ones whose manifest source is "source:<url>
+#             sha256:<hex>" are downloaded as archives; the rest come from the git subpaths.
+#             recipe: sparse=<path>,<path>: the subpaths exported from the repository.
+#   gap       A copyleft component whose source can't be produced yet; note says why. Reported,
+#             not fatal, so it stays visible until it's resolved (docs/legal.md#open-questions).
+#   election  A dual-licensed component distributed under its permissive option; note names the
+#             elected license. Owes no source.
+# Unused columns are "-".
+golangci-lint	git	https://github.com/golangci/golangci-lint	{version}	go-module:github.com/golangci/golangci-lint/v2 golangci-lint	go-vendor	GPL-3.0-only
+gomplate	git	https://github.com/hairyhenderson/gomplate	{version}	go-module:github.com/hairyhenderson/gomplate/v5 gomplate	go-vendor	MPL-2.0 modules
+betterleaks	git	https://github.com/betterleaks/betterleaks	{version}	go-module:github.com/betterleaks/betterleaks betterleaks	go-vendor	MPL-2.0 modules
+moby	git	https://github.com/moby/moby	docker-{version}	go-module:github.com/moby/moby/v2 dockerd docker-proxy	vendored	MPL-2.0 modules; Docker's apt repository publishes no source
+buildx	git	https://github.com/docker/buildx	{version}	go-module:github.com/docker/buildx docker-buildx	vendored	MPL-2.0 modules; Docker's apt repository publishes no source
+containerd	git	https://github.com/containerd/containerd	{version}	go-module:github.com/containerd/containerd/v2 containerd containerd-shim-runc-v2 ctr	vendored	MPL-2.0 modules; Docker's apt repository publishes no source
+runc	git	https://github.com/opencontainers/runc	{version}	go-module:github.com/opencontainers/runc runc	vendored	MPL-2.0 modules; Docker's apt repository publishes no source
+codex	bundle	https://github.com/openai/codex	rust-v{version}	codex bubblewrap codex-voice:*	sparse=codex-rs/vendor/bubblewrap,third_party/voice	LGPL bubblewrap and voice libraries
+hadolint	gap	https://github.com/hadolint/hadolint	-	hadolint	-	the exact Haskell dependency set of the release build isn't established
+pebble	gap	https://github.com/canonical/pebble	-	pebble	-	the commit in its build info isn't public
+node-merve	gap	-	-	node:merve	-	license unknown
+node-zstd	election	-	-	node:zstd	-	BSD-3-Clause
+spdx-tools-golang	election	-	-	go-module:github.com/spdx/tools-golang	-	Apache-2.0
