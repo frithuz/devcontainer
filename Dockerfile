@@ -67,9 +67,20 @@ ARG REFRESH
 # its copyright file, so a package that needs Ubuntu's real python3 can still install it.
 # apt lists live in a cache mount shared by every apt step: never in a layer, and apt-get
 # update only fetches what changed since the last build.
-RUN --mount=type=cache,id=apt-lists-$TARGETARCH,target=/var/lib/apt/lists,sharing=locked bash <<'EOF'
+# The base image's Ubuntu sources use plain HTTP; every apt source is HTTPS instead. The base
+# image has no CA certificates, so the first update and ca-certificates itself trust the go
+# stage's bundle (a pinned image); everything after uses the installed store.
+RUN --mount=type=cache,id=apt-lists-$TARGETARCH,target=/var/lib/apt/lists,sharing=locked \
+    --mount=type=bind,from=go,source=/etc/ssl/certs/ca-certificates.crt,target=/tmp/bootstrap-ca.crt bash <<'EOF'
 set -euxo pipefail
 export DEBIAN_FRONTEND=noninteractive
+sed -i 's|^URIs: http://|URIs: https://|' /etc/apt/sources.list.d/ubuntu.sources
+if grep -hE '^[[:space:]]*(URIs:|deb)' /etc/apt/sources.list /etc/apt/sources.list.d/* | grep -q 'http://'; then
+  echo "plain HTTP apt source left" >&2
+  exit 1
+fi
+apt-get -o Acquire::https::CAInfo=/tmp/bootstrap-ca.crt update
+apt-get -o Acquire::https::CAInfo=/tmp/bootstrap-ca.crt install -y --no-install-recommends ca-certificates
 shim=$(mktemp -d)
 mkdir "$shim/DEBIAN"
 cat >"$shim/DEBIAN/control" <<CONTROL
@@ -97,7 +108,6 @@ COPYRIGHT
 dpkg-deb --build "$shim" /tmp/devcontainer-python3-shim.deb
 dpkg -i /tmp/devcontainer-python3-shim.deb
 rm -rf "$shim" /tmp/devcontainer-python3-shim.deb
-apt-get update
 apt-get upgrade -y
 apt-get install -y --no-install-recommends \
   bash ca-certificates curl less locales openssh-client sudo-rs \

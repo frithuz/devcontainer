@@ -39,12 +39,20 @@ COPY --from=plan-run /out/ /
 
 # Fetch: one root program, from its plan.
 FROM ubuntu AS fetch-apt
-# PPAs are served over HTTPS only. apt lists live in a cache mount (the deb-src
-# fetches below keep theirs in subdirectories of it).
-RUN --mount=type=cache,id=source-apt-lists,target=/var/lib/apt/lists,sharing=locked bash <<'EOF'
+# Every apt source is HTTPS (scripts/source-apt.tsv too). The base image's Ubuntu sources use
+# plain HTTP and it has no CA certificates, so ca-certificates is fetched trusting the go stage's
+# bundle (a pinned image). apt lists live in a cache mount (the deb-src fetches below keep theirs
+# in subdirectories of it).
+RUN --mount=type=cache,id=source-apt-lists,target=/var/lib/apt/lists,sharing=locked \
+    --mount=type=bind,from=go,source=/etc/ssl/certs/ca-certificates.crt,target=/tmp/bootstrap-ca.crt bash <<'EOF'
 set -euxo pipefail
-apt-get update
-apt-get install -y --no-install-recommends ca-certificates
+sed -i 's|^URIs: http://|URIs: https://|' /etc/apt/sources.list.d/ubuntu.sources
+if grep -hE '^[[:space:]]*(URIs:|deb)' /etc/apt/sources.list /etc/apt/sources.list.d/* | grep -q 'http://'; then
+  echo "plain HTTP apt source left" >&2
+  exit 1
+fi
+apt-get -o Acquire::https::CAInfo=/tmp/bootstrap-ca.crt update
+apt-get -o Acquire::https::CAInfo=/tmp/bootstrap-ca.crt install -y --no-install-recommends ca-certificates
 EOF
 
 COPY --link --from=jq /jq /usr/local/bin/jq

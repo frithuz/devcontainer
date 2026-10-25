@@ -5,6 +5,6 @@
 # Columns (tab-separated):
 #   name, binary URL prefixes (space-separated), source repository URL (- if it publishes no
 #   source packages), suites (searched in order), components, Signed-By keyring
-ubuntu	http://ports.ubuntu.com/ubuntu-ports/ http://archive.ubuntu.com/ubuntu/ http://security.ubuntu.com/ubuntu/	http://archive.ubuntu.com/ubuntu	resolute resolute-security resolute-updates	main restricted universe multiverse	/usr/share/keyrings/ubuntu-archive-keyring.gpg
+ubuntu	https://ports.ubuntu.com/ubuntu-ports/ https://archive.ubuntu.com/ubuntu/ https://security.ubuntu.com/ubuntu/	https://archive.ubuntu.com/ubuntu	resolute resolute-security resolute-updates	main restricted universe multiverse	/usr/share/keyrings/ubuntu-archive-keyring.gpg
 git-core	https://ppa.launchpadcontent.net/git-core/ppa/ubuntu/	https://ppa.launchpadcontent.net/git-core/ppa/ubuntu	resolute	main	/etc/apt/keyrings/git-core.asc
 docker	https://download.docker.com/linux/ubuntu/	-	-	-	-

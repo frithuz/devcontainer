@@ -102,7 +102,7 @@ FROM ubuntu:26.04@sha256:<digest>
   15. USER agent, WORKDIR /home/agent/workspace, CMD ["/bin/bash"]
 ```
 
-apt is used only for what can't be copied in: base OS packages (including `sudo-rs` and `locales`), git, and Docker Engine. All apt installs use `--no-install-recommends`. `/var/lib/apt/lists` is a cache mount shared by the apt steps (one per target architecture), so the lists never reach a layer and `apt-get update` only fetches what changed since the last build.
+apt is used only for what can't be copied in: base OS packages (including `sudo-rs` and `locales`), git, and Docker Engine. All apt installs use `--no-install-recommends`. `/var/lib/apt/lists` is a cache mount shared by the apt steps (one per target architecture), so the lists never reach a layer and `apt-get update` only fetches what changed since the last build. Every apt source is HTTPS: the base image's Ubuntu sources (plain HTTP) are rewritten before the first update. The base image has no CA certificates, so that first update and the `ca-certificates` install trust the CA bundle from the pinned `go` stage. Later steps use the installed store. `source.Dockerfile`'s apt fetch stage does the same.
 
 The agent installers run near the end so refreshing them does not invalidate earlier toolchain copies. A weekly build explicitly invalidates the apt, `gh`, and agent installation layers using a refresh build argument; otherwise unchanged `RUN` instructions can remain cached indefinitely. Other builds may reuse those layers. See [weekly refresh](maintenance.md#workflow).
 
