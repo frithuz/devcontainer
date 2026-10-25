@@ -17,6 +17,8 @@ Each tool gets one of three install methods, in order of preference:
 | hadolint | COPY | `hadolint/hadolint` | `/usr/local/bin/hadolint` | Dependabot `docker` |
 | shfmt | COPY | `mvdan/shfmt` | `/usr/local/bin/shfmt` | Dependabot `docker` |
 | jq | COPY | `ghcr.io/jqlang/jq` | `/usr/local/bin/jq` | Dependabot `docker` |
+| yq | COPY | `mikefarah/yq` | `/usr/local/bin/yq` | Dependabot `docker` |
+| jv (JSON Schema validator) | Script (`go install`, pinned version) | `santhosh-tekuri/jsonschema/cmd/jv`; no upstream image | `/usr/local/bin/jv` | Bumped by hand in the Dockerfile's `jv` stage |
 | gomplate | COPY | `hairyhenderson/gomplate` | `/usr/local/bin/gomplate` | Dependabot `docker` |
 | golangci-lint | COPY | `golangci/golangci-lint` | `/usr/local/bin/golangci-lint` | Dependabot `docker` |
 | git-cliff | COPY | `orhunp/git-cliff` | `/usr/local/bin/git-cliff` | Dependabot `docker` |

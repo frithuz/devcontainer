@@ -5,7 +5,7 @@
 #   source-plan   runs scripts/plan-sources.sh on the manifests in MANIFESTS (default
 #                 out/preflight) and exports out/sources/ (plan.tsv, plans/, sources.hcl).
 #   sources       the generated group: docker buildx bake -f docker-bake.hcl -f out/sources/sources.hcl sources
-# The bake targets provide the named contexts: apt-keys (the Dockerfile's apt-keys stage),
+# The bake targets provide the named contexts: apt-keys and config (the Dockerfile's stages),
 # manifests, and root-plan (one plans/<tag>/ directory).
 
 # The fetch stage for a plan's kind: apt, git, or bundle.
@@ -28,10 +28,12 @@ FROM tools AS plan-run
 ARG SOURCE_RECIPE_REPOSITORY
 ARG SOURCE_RECIPE_REVISION
 ARG SOURCE_REUSE
-RUN --mount=type=bind,source=scripts,target=/mnt/scripts --mount=type=bind,from=manifests,target=/mnt/manifests bash <<'EOF'
+# config is a named context from docker-bake.hcl (the Dockerfile's config stage).
+RUN --mount=type=bind,source=scripts,target=/mnt/scripts --mount=type=bind,from=manifests,target=/mnt/manifests \
+    --mount=type=bind,from=config,target=/mnt/config bash <<'EOF'
 set -euxo pipefail
 mapfile -t manifests < <(find /mnt/manifests -name manifest.tsv | sort)
-bash /mnt/scripts/plan-sources.sh --out /out ${SOURCE_REUSE:+--reuse "$SOURCE_REUSE"} "${manifests[@]}"
+bash /mnt/scripts/plan-sources.sh --config /mnt/config --out /out ${SOURCE_REUSE:+--reuse "$SOURCE_REUSE"} "${manifests[@]}"
 EOF
 
 FROM scratch AS plan
@@ -39,7 +41,7 @@ COPY --from=plan-run /out/ /
 
 # Fetch: one root program, from its plan.
 FROM ubuntu AS fetch-apt
-# Every apt source is HTTPS (scripts/source-apt.tsv too). The base image's Ubuntu sources use
+# Every apt source is HTTPS (scripts/source-apt.yaml too). The base image's Ubuntu sources use
 # plain HTTP and it has no CA certificates, so ca-certificates is fetched trusting the go stage's
 # bundle (a pinned image). apt lists live in a cache mount (the deb-src fetches below keep theirs
 # in subdirectories of it).

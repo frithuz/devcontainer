@@ -1,0 +1,121 @@
+# yaml-language-server: $schema=schemas/source-roots.schema.json
+#
+# Non-apt root programs that owe source, for scripts/plan-sources.sh (docs/legal.md#source-images).
+# apt packages need no entry: every copyleft or non-machine-readable apt package in manifest.tsv
+# is a root of its own, fetched from the repository listed in scripts/source-apt.yaml.
+# Every copyleft component that isn't an apt package or a Go module must be covered by a root,
+# a gap, or an election. Go modules' licenses aren't in manifest.tsv, so the Go programs that
+# owe source are listed here by hand. In tags, {version} is the installed version.
+
+roots:
+  # git: the exact commit of a Go program's tag, with its dependencies vendored. {version} is
+  # the main module's version; every Go module compiled into the binaries must be vendored.
+  - name: golangci-lint
+    kind: git
+    repository: https://github.com/golangci/golangci-lint
+    tag: "{version}"
+    module: github.com/golangci/golangci-lint/v2
+    binaries: [golangci-lint]
+    vendoring: go-vendor
+    note: GPL-3.0-only
+
+  - name: gomplate
+    kind: git
+    repository: https://github.com/hairyhenderson/gomplate
+    tag: "{version}"
+    module: github.com/hairyhenderson/gomplate/v5
+    binaries: [gomplate]
+    vendoring: go-vendor
+    note: MPL-2.0 modules
+
+  - name: yq
+    kind: git
+    repository: https://github.com/mikefarah/yq
+    tag: "{version}"
+    module: github.com/mikefarah/yq/v4
+    binaries: [yq]
+    vendoring: go-vendor
+    note: MPL-2.0 modules (hashicorp/hcl)
+
+  - name: betterleaks
+    kind: git
+    repository: https://github.com/betterleaks/betterleaks
+    tag: "{version}"
+    module: github.com/betterleaks/betterleaks
+    binaries: [betterleaks]
+    vendoring: go-vendor
+    note: MPL-2.0 modules
+
+  - name: moby
+    kind: git
+    repository: https://github.com/moby/moby
+    tag: docker-{version}
+    module: github.com/moby/moby/v2
+    binaries: [dockerd, docker-proxy]
+    vendoring: vendored
+    note: MPL-2.0 modules; Docker's apt repository publishes no source
+
+  - name: buildx
+    kind: git
+    repository: https://github.com/docker/buildx
+    tag: "{version}"
+    module: github.com/docker/buildx
+    binaries: [docker-buildx]
+    vendoring: vendored
+    note: MPL-2.0 modules; Docker's apt repository publishes no source
+
+  - name: containerd
+    kind: git
+    repository: https://github.com/containerd/containerd
+    tag: "{version}"
+    module: github.com/containerd/containerd/v2
+    binaries: [containerd, containerd-shim-runc-v2, ctr]
+    vendoring: vendored
+    note: MPL-2.0 modules; Docker's apt repository publishes no source
+
+  - name: runc
+    kind: git
+    repository: https://github.com/opencontainers/runc
+    tag: "{version}"
+    module: github.com/opencontainers/runc
+    binaries: [runc]
+    vendoring: vendored
+    note: MPL-2.0 modules; Docker's apt repository publishes no source
+
+  # bundle: git subpaths at the exact commit of the tag, plus the archives of the covered
+  # copyleft components whose manifest source is "source:<url> sha256:<hex>". {version} is the
+  # first component's version.
+  - name: codex
+    kind: bundle
+    repository: https://github.com/openai/codex
+    tag: rust-v{version}
+    components: [codex, bubblewrap, codex-voice:*]
+    subpaths: [codex-rs/vendor/bubblewrap, third_party/voice]
+    note: LGPL bubblewrap and voice libraries
+
+# Copyleft components whose source can't be produced yet. Reported on every run but not fatal,
+# so they stay visible until they're resolved (docs/legal.md#open-questions).
+gaps:
+  - name: hadolint
+    repository: https://github.com/hadolint/hadolint
+    components: [hadolint]
+    reason: the exact Haskell dependency set of the release build isn't established
+
+  - name: pebble
+    repository: https://github.com/canonical/pebble
+    components: [pebble]
+    reason: the commit in its build info isn't public
+
+  - name: node-merve
+    components: [node:merve]
+    reason: license unknown
+
+# Dual-licensed components distributed under their permissive option. They owe no source.
+elections:
+  - name: node-zstd
+    components: [node:zstd]
+    license: BSD-3-Clause
+
+  - name: spdx-tools-golang
+    components: [go-module:github.com/spdx/tools-golang]
+    license: Apache-2.0

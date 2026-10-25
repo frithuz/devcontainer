@@ -12,12 +12,14 @@
 # Runs as root after all installs. Missing notices for a top-level component fail the build;
 # gaps in bundled dependencies are reported but don't (yet) fail it.
 #
-# Usage: collect-legal.sh <Dockerfile> <legal-components.tsv> <gh stage output dir>
+# Usage: collect-legal.sh <Dockerfile> <config dir> <gh stage output dir>
+# config dir: the Dockerfile's config stage output, with legal-components.json and
+#   license-evidence.json (scripts/*.yaml, validated against their schemas).
 # LEGAL_GO_MODCACHE: module download cache (a build cache mount; not part of the image).
 set -euo pipefail
 
-readonly dockerfile=${1:?usage: collect-legal.sh <Dockerfile> <components.tsv> <gh-dir>}
-readonly components=${2:?}
+readonly dockerfile=${1:?usage: collect-legal.sh <Dockerfile> <config dir> <gh-dir>}
+readonly components=${2:?}/legal-components.json evidence_json=$2/license-evidence.json
 readonly gh_dir=${3:?}
 readonly legal=/legal
 readonly attribution=$legal/attribution
@@ -197,11 +199,24 @@ while IFS=$'\t' read -r -u 3 status pkg name version pkg_arch src src_version; d
 		"src:$src=${src_version:-$version} $provenance base:$base_ref"
 done 3< <(dpkg-query -W -f '${db:Status-Abbrev}\t${binary:Package}\t${Package}\t${Version}\t${Architecture}\t${source:Package}\t${source:Version}\n')
 
-# --- Tools copied from pinned images ------------------------------------------------------
-while IFS=$'\t' read -r comp stage license version_cmd notice_globs paths upstream purl; do
-	[[ -z $comp || $comp == \#* ]] && continue
-	ref=${stage_ref[$stage]:-}
-	[[ -n $ref ]] || error "$comp: no pinned stage '$stage' in the Dockerfile"
+# --- Tools copied from pinned images or built from pinned Go modules -----------------------
+# One line per component on fd 3 (lists space-separated, absent fields "-"), so the version
+# commands can't consume it.
+while IFS=$'\t' read -r -u 3 comp stage install license version_cmd notice_globs paths upstream purl; do
+	if [[ $install == go-install ]]; then
+		# Built in its own stage: the module, version, and go.sum hash are in the binary.
+		awk -v s="$stage" 'toupper($1) == "FROM" && toupper($3) == "AS" && $4 == s { found = 1 } END { exit !found }' "$dockerfile" ||
+			error "$comp: no stage '$stage' in the Dockerfile"
+		read -r mod_path mod_ver mod_sum < <(go version -m "${paths%% *}" | awk -F'\t' '$2 == "mod" { print $3, $4, $5; exit }') || true
+		[[ -n ${mod_path:-} ]] || error "$comp: ${paths%% *} has no Go module build info"
+		provenance="go-install:${mod_path:-}@${mod_ver:-} ${mod_sum:-} stage:$stage"
+		distribution=-
+	else
+		ref=${stage_ref[$stage]:-}
+		[[ -n $ref ]] || error "$comp: no pinned stage '$stage' in the Dockerfile"
+		provenance="image:$ref"
+		distribution=${ref%%@*}
+	fi
 	version=$(version_of "$version_cmd")
 	[[ -n $version ]] || error "$comp: '$version_cmd' printed no version"
 	if [[ $upstream != - ]]; then
@@ -213,13 +228,14 @@ while IFS=$'\t' read -r comp stage license version_cmd notice_globs paths upstre
 	fi
 	notices=$(notices_of "$notice_globs")
 	[[ -n $notices ]] || error "$comp: no notice files match $notice_globs"
-	row "$comp" "$version" "$arch" "$license" "$notices" "image:$ref paths: $paths"
+	row "$comp" "$version" "$arch" "$license" "$notices" "$provenance paths: $paths"
 	# shellcheck disable=SC2206 # paths is a space-separated list.
 	covered+=($paths)
 	if [[ $purl != - ]]; then
-		sbom application "$comp" "$version" "${purl//\{version\}/$version}" "$license" "${paths%% *}" - "${ref%%@*}" -
+		sbom application "$comp" "$version" "${purl//\{version\}/$version}" "$license" "${paths%% *}" - "$distribution" -
 	fi
-done <"$components"
+done 3< <(jq -r '.components[] | [.name, .stage, .install // "image", .license, .version, (.notices | join(" ")), (.paths | join(" ")),
+	(if .upstream then [.upstream.repository, .upstream.tag] + .upstream.files | join(" ") else "-" end), .purl // "-"] | @tsv' "$components")
 
 # --- GitHub CLI release tarball -----------------------------------------------------------
 mkdir -p "$attribution/gh"
@@ -437,18 +453,34 @@ while IFS=$'\t' read -r path ver dir err; do
 done < <(jq -r "$download_fields" "$go_downloads")
 rm -f "$go_downloads"
 
+# License and notice documents. Files with these names that aren't documents are skipped: Go
+# source (license.go, notice_test.go), and the license tooling in hidden directories, config
+# files, and scripts (.github/workflows/license-check.yml, licenserc.yml, script/licenses).
 license_files='.*/\(licen[cs]e\|copying\|notice\|patents\|unlicense\)[^/]*'
+not_documents=(-not -name '*.go' -not -iname '*.yml' -not -iname '*.yaml' -not -iname '*.json' -not -iname '*.tmpl')
+
+# Reviewed license texts to add (scripts/license-evidence.yaml), per module path: one line per
+# check or file ("reviewed <file> <sha256>", "include <path> <as>", "add <as> <url> <sha256>").
+declare -A evidence evidence_used
+while IFS=$'\t' read -r mod line; do
+	evidence[$mod]+=$line$'\n'
+done < <(jq -r '.modules[] | .module as $m |
+	(.reviewed[] | [$m, "reviewed", .file, .sha256]), (.include[]? | [$m, "include", .path, .as]),
+	(.add[]? | [$m, "add", .as, .url, .sha256]) | @tsv' "$evidence_json")
 for key in "${go_wanted[@]}"; do
 	path=${key%@*} ver=${key##*@}
 	dest=$legal/go/pkg/mod/$(go_escape "$path")@$(go_escape "$ver")
 	files=()
 	base=${mod_dir[$key]:-}
 	if [[ -n $base ]]; then
-		# Top-level license files; failing that, licenses for subtrees (paths kept relative).
-		mapfile -t files < <(find "$base" -maxdepth 1 -type f -iregex "$license_files" | sort)
-		if ((${#files[@]} == 0)); then
-			mapfile -t files < <(find "$base" -mindepth 2 -type f -iregex "$license_files" -not -path "$base/*/testdata/*" | sort)
-		fi
+		# Every license file in the module, paths kept relative: subdirectories often hold code
+		# under another license (forked Go code, ported C). Syft reads only the top level, so
+		# these don't reach the attestation unless scripts/license-evidence.yaml adds them there.
+		mapfile -t files < <(find "$base" -type f -iregex "$license_files" "${not_documents[@]}" \
+			-not -path "$base/.*" -not -path "$base/*/.*" -not -path "$base/testdata/*" -not -path "$base/*/testdata/*" | sort)
+		for i in "${!files[@]}"; do
+			[[ $(head -c 2 "${files[i]}") != '#!' ]] || unset 'files[i]'
+		done
 		source="proxy:https://proxy.golang.org/$(go_escape "$path")/@v/$(go_escape "$ver").zip"
 	else
 		# Not on the proxy (for example an unpublished commit): fall back to a component's
@@ -476,8 +508,52 @@ for key in "${go_wanted[@]}"; do
 	for file in "${files[@]}"; do
 		install -D -m 0644 "$file" "$dest/${file#"$base"/}"
 	done
+	# Reviewed additions, beside the upstream files, at the top where Syft reads them.
+	# An entry applies to the versions that have any of its reviewed files: a version without
+	# them (an older one, before the forked code was added) has nothing to add.
+	added=
+	applies=false
+	if [[ -n ${evidence[$path]:-} ]]; then
+		while IFS=$'\t' read -r action arg1 _; do
+			[[ $action == reviewed && -f $base/$arg1 ]] && applies=true
+		done < <(printf '%s' "${evidence[$path]}")
+		$applies || echo "collect-legal: $key has none of the files reviewed in scripts/license-evidence.yaml; not applied" >&2
+	fi
+	if $applies; then
+		evidence_used[$path]=1
+		[[ $source == proxy:* ]] || error "$key: scripts/license-evidence.yaml needs the module from the Go proxy"
+		while IFS=$'\t' read -r action arg1 arg2 arg3; do
+			case $action in
+			reviewed)
+				[[ $(sha256sum "$base/$arg1" 2>/dev/null | cut -d' ' -f1) == "$arg2" ]] ||
+					error "$key: $arg1 isn't the text reviewed in scripts/license-evidence.yaml; review the entry again"
+				;;
+			include)
+				if [[ -e $dest/$arg2 || ! -f $base/$arg1 ]]; then
+					error "$key: can't include $arg1 as $arg2 (missing, or the name is taken)"
+				else
+					install -m 0644 "$base/$arg1" "$dest/$arg2"
+					added+="added:$arg2=$arg1 "
+				fi
+				;;
+			add)
+				if [[ -e $dest/$arg1 ]]; then
+					error "$key: can't add $arg1: the module already has a file by that name"
+				elif curl -fsSL --retry 3 -o "$dest/$arg1" "$arg2" && [[ $(sha256sum "$dest/$arg1" | cut -d' ' -f1) == "$arg3" ]]; then
+					added+="added:$arg1=$arg2 "
+				else
+					rm -f "$dest/$arg1"
+					error "$key: $arg2 doesn't match its sha256 in scripts/license-evidence.yaml"
+				fi
+				;;
+			esac
+		done < <(printf '%s' "${evidence[$path]}")
+	fi
 	notices=$(find "$dest" -type f | sort | paste -sd' ' -)
-	row "go-module:$path" "$ver" all NOASSERTION "$notices" "embedded-in:${mod_bins[$key]} ${mod_kind[$key]:+main-module }${mod_rev[$key]:+revision:${mod_rev[$key]} }$source"
+	row "go-module:$path" "$ver" all NOASSERTION "$notices" "embedded-in:${mod_bins[$key]} ${mod_kind[$key]:+main-module }${mod_rev[$key]:+revision:${mod_rev[$key]} }$added$source"
+done
+for mod in "${!evidence[@]}"; do
+	[[ -n ${evidence_used[$mod]:-} ]] || error "$mod: no version in the image has the files reviewed in scripts/license-evidence.yaml; update or remove its entry"
 done
 
 # --- Executables nobody accounts for ------------------------------------------------------
@@ -493,7 +569,7 @@ while IFS= read -r -d '' file; do
 	for prefix in "${covered[@]}"; do
 		[[ $file == "$prefix" || $file == "$prefix"/* ]] && continue 2
 	done
-	error "$file is not owned by any package or listed component; add it to scripts/legal-components.tsv"
+	error "$file is not owned by any package or listed component; add it to scripts/legal-components.yaml"
 done < <(find / -xdev \( -path /proc -o -path /sys -o -path /dev -o -path /mnt -o -path /tmp -o -path "$legal" -o -path "$go_modcache" \) -prune \
 	-o -type f \( -perm /111 -o -name '*.so' -o -name '*.so.*' \) -print0)
 rm -f "$owned"

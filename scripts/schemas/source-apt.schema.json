@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "apt repositories",
+  "description": "The apt repositories the image installs from, mapped to where their source packages are fetched (scripts/source-apt.yaml).",
+  "type": "object",
+  "required": ["repositories"],
+  "additionalProperties": false,
+  "properties": {
+    "repositories": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/repository" }
+    }
+  },
+  "$defs": {
+    "url": { "type": "string", "pattern": "^https://" },
+    "repository": {
+      "type": "object",
+      "required": ["name", "binaryUrlPrefixes", "source"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "description": "Short name, used in plan errors.",
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
+        "binaryUrlPrefixes": {
+          "description": "A package belongs to this repository when its .deb URL in manifest.tsv starts with one of these.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/url" }
+        },
+        "source": {
+          "description": "Where the source packages are, or null if the repository publishes none.",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["url", "suites", "components", "signedBy"],
+              "additionalProperties": false,
+              "properties": {
+                "url": { "$ref": "#/$defs/url", "description": "Repository URL for deb-src." },
+                "suites": {
+                  "description": "Searched in order; the first suite with the exact version wins.",
+                  "type": "array",
+                  "minItems": 1,
+                  "items": { "type": "string", "minLength": 1 }
+                },
+                "components": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": { "type": "string", "minLength": 1 }
+                },
+                "signedBy": {
+                  "description": "Keyring that signs the repository, as a path in the apt fetch stage.",
+                  "type": "string",
+                  "pattern": "^/"
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "License evidence",
+  "description": "Reviewed license texts added to Go modules' /legal/go/pkg/mod/ directories so Syft sees every license their notices name (scripts/license-evidence.yaml).",
+  "type": "object",
+  "required": ["modules"],
+  "additionalProperties": false,
+  "properties": {
+    "modules": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/module" }
+    }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "relative": {
+      "description": "A path inside the module.",
+      "type": "string",
+      "pattern": "^[^/]",
+      "not": { "pattern": "(^|/)\\.\\.(/|$)" }
+    },
+    "as": {
+      "description": "File name at the top of the module's directory. It must be license-named, since that's all Syft reads, and must not replace an upstream file.",
+      "type": "string",
+      "pattern": "^(LICENSE|LICENCE|COPYING|NOTICE|PATENTS)[A-Za-z0-9._-]*$"
+    },
+    "module": {
+      "type": "object",
+      "required": ["module", "reason", "reviewed"],
+      "anyOf": [{ "required": ["include"] }, { "required": ["add"] }],
+      "additionalProperties": false,
+      "properties": {
+        "module": {
+          "description": "Go module path. The entry applies to every version of it in the image that has any of the reviewed files. Unique.",
+          "type": "string",
+          "minLength": 1
+        },
+        "reason": {
+          "description": "What the upstream notice says, and why the added text is needed.",
+          "type": "string",
+          "minLength": 1
+        },
+        "reviewed": {
+          "description": "The upstream files that were reviewed, by SHA-256. A module version whose file differs fails the build until the entry is reviewed again.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["file", "sha256"],
+            "additionalProperties": false,
+            "properties": {
+              "file": { "$ref": "#/$defs/relative" },
+              "sha256": { "$ref": "#/$defs/sha256" }
+            }
+          }
+        },
+        "include": {
+          "description": "License texts the module itself ships where Syft doesn't look, copied to the top of its directory.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["path", "as"],
+            "additionalProperties": false,
+            "properties": {
+              "path": { "$ref": "#/$defs/relative" },
+              "as": { "$ref": "#/$defs/as" }
+            }
+          }
+        },
+        "add": {
+          "description": "License texts the module doesn't ship, downloaded from a pinned upstream URL and checked against their SHA-256.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["as", "url", "sha256"],
+            "additionalProperties": false,
+            "properties": {
+              "as": { "$ref": "#/$defs/as" },
+              "url": { "type": "string", "pattern": "^https://" },
+              "sha256": { "$ref": "#/$defs/sha256" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

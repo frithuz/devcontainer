@@ -10,6 +10,7 @@ FROM ghcr.io/oras-project/oras:v1.3.6@sha256:9cfb578be975b762fd898b9d004243d8003
 FROM hadolint/hadolint:v2.15.1@sha256:32dac94127fd60b7b7e3fbfc65e1383b9b5e25c9bfd7b8536de7a539fe68a12d AS hadolint
 FROM mvdan/shfmt:v3.14.1@sha256:8c06884a35683d8763fba6c0d9484d11a61a96da65f8d497d6f625825a6043f2 AS shfmt
 FROM ghcr.io/jqlang/jq:1.8.2@sha256:b9c68867e5766576263a222e91db3de422d802069c7af70440e667a95344e486 AS jq
+FROM mikefarah/yq:4.54.1@sha256:4b3d9475d65571d28cbb19544d3820ec2945e4c8b2f18279394282b8dc3a592e AS yq
 FROM hairyhenderson/gomplate:v5.3.1@sha256:9c73c3cacc598cc9d926c67c5548901a4a4ee2223d29a2dacc910a68a5dfd684 AS gomplate
 FROM golangci/golangci-lint:v2.15.0@sha256:fbfcfd12a6f8d7f1b97b3362ca80fc2a244d46863148c73cb88e7793af96c481 AS golangci-lint
 FROM ghcr.io/pnpm/pnpm:12.15.0@sha256:d6148daf3ad2af8fa4ecd1aa06db73da32b2e37f63088987eea2fb375ee7f320 AS pnpm
@@ -50,6 +51,40 @@ check() {
 check /keys/git-core.asc F911AB184317630C59970973E363C90F8F1B6217
 check /keys/docker.asc 9DC858229FC7DD38854AE2D88D81803C0EBFCD88
 EOF
+
+# jv, a JSON Schema validator: for the data files below, and shipped in the image. No upstream
+# image publishes it, so it's built at a pinned version (bumped by hand); Go verifies the module
+# against the checksum database. Static, with the LICENSE from the verified module.
+FROM go AS jv
+RUN bash <<'EOF'
+set -euxo pipefail
+module=github.com/santhosh-tekuri/jsonschema/cmd/jv@v0.7.0
+CGO_ENABLED=0 GOBIN=/opt/jv go install "$module"
+cp "$(go env GOMODCACHE)/$module/LICENSE" /opt/jv/LICENSE
+EOF
+
+# The scripts' data files (scripts/*.yaml): each validated against scripts/schemas/<name>.schema.json,
+# checked for duplicate names, and converted to <name>.json. The scripts read only this output,
+# never the YAML. `docker buildx bake config` runs it on its own and exports out/config/.
+FROM go AS config-run
+COPY --link --from=jv /opt/jv/jv /usr/local/bin/jv
+COPY --link --from=yq /usr/bin/yq /usr/local/bin/yq
+COPY --link --from=jq /jq /usr/local/bin/jq
+RUN --mount=type=bind,source=scripts,target=/mnt/scripts bash <<'EOF'
+set -euxo pipefail
+mkdir /config
+for schema in /mnt/scripts/schemas/*.schema.json; do
+  name=$(basename "$schema" .schema.json)
+  jv "$schema" "/mnt/scripts/$name.yaml"
+  yq -o=json . "/mnt/scripts/$name.yaml" >"/config/$name.json"
+  # Names identify entries across every list in a file; a schema can't express that.
+  jq -e --arg file "scripts/$name.yaml" '[.[] | arrays | .[] | .name // .module] | group_by(.) | map(select(length > 1)[0]) |
+    if length > 0 then error("\($file): duplicate names: \(join(", "))") else true end' "/config/$name.json"
+done
+EOF
+
+FROM scratch AS config
+COPY --from=config-run /config/ /
 
 # Final image: the steps from docs/architecture.md, in order.
 FROM ubuntu:26.04@sha256:c098726dd9b9733f3e885f8de0ef375206a311b0a317eadc40d347b1115fb944 AS image
@@ -166,6 +201,8 @@ COPY --link --chown=0:0 --chmod=0755 --from=oras /bin/oras /usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=hadolint /bin/hadolint /usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=shfmt /bin/shfmt /usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=jq /jq /usr/local/bin/
+COPY --link --chown=0:0 --chmod=0755 --from=yq /usr/bin/yq /usr/local/bin/
+COPY --link --chown=0:0 --chmod=0755 --from=jv /opt/jv/jv /usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=gomplate /gomplate /usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=golangci-lint /usr/bin/golangci-lint /usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=git-cliff /usr/local/bin/git-cliff /usr/local/bin/
@@ -272,11 +309,13 @@ COPY legal/README.md legal/SOURCE.md /legal/
 COPY --from=go /usr/local/go/LICENSE /usr/local/go/PATENTS /legal/attribution/go/
 COPY --from=python /usr/local/lib/python3.15/LICENSE.txt /legal/attribution/python/
 COPY --from=jq /COPYING /legal/attribution/jq/
+COPY --from=jv /opt/jv/LICENSE /legal/attribution/jv/
 ARG REVISION
 RUN --mount=type=bind,target=/mnt/legal-src --mount=type=bind,from=gh,source=/opt/gh,target=/mnt/gh-legal \
+    --mount=type=bind,from=config,target=/mnt/config \
     --mount=type=cache,id=legal-go-mod,target=/var/cache/legal-go-mod,sharing=locked bash <<'EOF'
 set -euxo pipefail
-bash /mnt/legal-src/scripts/collect-legal.sh /mnt/legal-src/Dockerfile /mnt/legal-src/scripts/legal-components.tsv /mnt/gh-legal
+bash /mnt/legal-src/scripts/collect-legal.sh /mnt/legal-src/Dockerfile /mnt/config /mnt/gh-legal
 # The version checks run node as root, which leaves a compile cache behind.
 rm -rf /tmp/node-compile-cache
 EOF

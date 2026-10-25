@@ -1,0 +1,198 @@
+# yaml-language-server: $schema=schemas/legal-components.schema.json
+#
+# Components copied from pinned upstream images or built from pinned Go modules, for
+# scripts/collect-legal.sh. Adding a COPY'd tool to the Dockerfile requires an entry here. Pinned
+# digests are read from the Dockerfile's FROM lines by stage name, so they live in one place; a
+# go-install component's module and version come from the binary's build info. The "base" stage lists files
+# Ubuntu's base image ships outside any apt package. In upstream and purl, {version} is the
+# installed version, as printed by the version command.
+components:
+  - name: go
+    stage: go
+    license: BSD-3-Clause
+    version: go env GOVERSION
+    notices: [/legal/attribution/go/LICENSE, /legal/attribution/go/PATENTS]
+    paths: [/usr/local/go]
+
+  - name: node
+    stage: node
+    license: MIT
+    version: node --version
+    notices: [/legal/attribution/node/LICENSE]
+    paths: [/usr/local/bin/node]
+    upstream:
+      repository: nodejs/node
+      tag: v{version}
+      files: [LICENSE]
+
+  - name: npm
+    stage: node
+    license: Artistic-2.0
+    version: npm --version
+    notices: [/usr/local/lib/node_modules/npm/LICENSE]
+    paths: [/usr/local/lib/node_modules/npm]
+
+  - name: python
+    stage: python
+    license: PSF-2.0
+    version: python3 --version
+    notices: [/legal/attribution/python/LICENSE.txt]
+    paths:
+      - /usr/local/bin/python3.15
+      - /usr/local/lib/python3.15
+      - /usr/local/lib/libpython3.15.so.1.0
+      - /usr/local/lib/libpython3.so
+      - /usr/local/include/python3.15
+
+  - name: pip
+    stage: python
+    license: MIT
+    version: pip3 --version
+    notices: [/usr/local/lib/python3.15/site-packages/pip-*.dist-info/licenses/*]
+    paths: [/usr/local/lib/python3.15/site-packages/pip]
+
+  - name: uv
+    stage: uv
+    license: MIT OR Apache-2.0
+    version: uv --version
+    notices: [/legal/attribution/uv/LICENSE-*]
+    paths: [/usr/local/bin/uv, /usr/local/bin/uvx]
+    upstream:
+      repository: astral-sh/uv
+      tag: "{version}"
+      files: [LICENSE-APACHE, LICENSE-MIT]
+
+  - name: oras
+    stage: oras
+    license: Apache-2.0
+    version: oras version
+    notices: [/legal/attribution/oras/LICENSE]
+    paths: [/usr/local/bin/oras]
+    upstream:
+      repository: oras-project/oras
+      tag: v{version}
+      files: [LICENSE]
+
+  - name: hadolint
+    stage: hadolint
+    license: GPL-3.0-only
+    version: hadolint --version
+    notices:
+      - /legal/attribution/hadolint/LICENSE
+      - /legal/attribution/hadolint/ThirdPartyNotices.txt
+    paths: [/usr/local/bin/hadolint]
+    upstream:
+      repository: hadolint/hadolint
+      tag: v{version}
+      files: [LICENSE, ThirdPartyNotices.txt]
+    purl: pkg:github/hadolint/hadolint@v{version}
+
+  - name: shfmt
+    stage: shfmt
+    license: BSD-3-Clause
+    version: shfmt --version
+    notices: [/legal/attribution/shfmt/LICENSE]
+    paths: [/usr/local/bin/shfmt]
+    upstream:
+      repository: mvdan/sh
+      tag: v{version}
+      files: [LICENSE]
+
+  - name: jq
+    stage: jq
+    license: MIT AND ICU
+    version: jq --version
+    notices: [/legal/attribution/jq/COPYING]
+    paths: [/usr/local/bin/jq]
+
+  - name: yq
+    stage: yq
+    license: MIT
+    version: yq --version
+    notices: [/legal/attribution/yq/LICENSE]
+    paths: [/usr/local/bin/yq]
+    upstream:
+      repository: mikefarah/yq
+      tag: v{version}
+      files: [LICENSE]
+
+  - name: jv
+    stage: jv
+    install: go-install
+    license: Apache-2.0
+    version: jv --version
+    notices: [/legal/attribution/jv/LICENSE]
+    paths: [/usr/local/bin/jv]
+
+  - name: gomplate
+    stage: gomplate
+    license: MIT
+    version: gomplate --version
+    notices: [/legal/attribution/gomplate/LICENSE]
+    paths: [/usr/local/bin/gomplate]
+    upstream:
+      repository: hairyhenderson/gomplate
+      tag: v{version}
+      files: [LICENSE]
+
+  - name: golangci-lint
+    stage: golangci-lint
+    license: GPL-3.0-only
+    version: golangci-lint --version
+    notices: [/legal/attribution/golangci-lint/LICENSE]
+    paths: [/usr/local/bin/golangci-lint]
+    upstream:
+      repository: golangci/golangci-lint
+      tag: v{version}
+      files: [LICENSE]
+
+  - name: git-cliff
+    stage: git-cliff
+    license: MIT OR Apache-2.0
+    version: git-cliff --version
+    notices: [/legal/attribution/git-cliff/LICENSE-*]
+    paths: [/usr/local/bin/git-cliff]
+    upstream:
+      repository: orhun/git-cliff
+      tag: v{version}
+      files: [LICENSE-APACHE, LICENSE-MIT]
+    purl: pkg:cargo/git-cliff@{version}
+
+  - name: betterleaks
+    stage: betterleaks
+    license: MIT
+    version: betterleaks version
+    notices: [/legal/attribution/betterleaks/LICENSE]
+    paths: [/usr/local/bin/betterleaks]
+    upstream:
+      repository: betterleaks/betterleaks
+      tag: v{version}
+      files: [LICENSE]
+
+  - name: pnpm
+    stage: pnpm
+    license: MIT
+    version: pnpm --version
+    notices: [/legal/attribution/pnpm/LICENSE]
+    paths:
+      - /opt/pnpm/pnpm
+      - /opt/pnpm/pn
+      - /opt/pnpm/pnpx
+      - /opt/pnpm/pnx
+      - /opt/pnpm/dist
+    upstream:
+      repository: pnpm/pnpm
+      tag: v{version}
+      files: [LICENSE]
+    purl: pkg:npm/pnpm@{version}
+
+  - name: pebble
+    stage: base
+    license: GPL-3.0-only
+    version: pebble version --client
+    notices: [/legal/attribution/pebble/COPYING]
+    paths: [/usr/bin/pebble]
+    upstream:
+      repository: canonical/pebble
+      tag: v{version}
+      files: [COPYING]

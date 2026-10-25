@@ -1,0 +1,32 @@
+# yaml-language-server: $schema=schemas/source-apt.schema.json
+#
+# apt repositories the image installs from, for scripts/plan-sources.sh and
+# scripts/build-source-image.sh. A package's repository is the first entry with a binary URL
+# prefix its .deb URL (manifest.tsv) starts with. Both architectures map to the same source
+# repository, so their packages share source images.
+repositories:
+  - name: ubuntu
+    binaryUrlPrefixes:
+      - https://ports.ubuntu.com/ubuntu-ports/
+      - https://archive.ubuntu.com/ubuntu/
+      - https://security.ubuntu.com/ubuntu/
+    source:
+      url: https://archive.ubuntu.com/ubuntu
+      suites: [resolute, resolute-security, resolute-updates]
+      components: [main, restricted, universe, multiverse]
+      signedBy: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+
+  - name: git-core
+    binaryUrlPrefixes:
+      - https://ppa.launchpadcontent.net/git-core/ppa/ubuntu/
+    source:
+      url: https://ppa.launchpadcontent.net/git-core/ppa/ubuntu
+      suites: [resolute]
+      components: [main]
+      signedBy: /etc/apt/keyrings/git-core.asc
+
+  # Publishes no source packages: its copyleft programs are git roots in source-roots.yaml.
+  - name: docker
+    binaryUrlPrefixes:
+      - https://download.docker.com/linux/ubuntu/
+    source: null

@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Source roots",
+  "description": "Non-apt programs that owe source, documented gaps, and license elections (scripts/source-roots.yaml).",
+  "type": "object",
+  "required": ["roots", "gaps", "elections"],
+  "additionalProperties": false,
+  "properties": {
+    "roots": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["kind"],
+        "properties": { "kind": { "description": "How the source is fetched.", "enum": ["git", "bundle"] } },
+        "if": { "properties": { "kind": { "const": "git" } } },
+        "then": { "$ref": "#/$defs/git" },
+        "else": { "$ref": "#/$defs/bundle" }
+      }
+    },
+    "gaps": { "type": "array", "items": { "$ref": "#/$defs/gap" } },
+    "elections": { "type": "array", "items": { "$ref": "#/$defs/election" } }
+  },
+  "$defs": {
+    "name": {
+      "description": "Unique across roots, gaps, and elections. Used for source image tags and in plan.tsv.",
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9.-]*$"
+    },
+    "repository": {
+      "description": "Git repository URL.",
+      "type": "string",
+      "pattern": "^https://"
+    },
+    "tag": {
+      "description": "Tag pattern; {version} is replaced with the installed version. Quote it in YAML when it starts with {.",
+      "type": "string",
+      "pattern": "\\{version\\}"
+    },
+    "components": {
+      "description": "manifest.tsv components this entry covers (shell globs).",
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "note": {
+      "description": "Why the program owes source. Documentation only.",
+      "type": "string"
+    },
+    "git": {
+      "title": "git root",
+      "description": "A Go program's exact commit, with every compiled-in module vendored.",
+      "type": "object",
+      "required": ["name", "kind", "repository", "tag", "module", "binaries", "vendoring"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "$ref": "#/$defs/name" },
+        "kind": { "const": "git" },
+        "repository": { "$ref": "#/$defs/repository" },
+        "tag": { "$ref": "#/$defs/tag" },
+        "module": {
+          "description": "The main Go module; its version in manifest.tsv is {version}.",
+          "type": "string",
+          "minLength": 1
+        },
+        "binaries": {
+          "description": "Binaries built from the module. Every Go module compiled into them must be in vendor/modules.txt.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "vendoring": {
+          "description": "go-vendor runs `go mod vendor`; vendored means the repository commits vendor/.",
+          "enum": ["go-vendor", "vendored"]
+        },
+        "note": { "$ref": "#/$defs/note" }
+      }
+    },
+    "bundle": {
+      "title": "bundle root",
+      "description": "Git subpaths at the tag's exact commit, plus the archives of the covered copyleft components.",
+      "type": "object",
+      "required": ["name", "kind", "repository", "tag", "components", "subpaths"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "$ref": "#/$defs/name" },
+        "kind": { "const": "bundle" },
+        "repository": { "$ref": "#/$defs/repository" },
+        "tag": { "$ref": "#/$defs/tag" },
+        "components": {
+          "$ref": "#/$defs/components",
+          "description": "Covered components (shell globs). The first one's version is {version}."
+        },
+        "subpaths": {
+          "description": "Paths exported from the repository at the tag's commit.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "pattern": "^[^/]" }
+        },
+        "note": { "$ref": "#/$defs/note" }
+      }
+    },
+    "gap": {
+      "description": "A copyleft component whose source can't be produced yet. Reported, not fatal.",
+      "type": "object",
+      "required": ["name", "components", "reason"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "$ref": "#/$defs/name" },
+        "repository": { "$ref": "#/$defs/repository" },
+        "components": { "$ref": "#/$defs/components" },
+        "reason": { "description": "Why the source can't be produced.", "type": "string", "minLength": 1 }
+      }
+    },
+    "election": {
+      "description": "A dual-licensed component distributed under its permissive option. Owes no source.",
+      "type": "object",
+      "required": ["name", "components", "license"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "$ref": "#/$defs/name" },
+        "components": { "$ref": "#/$defs/components" },
+        "license": { "description": "The elected license (SPDX).", "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

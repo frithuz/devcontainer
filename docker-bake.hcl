@@ -104,13 +104,24 @@ target "apt-keys" {
   platforms  = platforms(true)
 }
 
+# The scripts' data files (scripts/*.yaml), validated against scripts/schemas/ and converted to
+# JSON in out/config/. The image and source-plan build it themselves; this target is for checking
+# the files on their own: docker buildx bake config
+target "config" {
+  context    = "."
+  dockerfile = "Dockerfile"
+  target     = "config"
+  platforms  = platforms(true)
+  output     = ["type=local,dest=out/config"]
+}
+
 # Resolves the source images the manifests need and exports out/sources/: plan.tsv, plans/, and
 # sources.hcl with a target per source image to build (group "sources").
 target "source-plan" {
   context         = "."
   dockerfile      = "source.Dockerfile"
   target          = "plan"
-  contexts        = { manifests = MANIFESTS }
+  contexts        = { manifests = MANIFESTS, config = "target:config" }
   no-cache-filter = ["plan-run"]
   args = {
     SOURCE_RECIPE_REPOSITORY = SOURCE_RECIPE_REPOSITORY

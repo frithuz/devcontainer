@@ -23,6 +23,7 @@ Expectations:
 | git (PPA) | Not pinned. A scheduled weekly rebuild picks up new PPA releases |
 | Ubuntu apt packages | Same as git: refreshed by the scheduled rebuild |
 | Docker Engine packages | Same as git: refreshed from Docker's apt repository by the scheduled rebuild |
+| `jv` (JSON Schema validator) | Pinned as a Go module version in the Dockerfile's `jv` stage (`go install ...@<version>`); bump it by hand |
 | License files | Fetched from the installed version's upstream tag on every build, so nothing to track ([legal.md](legal.md#how-files-get-there)) |
 | Claude Code, Codex | Not pinned by design. Scheduled builds refresh the installers; other builds may reuse cached installations. The agents can self-update at runtime |
 
@@ -130,7 +131,7 @@ Quay protects an untagged digest-only push with a hidden temporary tag for **one
 ## Contributor expectations
 
 - **Project license.** Original contributions are accepted under [CC0-1.0](../LICENSE). Contribute only work you have authority to dedicate; identify imported third-party material and preserve its license and notices. See [license scope and impacts](legal.md#project-license).
-- **Adding a tool.** If an upstream image with a static binary or glibc-compatible binary exists, add a pinned `FROM` source stage and a `COPY`. Otherwise, justify the scripted install in the PR and add it to [tooling.md](tooling.md). Either way, make sure its command resolves under the default `PATH` (copy into `/usr/local/bin` or add a symlink there), and add it to `test/smoke.sh`, the [tooling.md](tooling.md) inventory, and `scripts/legal-components.tsv` with its license files' source ([legal.md](legal.md#how-files-get-there)).
+- **Adding a tool.** If an upstream image with a static binary or glibc-compatible binary exists, add a pinned `FROM` source stage and a `COPY`. Otherwise, justify the scripted install in the PR and add it to [tooling.md](tooling.md). Either way, make sure its command resolves under the default `PATH` (copy into `/usr/local/bin` or add a symlink there), and add it to `test/smoke.sh`, the [tooling.md](tooling.md) inventory, and `scripts/legal-components.yaml` with its license files' source ([legal.md](legal.md#how-files-get-there)).
 - Never add an unpinned `FROM` or an unchecked download. `curl | sh` is allowed only for the documented agent standalone installers.
 - Keep the final stage free of build-only tooling. Fetching belongs in builder stages.
 - Don't break the [sandbox contract](architecture.md#docker-sandboxes-contract). User, UID, home, and shell requirements are fixed.

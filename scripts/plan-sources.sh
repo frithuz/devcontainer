@@ -2,14 +2,17 @@
 # Derive the source images an image needs from its /legal/manifest.tsv files (one per platform),
 # and resolve each one's exact inputs without fetching the source (docs/legal.md#source-images):
 # - apt: every copyleft or non-machine-readable package's source package and version, found in
-#   its repository's Sources index (scripts/source-apt.tsv), with the .dsc and archive digests;
-# - git: the commit of each root program's tag (scripts/source-roots.tsv), checked against the
+#   its repository's Sources index (scripts/source-apt.yaml), with the .dsc and archive digests;
+# - git: the commit of each root program's tag (scripts/source-roots.yaml), checked against the
 #   revision recorded in the binary, and the Go modules the binaries were built from;
 # - bundle: the commit of the bundle's tag and the digests of its copyleft archives.
 # Every copyleft component that isn't an apt package or a Go module must be covered by a root,
 # a documented gap, or a license election. Unresolved roots fail; gaps are reported.
 #
-# Usage: plan-sources.sh [--check] [--out <dir>] [--reuse <repository>] <manifest.tsv>...
+# Usage: plan-sources.sh --config <dir> [--check] [--out <dir>] [--reuse <repository>] <manifest.tsv>...
+#   --config the Dockerfile's config stage output: source-apt.json and source-roots.json, from
+#            scripts/*.yaml validated against their schemas (`docker buildx bake config` exports
+#            it to out/config).
 #   --check  resolve and report only; write nothing.
 #   --out    write plan.tsv (summary), plans/<tag>/plan.json (one per source image, read by
 #            scripts/build-source-image.sh), and sources.hcl (a bake target per source image to
@@ -24,19 +27,19 @@ set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
 readonly here
-readonly roots_tsv=$here/source-roots.tsv
-readonly apt_tsv=$here/source-apt.tsv
 readonly recipe_script=$here/build-source-image.sh
 # Licenses that owe source. NOASSERTION (an apt copyright file that isn't machine-readable)
 # can't be ruled out, so it owes source too.
 readonly copyleft='GPL|MPL|EPL|CDDL|EUPL|NOASSERTION'
 
+config=
 check=false
 out=out/sources
 reuse=
 manifests=()
 while (($#)); do
 	case $1 in
+	--config) config=${2:?--config needs a directory} && shift ;;
 	--check) check=true ;;
 	--out) out=${2:?--out needs a directory} && shift ;;
 	--reuse) reuse=${2:?--reuse needs a repository} && shift ;;
@@ -48,10 +51,11 @@ while (($#)); do
 	esac
 	shift
 done
-if ((${#manifests[@]} == 0)); then
-	echo "usage: plan-sources.sh [--check] [--out <dir>] [--reuse <repository>] <manifest.tsv>..." >&2
+if [[ -z $config ]] || ((${#manifests[@]} == 0)); then
+	echo "usage: plan-sources.sh --config <dir> [--check] [--out <dir>] [--reuse <repository>] <manifest.tsv>..." >&2
 	exit 2
 fi
+readonly apt_json=$config/source-apt.json roots_json=$config/source-roots.json
 readonly plans_context=${SOURCE_PLANS_CONTEXT:-out/sources}
 
 errors=0
@@ -134,12 +138,13 @@ tag_commit() {
 # --- apt -------------------------------------------------------------------------------------
 declare -A apt_url apt_suites apt_components apt_keyring apt_prefixes
 apt_names=()
+# One line per repository: lists space-separated, "-" for a repository without source packages.
 while IFS=$'\t' read -r name prefixes url suites components keyring; do
-	[[ -z $name || $name == \#* ]] && continue
 	apt_names+=("$name")
 	apt_prefixes[$name]=$prefixes apt_url[$name]=$url apt_suites[$name]=$suites
 	apt_components[$name]=$components apt_keyring[$name]=$keyring
-done <"$apt_tsv"
+done < <(jq -r '.repositories[] | [.name, (.binaryUrlPrefixes | join(" ")),
+	(.source // {} | .url // "-", (.suites // ["-"] | join(" ")), (.components // ["-"] | join(" ")), .signedBy // "-")] | @tsv' "$apt_json")
 
 apt_repo_of() {
 	local name prefix
@@ -184,7 +189,7 @@ while IFS=$'\t' read -r arch comp _ license source; do
 	src=${src#src:}
 	repo=$(apt_repo_of "$uri")
 	if [[ -z $repo ]]; then
-		error "$comp ($arch): $uri is in no repository listed in scripts/source-apt.tsv"
+		error "$comp ($arch): $uri is in no repository listed in scripts/source-apt.yaml"
 		continue
 	fi
 	printf '%s\t%s\t%s\t%s\t%s\n' "$repo" "${src%%=*}" "${src#*=}" "$arch" "$comp"
@@ -193,7 +198,7 @@ done < <(awk -F'\t' -v OFS='\t' -v re="$copyleft" '$2 ~ /^deb:/ && $4 ~ re' "$ro
 while IFS=$'\t' read -r repo pkg version; do
 	mapfile -t covered < <(awk -F'\t' -v r="$repo" -v p="$pkg" -v v="$version" '$1 == r && $2 == p && $3 == v { print $4 ":" $5 }' "$apt_needed")
 	if [[ ${apt_url[$repo]} == - ]]; then
-		error "$pkg $version (${covered[*]}): repository $repo publishes no source packages; add a git root to scripts/source-roots.tsv"
+		error "$pkg $version (${covered[*]}): repository $repo publishes no source packages; add a git root to scripts/source-roots.yaml"
 		continue
 	fi
 	index=$(sources_index "$repo")
@@ -223,12 +228,14 @@ while IFS=$'\t' read -r repo pkg version; do
 	add "$(finish "$identity" "$fetch" '{}' "${apt_url[$repo]}")" "${covered[@]}"
 done < <(cut -f1-3 "$apt_needed" | sort -u)
 
-# --- Roots from source-roots.tsv ---------------------------------------------------------------
+# --- Roots from source-roots.yaml --------------------------------------------------------------
 # Tokens covered by any root, gap, or election (globs), for the coverage check below.
 cover_patterns=()
 
+# One line per root, gap, and election: name, kind, repository, tag, covers (space-separated; for
+# git, the main module then the binaries), recipe (git: vendoring; bundle: comma-separated
+# subpaths), note (gap: reason; election: license). Absent fields are "-".
 while IFS=$'\t' read -r root kind repo ref cover_list recipe_opt root_note; do
-	[[ -z $root || $root == \#* ]] && continue
 	read -ra tokens <<<"$cover_list"
 	cover_patterns+=("${tokens[@]}")
 	case $kind in
@@ -240,7 +247,7 @@ while IFS=$'\t' read -r root kind repo ref cover_list recipe_opt root_note; do
 				rev = "-"; if (match($5, /revision:[0-9a-f]+/)) rev = substr($5, RSTART + 9, RLENGTH - 9)
 				print $1, $3, rev }' "$rows")
 		if ((${#found[@]} == 0)); then
-			error "$root: $main isn't in any manifest; remove or update its row in scripts/source-roots.tsv"
+			error "$root: $main isn't in any manifest; remove or update its entry in scripts/source-roots.yaml"
 			continue
 		fi
 		mapfile -t versions < <(printf '%s\n' "${found[@]}" | cut -f2 | sort -u)
@@ -273,7 +280,7 @@ while IFS=$'\t' read -r root kind repo ref cover_list recipe_opt root_note; do
 		done
 		;;
 	bundle)
-		subpaths=${recipe_opt#sparse=}
+		subpaths=$recipe_opt
 		for arch in "${arches[@]}"; do
 			version=$(awk -F'\t' -v a="$arch" -v c="${tokens[0]}" '$1 == a && $2 == c { print $3; exit }' "$rows")
 			[[ -n $version ]] || continue
@@ -314,19 +321,25 @@ while IFS=$'\t' read -r root kind repo ref cover_list recipe_opt root_note; do
 		done)
 		((${#covered[@]})) && decisions["$kind"$'\t'"$root"$'\t'"$root_note"]=$(printf '%s\n' "${covered[@]}")
 		;;
-	*) error "$root: unknown kind $kind in scripts/source-roots.tsv" ;;
+	*) error "$root: unknown kind $kind in scripts/source-roots.yaml" ;;
 	esac
-done <"$roots_tsv"
+done < <(jq -r '
+	(.roots[] | [.name, .kind, .repository, .tag,
+		(if .kind == "git" then ["go-module:" + .module] + .binaries else .components end | join(" ")),
+		.vendoring // (.subpaths | join(",")), .note // "-"]),
+	(.gaps[] | [.name, "gap", .repository // "-", "-", (.components | join(" ")), "-", .reason]),
+	(.elections[] | [.name, "election", "-", "-", (.components | join(" ")), "-", .license])
+	| @tsv' "$roots_json")
 
 # --- Coverage --------------------------------------------------------------------------------
 # Go modules' licenses aren't in manifest.tsv (NOASSERTION); the Go programs that owe source
-# are listed in source-roots.tsv by hand.
+# are listed in source-roots.yaml by hand.
 while IFS=$'\t' read -r arch comp license; do
 	for pattern in "${cover_patterns[@]}"; do
 		# shellcheck disable=SC2053 # covers entries are globs.
 		[[ $comp == $pattern ]] && continue 2
 	done
-	error "$comp ($arch, $license) owes source but no root in scripts/source-roots.tsv covers it"
+	error "$comp ($arch, $license) owes source but no root in scripts/source-roots.yaml covers it"
 done < <(awk -F'\t' -v OFS='\t' -v re="$copyleft" '$2 !~ /^(deb|go-module):/ && $4 ~ re { print $1, $2, $4 }' "$rows")
 
 for decision in "${!decisions[@]}"; do

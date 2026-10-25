@@ -1,0 +1,258 @@
+# yaml-language-server: $schema=schemas/license-evidence.schema.json
+#
+# Reviewed license texts that scripts/collect-legal.sh adds to Go modules' /legal/go/pkg/mod/
+# directories, beside every license file it already copies from the module. Only for modules
+# whose notices name a license whose text Syft can't see: Syft reads license-named files at the
+# top of a module directory only, so a text kept in a subdirectory, under another name, or only
+# linked from a NOTICE leaves that license out of the SBOM attestation. Nothing here replaces or
+# removes an upstream file.
+#
+# Each entry is pinned to the upstream text that was reviewed. It applies to every version of the
+# module in the image that has any of the reviewed files: if one of them differs or is missing,
+# the build fails until the entry is reviewed again. A version with none of them (one that
+# predates the code) is skipped and logged. An entry no version applies to fails the build, so
+# the list can't go stale.
+modules:
+  - module: go.yaml.in/yaml/v4
+    reason: >-
+      NOTICE says the files ported from libyaml (internal/libyaml/*) stay under libyaml's MIT
+      license, but only links the text. go-yaml's v2 branch ships that text as LICENSE.libyaml.
+    reviewed:
+      - file: NOTICE
+        sha256: 257bb2d062ee0b9226e3b5f9c3c5d6aa3d38a450df27a9e060f061d4d4a4eb6f
+    add:
+      - as: LICENSE.libyaml
+        url: https://raw.githubusercontent.com/yaml/go-yaml/43b627a9da72517e91dbcf07cd10dfd6618423d8/LICENSE.libyaml
+        sha256: a94710b55e03b5285f77d048c5ba61bb9d6ee04a06c0eb90e68821e11b0c707a
+
+  - module: github.com/moby/spdystream
+    reason: >-
+      NOTICE says spdy/ is derived from golang.org/x/net under the BSD 3-Clause license, with
+      the license and patent grant in spdy/LICENSE and spdy/PATENTS.
+    reviewed:
+      - file: NOTICE
+        sha256: 45e765737ec9a50bedb8420d4d0cae61486d11ea8f5687edfa9b6dfdf57cc54a
+    include:
+      - path: spdy/LICENSE
+        as: LICENSE.spdy
+      - path: spdy/PATENTS
+        as: PATENTS.spdy
+
+  - module: github.com/ishidawataru/sctp
+    reason: >-
+      NOTICE says ipsock_linux.go is the Go authors' code under the license in GO_LICENSE (BSD).
+    reviewed:
+      - file: NOTICE
+        sha256: 4da03d33028f02f6db03bb402cb9aedf45df8746e943ab58afd1b86919f1ca0b
+    include:
+      - path: GO_LICENSE
+        as: LICENSE.GO_LICENSE
+
+  # Licenses kept in a subdirectory for code linked into the image (forked Go code and the like).
+  # The text is already shipped at its upstream path; the entry adds it at the top for Syft.
+  - module: github.com/Antonboom/testifylint
+    reason: >-
+      The code in internal/checkers/printf/ is the Go authors', under the BSD 3-Clause license in
+      internal/checkers/printf/LICENSE. It is linked into the image.
+    reviewed:
+      - file: internal/checkers/printf/LICENSE
+        sha256: 2d36597f7117c38b006835ae7f537487207d8ec407aa9d9980794b2030cbc067
+    include:
+      - path: internal/checkers/printf/LICENSE
+        as: LICENSE.printf
+
+  - module: github.com/andybalholm/brotli
+    reason: >-
+      The code in flate/ is the Go authors', under the BSD 3-Clause license in flate/LICENSE. It
+      is linked into the image.
+    reviewed:
+      - file: flate/LICENSE
+        sha256: 2d36597f7117c38b006835ae7f537487207d8ec407aa9d9980794b2030cbc067
+    include:
+      - path: flate/LICENSE
+        as: LICENSE.flate
+
+  - module: github.com/aws/aws-sdk-go
+    reason: >-
+      The code in internal/sync/singleflight/ is the Go authors', under the BSD 3-Clause license
+      in internal/sync/singleflight/LICENSE. It is linked into the image.
+    reviewed:
+      - file: internal/sync/singleflight/LICENSE
+        sha256: 2d36597f7117c38b006835ae7f537487207d8ec407aa9d9980794b2030cbc067
+    include:
+      - path: internal/sync/singleflight/LICENSE
+        as: LICENSE.singleflight
+
+  - module: github.com/aws/aws-sdk-go-v2
+    reason: >-
+      The code in internal/sync/singleflight/ is the Go authors', under the BSD 3-Clause license
+      in internal/sync/singleflight/LICENSE. It is linked into the image.
+    reviewed:
+      - file: internal/sync/singleflight/LICENSE
+        sha256: f5122de47ce62d57dcd3e57cdf778ceacc3a847645de3332fea58903def93ecb
+    include:
+      - path: internal/sync/singleflight/LICENSE
+        as: LICENSE.singleflight
+
+  - module: github.com/aws/smithy-go
+    reason: >-
+      The code in internal/sync/singleflight/ is the Go authors', under the BSD 3-Clause license
+      in internal/sync/singleflight/LICENSE. It is linked into the image.
+    reviewed:
+      - file: internal/sync/singleflight/LICENSE
+        sha256: f5122de47ce62d57dcd3e57cdf778ceacc3a847645de3332fea58903def93ecb
+    include:
+      - path: internal/sync/singleflight/LICENSE
+        as: LICENSE.singleflight
+
+  - module: github.com/compose-spec/compose-go/v2
+    reason: >-
+      The code in dotenv/ is John Barton's, under the MIT license in dotenv/LICENSE. It is linked
+      into the image.
+    reviewed:
+      - file: dotenv/LICENSE
+        sha256: 9950f69a2f8fe27dd493c365fe0ff6173edd961dfb76d646a5fa280a40b9395e
+    include:
+      - path: dotenv/LICENSE
+        as: LICENSE.dotenv
+
+  - module: github.com/docker/buildx
+    reason: >-
+      The code in bake/hclparser/ is HashiCorp's, under the MPL-2.0 license in
+      bake/hclparser/LICENSE. It is linked into the image.
+    reviewed:
+      - file: bake/hclparser/LICENSE
+        sha256: 28ca54ff46a27183631aa262673d13e3c829d909059f5c861da835fe1783fbec
+    include:
+      - path: bake/hclparser/LICENSE
+        as: LICENSE.hclparser
+
+  - module: github.com/docker/cli
+    reason: >-
+      The code in cli/connhelper/internal/syntax/ is Daniel Martí's, under the BSD 3-Clause
+      license in cli/connhelper/internal/syntax/LICENSE. It is linked into the image. Not every
+      version in the image links it; the entry applies to every version, as Syft treats a module's
+      top-level licenses.
+    reviewed:
+      - file: cli/connhelper/internal/syntax/LICENSE
+        sha256: ce63850f77649f00d1394045e2794ffb09a5596beabac51c9548edd958845d7c
+    include:
+      - path: cli/connhelper/internal/syntax/LICENSE
+        as: LICENSE.syntax
+
+  - module: github.com/go-jose/go-jose/v4
+    reason: >-
+      The code in json/ is the Go authors', under the BSD 3-Clause license in json/LICENSE. It is
+      linked into the image.
+    reviewed:
+      - file: json/LICENSE
+        sha256: dd26a7abddd02e2d0aba97805b31f248ef7835d9e10da289b22e3b8ab78b324d
+    include:
+      - path: json/LICENSE
+        as: LICENSE.json
+
+  - module: github.com/golangci/gofmt
+    reason: >-
+      The code in internal/ is the Go authors', under the BSD 3-Clause license in
+      internal/LICENSE. It is linked into the image.
+    reviewed:
+      - file: internal/LICENSE
+        sha256: 2d36597f7117c38b006835ae7f537487207d8ec407aa9d9980794b2030cbc067
+    include:
+      - path: internal/LICENSE
+        as: LICENSE.internal
+
+  - module: github.com/golangci/golangci-lint/v2
+    reason: >-
+      The code in internal/go/ is the Go authors', under the BSD 3-Clause license in
+      internal/go/LICENSE. It is linked into the image.
+    reviewed:
+      - file: internal/go/LICENSE
+        sha256: 2d36597f7117c38b006835ae7f537487207d8ec407aa9d9980794b2030cbc067
+    include:
+      - path: internal/go/LICENSE
+        as: LICENSE.internal-go
+
+  - module: github.com/hashicorp/golang-lru/v2
+    reason: >-
+      The code in simplelru/ is the Go authors', under the BSD 3-Clause license in
+      simplelru/LICENSE_list. It is linked into the image.
+    reviewed:
+      - file: simplelru/LICENSE_list
+        sha256: 6d462371baa8649492b06f51f154dba9b25d2ac9548369b8b4fdbbbb85f2f75d
+    include:
+      - path: simplelru/LICENSE_list
+        as: LICENSE.simplelru
+
+  - module: github.com/open-policy-agent/opa
+    reason: >-
+      The code in internal/edittree/bitvector/ is Dropbox's, under the BSD 3-Clause license in
+      internal/edittree/bitvector/license.txt. It is linked into the image.
+    reviewed:
+      - file: internal/edittree/bitvector/license.txt
+        sha256: 185effe24905321d45fe84c7087b05fbcee850caf42a72e037d318cdcb700f8d
+    include:
+      - path: internal/edittree/bitvector/license.txt
+        as: LICENSE.bitvector
+
+  - module: github.com/prometheus/client_golang
+    reason: >-
+      The code in internal/github.com/golang/gddo/ is the Go authors', under the BSD 3-Clause
+      license in internal/github.com/golang/gddo/LICENSE. It is linked into the image.
+    reviewed:
+      - file: internal/github.com/golang/gddo/LICENSE
+        sha256: dfffb9ec737eaba985243e95a549bd8c3a4d462032cfe603e2a6704c346427b6
+    include:
+      - path: internal/github.com/golang/gddo/LICENSE
+        as: LICENSE.gddo
+
+  - module: github.com/stretchr/testify
+    reason: >-
+      The code in internal/difflib/ is Patrick Mezard's, under the BSD 3-Clause license in
+      internal/difflib/LICENSE. The code in internal/spew/ is Dave Collins', under the ISC license
+      in internal/spew/LICENSE. Both are linked into the image.
+    reviewed:
+      - file: internal/difflib/LICENSE
+        sha256: c615fb76b7891c9b36b0e352c111d5a2fe77c0111e4129a23659b25b26c3fdd2
+      - file: internal/spew/LICENSE
+        sha256: 1b93a317849ee09d3d7e4f1d20c2b78ddb230b4becb12d7c224c927b9d470251
+    include:
+      - path: internal/difflib/LICENSE
+        as: LICENSE.difflib
+      - path: internal/spew/LICENSE
+        as: LICENSE.spew
+
+  - module: k8s.io/apimachinery
+    reason: >-
+      The code in third_party/forked/golang/ is the Go authors', under the BSD 3-Clause license in
+      third_party/forked/golang/LICENSE. It is linked into the image.
+    reviewed:
+      - file: third_party/forked/golang/LICENSE
+        sha256: 2d36597f7117c38b006835ae7f537487207d8ec407aa9d9980794b2030cbc067
+    include:
+      - path: third_party/forked/golang/LICENSE
+        as: LICENSE.forked-golang
+
+  - module: k8s.io/client-go
+    reason: >-
+      The code in third_party/forked/golang/ is the Go authors', under the BSD 3-Clause license in
+      third_party/forked/golang/LICENSE. It is linked into the image. Not every version in the
+      image links it; the entry applies to every version, as Syft treats a module's top-level
+      licenses.
+    reviewed:
+      - file: third_party/forked/golang/LICENSE
+        sha256: 2d36597f7117c38b006835ae7f537487207d8ec407aa9d9980794b2030cbc067
+    include:
+      - path: third_party/forked/golang/LICENSE
+        as: LICENSE.forked-golang
+
+  - module: k8s.io/utils
+    reason: >-
+      The code in internal/third_party/forked/golang/ is the Go authors', under the BSD 3-Clause
+      license in internal/third_party/forked/golang/LICENSE. It is linked into the image.
+    reviewed:
+      - file: internal/third_party/forked/golang/LICENSE
+        sha256: dd26a7abddd02e2d0aba97805b31f248ef7835d9e10da289b22e3b8ab78b324d
+    include:
+      - path: internal/third_party/forked/golang/LICENSE
+        as: LICENSE.forked-golang

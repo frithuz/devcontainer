@@ -6,7 +6,7 @@
 .
 ├── LICENSE                     # CC0-1.0 for this project's own files; copied to /legal/LICENSE
 ├── Dockerfile                  # Multi-stage image definition (stages `image` and `preflight`)
-├── docker-bake.hcl             # Bake targets `image`, `preflight`, `source-plan`, and `source`, shared by CI and local builds
+├── docker-bake.hcl             # Bake targets `image`, `preflight`, `config`, `source-plan`, and `source`, shared by CI and local builds
 ├── .dockerignore
 ├── rootfs/
 │   ├── etc/devcontainer/env.sh # Non-interactive shell environment (BASH_ENV target)
@@ -17,9 +17,11 @@
 ├── scripts/
 │   ├── install-gh.sh           # Scripted installs, one script per tool, only where needed
 │   ├── collect-legal.sh        # Gathers notices + records all components and exact source provenance
-│   ├── legal-components.tsv    # Copied tools: stage, license, version command, notices (read by collect-legal.sh)
-│   ├── source-roots.tsv        # Non-apt root programs that owe source, documented gaps, and license elections
-│   ├── source-apt.tsv          # apt repositories: binary URL prefixes → source repository, suites, keyring
+│   ├── legal-components.yaml   # Copied tools: stage, license, version command, notices (read by collect-legal.sh)
+│   ├── source-roots.yaml       # Non-apt root programs that owe source, documented gaps, and license elections
+│   ├── source-apt.yaml         # apt repositories: binary URL prefixes → source repository, suites, keyring
+│   ├── license-evidence.yaml   # Reviewed license texts added to Go modules so Syft sees every license their notices name
+│   ├── schemas/                # JSON Schemas for the YAML files above (editors and the config stage)
 │   ├── plan-sources.sh         # Derives the source images an image needs from its manifest.tsv and resolves their inputs
 │   ├── build-source-image.sh   # Fetches and verifies one root program's complete source (run by source.Dockerfile)
 │   └── build-sources.sh        # Local driver: plan, then build every source image (bake source-plan + sources)
@@ -74,6 +76,8 @@ Anything that has to be fetched or installed by script, and doesn't need to live
 - `pnpm-dist`: adds the `pn`, `pnpx`, and `pnx` hard links next to the binary from the `pnpm` source stage (see [tooling.md](tooling.md#notes-per-tool)).
 - `apt-keys`: fetches the git-core PPA and Docker repository signing keys and checks their fingerprints, so `gnupg` stays out of the final image.
 - `gh`: downloads the latest `gh` release tarball and verifies it against the release's published checksums (see [tooling.md](tooling.md#notes-per-tool)).
+- `jv`: builds `jv`, a JSON Schema validator, with `go install` at a pinned version (no upstream image publishes it). It's static, and the stage also keeps the module's `LICENSE`. The image ships it for CI systems, and the `config` stage uses it.
+- `config`: validates the scripts' data files (`scripts/*.yaml`) against their JSON Schemas in `scripts/schemas/`, rejects duplicate names, and converts them to JSON. `collect-legal.sh` and `plan-sources.sh` read only this output, never the YAML, so a malformed file fails the build before anything uses it. `docker buildx bake config` runs the check on its own and exports the JSON to `out/config/`. Each YAML file names its schema in a `yaml-language-server` comment, so editors with YAML language support complete and check it as you type.
 
 ### 3. Final stage (`image`)
 
@@ -122,7 +126,7 @@ Publishing builds `image` once and records its digest. It does not build `prefli
 
 Binaries copied from upstream images have to run on Ubuntu's glibc. Rules:
 
-- Prefer **statically linked** binaries (most Go tools: hadolint, shfmt, gomplate, golangci-lint, betterleaks, gh, oras; plus uv).
+- Prefer **statically linked** binaries (most Go tools: hadolint, shfmt, gomplate, yq, jv, golangci-lint, betterleaks, gh, oras; plus uv).
 - For dynamically linked tools (Node, Python, git-cliff, pnpm), copy from a **glibc** (Debian-based) image whose glibc is no newer than Ubuntu 26.04's. Never copy dynamic binaries out of Alpine/musl images.
 - **Python** needs the most care. The official image builds CPython against Debian's shared libraries, so the final stage must install the Ubuntu packages that provide the same sonames: OpenSSL 3, libffi, SQLite, zlib, bzip2, xz/lzma, readline, ncurses, expat, uuid, and gdbm. The exact package list is taken from the source image (`ldd` on the interpreter and on `lib-dynload/*.so`) during implementation. A missing library doesn't break `python3 --version`; it surfaces only when the matching stdlib module is imported. That's why the smoke test imports them.
 - `test/smoke.sh` runs every binary on both architectures in CI, which catches incompatibilities.

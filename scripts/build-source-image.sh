@@ -75,10 +75,10 @@ vendor_go() {
 	moddir=$(dirname "$gomod")
 	case $mode in
 	go-vendor)
-		[[ ! -e $moddir/vendor ]] || die "$main already commits vendor/; use vendored in scripts/source-roots.tsv"
+		[[ ! -e $moddir/vendor ]] || die "$main already commits vendor/; set vendoring: vendored in scripts/source-roots.yaml"
 		(cd "$moddir" && GOFLAGS=-mod=mod go mod vendor)
 		;;
-	vendored) [[ -f $moddir/vendor/modules.txt ]] || die "$main commits no vendor/modules.txt; use go-vendor in scripts/source-roots.tsv" ;;
+	vendored) [[ -f $moddir/vendor/modules.txt ]] || die "$main commits no vendor/modules.txt; set vendoring: go-vendor in scripts/source-roots.yaml" ;;
 	*) die "unknown vendoring $mode" ;;
 	esac
 	# modules.txt module lines: "# <path> <version> [=> <replacement> [<version>]]".

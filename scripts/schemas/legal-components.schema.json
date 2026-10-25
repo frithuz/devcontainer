@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Legal components",
+  "description": "Components copied from pinned upstream images, with their licenses and notices (scripts/legal-components.yaml).",
+  "type": "object",
+  "required": ["components"],
+  "additionalProperties": false,
+  "properties": {
+    "components": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/component" }
+    }
+  },
+  "$defs": {
+    "path": { "type": "string", "pattern": "^/" },
+    "component": {
+      "type": "object",
+      "required": ["name", "stage", "license", "version", "notices", "paths"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "description": "Component name in manifest.tsv. Unique.",
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9.-]*$"
+        },
+        "stage": {
+          "description": "The Dockerfile stage it's copied from: a pinned FROM ... AS <stage> (install: image), the stage that builds it (install: go-install), or base for files the Ubuntu base image ships outside any apt package.",
+          "type": "string",
+          "minLength": 1
+        },
+        "install": {
+          "description": "image (default): copied from a pinned upstream image, recorded with its digest. go-install: built with `go install <module>@<version>` in its stage, recorded with the module, version, and go.sum hash from the binary's build info.",
+          "enum": ["image", "go-install"],
+          "default": "image"
+        },
+        "license": { "description": "SPDX license expression.", "type": "string", "minLength": 1 },
+        "version": {
+          "description": "Command that prints the installed version; the first x.y[.z] in its output is used.",
+          "type": "string",
+          "minLength": 1
+        },
+        "notices": {
+          "description": "Notice files in the image (globs). At least one must exist.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/path" }
+        },
+        "paths": {
+          "description": "Installed files and directories. The first is hashed for the SBOM; all count as accounted for in the unowned-executable check.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/path" }
+        },
+        "upstream": {
+          "description": "License files to fetch from GitHub at the installed version, when the image doesn't ship them. They go to /legal/attribution/<name>/.",
+          "type": "object",
+          "required": ["repository", "tag", "files"],
+          "additionalProperties": false,
+          "properties": {
+            "repository": {
+              "description": "GitHub owner/repo.",
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+            },
+            "tag": {
+              "description": "Tag pattern; {version} is replaced with the installed version. Quote it in YAML when it starts with {.",
+              "type": "string",
+              "pattern": "\\{version\\}"
+            },
+            "files": {
+              "description": "Paths in the repository.",
+              "type": "array",
+              "minItems": 1,
+              "items": { "type": "string", "pattern": "^[^/]" }
+            }
+          }
+        },
+        "purl": {
+          "description": "Package URL for tools SBOM scanners can't identify on their own; {version} is replaced. Adds the component to /legal/sbom/devcontainer.cdx.json.",
+          "type": "string",
+          "pattern": "^pkg:"
+        }
+      }
+    }
+  }
+}
