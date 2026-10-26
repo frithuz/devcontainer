@@ -1,8 +1,8 @@
 # Builds the image once and publishes it with its source images (docs/maintenance.md#publishing).
 #
-# For now this pushes to GHCR only, under the recovery tag build-<run id>. Not yet implemented:
-# source indexes, the public tags (:main, :latest, :YYYYMMDD), verify, and promote to Quay. Public
-# tags wait for the source indexes (docs/legal.md#publishing).
+# For now this pushes to GHCR only, under the recovery tag build-<run id>, with an optional
+# :latest tag on manual runs. Not yet implemented: source indexes, automatic public tags
+# (:main, :latest, :YYYYMMDD), verify, and promote to Quay (docs/legal.md#publishing).
 name: publish
 run-name: >-
   ${{ github.event_name == 'push'
@@ -20,6 +20,10 @@ on:
     inputs:
       refresh:
         description: Refresh the apt packages and agent installs, like the weekly build
+        type: boolean
+        default: false
+      latest:
+        description: Also tag the built image as latest on GHCR
         type: boolean
         default: false
 
@@ -51,7 +55,9 @@ jobs:
         REVISION=${{ github.sha }}
         REFRESH=${{ (github.event_name == 'schedule' || inputs.refresh) && github.run_id || '' }}
       meta-images: ghcr.io/${{ github.repository_owner }}/devcontainer
-      meta-tags: type=raw,value=build-${{ github.run_id }}
+      meta-tags: |
+        type=raw,value=build-${{ github.run_id }}
+        type=raw,value=latest,enable=${{ github.event_name == 'workflow_dispatch' && inputs.latest }}
     secrets:
       registry-auths: |
         - registry: ghcr.io

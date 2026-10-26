@@ -1,6 +1,6 @@
 # Maintenance
 
-> Planned: Dependabot, `ci.yml`, and `test/` don't exist yet. `publish.yml` so far only builds, pushes to GHCR under the recovery tag `build-<run id>`, and publishes the source images: source indexes, public tags, `verify`, and `promote` are still to come. This page describes the intended design.
+> Planned: Dependabot, `ci.yml`, and `test/` don't exist yet. `publish.yml` so far only builds, pushes to GHCR under the recovery tag `build-<run id>` (optionally also `latest` on manual runs), and publishes the source images: source indexes, automatic public tags, `verify`, and `promote` are still to come. This page describes the intended design.
 
 ## Dependabot
 
@@ -40,6 +40,8 @@ The smoke tests run in the PR build and against the published digest, on both ar
 - **Image environment** keeps the image's `ENV` and resets only `PATH`. It checks that the pnpm configuration applies as `agent`, as root, and with an empty `HOME`, that `agent` can write to the shared install targets, that the sandbox contract and sudo behavior hold, and that the locale is set without warnings.
 
 ## Publishing (`publish.yml`)
+
+For a manual run, select **Run workflow** and enable **Also tag the built image as latest on GHCR** (`latest`, off by default). The build pushes both `build-<run id>` and `latest` to the same image digest. This opt-in tag is applied during the build, before source publication, so it can move even if the later source job fails. The `refresh` input remains independent.
 
 The image goes to two public registries with the same tags, digests, signatures, and source:
 
