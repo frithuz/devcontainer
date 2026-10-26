@@ -182,14 +182,10 @@ jobs:
       - name: Set the repository
         run: echo "REPOSITORY=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/devcontainer" >>"$GITHUB_ENV"
 
-      # Each platform's manifest comes from the pushed digest, never from a rebuild. COPY --from
-      # doesn't run anything, so the other platform needs no emulation.
+      # Each platform's manifest comes from the pushed digest, never from a rebuild.
       - name: Copy the manifests out of the image
         run: |
-          docker buildx build --platform linux/amd64,linux/arm64 --output type=local,dest=out/manifests - <<EOF
-          FROM scratch
-          COPY --from=$REPOSITORY@$DIGEST /legal/manifest.tsv /
-          EOF
+          scripts/copy-manifests.sh "$REPOSITORY@$DIGEST" out/manifests
           find out/manifests -name manifest.tsv
 
       # Source images already in the repository with the same key are reused, not rebuilt. The

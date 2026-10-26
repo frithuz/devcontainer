@@ -19,13 +19,7 @@ fi
 
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
-
-# COPY --from doesn't run anything, so the other platform needs no emulation.
-docker buildx build --quiet --platform linux/amd64,linux/arm64 \
-	--output "type=local,dest=$work" - >/dev/null <<EOF
-FROM scratch
-COPY --from=$ref /legal/manifest.tsv /
-EOF
+scripts/copy-manifests.sh "$ref" "$work/manifests"
 
 # Replaces the one line matching $2 in file $1 with $3, and fails unless exactly one matches.
 replace_line() {
@@ -41,7 +35,7 @@ replace_line() {
 }
 
 for kit in claude codex; do
-	versions=$(awk -F'\t' -v kit="$kit" '$1 == kit { print $2 }' "$work"/*/manifest.tsv | sort -u)
+	versions=$(awk -F'\t' -v kit="$kit" '$1 == kit { print $2 }' "$work"/manifests/*/manifest.tsv | sort -u)
 	if [[ ! $versions =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
 		echo "update-kits: $ref doesn't record one $kit version across its platforms: ${versions:-none}" >&2
 		exit 1
