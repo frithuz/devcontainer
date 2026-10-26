@@ -1,6 +1,6 @@
 # Maintenance
 
-> Planned: `ci.yml` and `test/` don't exist yet, and Dependabot covers only the `docker` ecosystem so far. `publish.yml` so far only builds, pushes to GHCR under the recovery tag `build-<run id>` (also `latest` on pushes to `main`, and optionally on manual runs), publishes the source images and attaches the source indexes, and, only on runs that tag `latest`, promotes the image with its source to Quay under the same tags: automatic public tags and `verify` are still to come. This page describes the intended design.
+> Planned: `ci.yml` has no `preflight` job and `test/smoke.sh` doesn't exist yet, and Dependabot covers only the `docker` ecosystem so far. `publish.yml` so far only builds, pushes to GHCR under the recovery tag `build-<run id>` (also `latest` on pushes to `main`, and optionally on manual runs), publishes the source images and attaches the source indexes, and, only on runs that tag `latest`, promotes the image with its source to Quay under the same tags: automatic public tags and `verify` are still to come. This page describes the intended design.
 
 ## Dependabot
 
@@ -13,6 +13,7 @@ Dependabot runs weekly on two ecosystems: `docker`, for every pinned `FROM` in `
 
 - **apt packages** (base, git PPA, Docker Engine), **`gh`**, and the **agent CLIs** aren't pinned. The weekly build's refresh argument reinstalls them ([architecture.md](architecture.md#dockerfile-structure)). Other builds may reuse cached layers, so a push build can be up to a week behind on these.
 - **`jv` and `task`** are pinned as Go module versions in their builder stages and bumped by hand.
+- **`lint.yml`'s container** pins a published image by tag and digest, bumped by hand. Dependabot doesn't update workflow `container:` images, and `kits.yml` can't do it either: `GITHUB_TOKEN` can't push changes to workflow files. Use GHCR's `build-<run id>` tag of Quay's current `latest`.
 - **License files** are fetched from the installed version's upstream tag on every build, so there's nothing to track. When a tool is bumped, review its `SOURCE` checksums for a license change ([legal.md](legal.md#how-files-get-there)).
 
 ## Build definitions
@@ -23,12 +24,14 @@ Both workflows build through [`docker/github-builder`](https://github.com/docker
 
 ## CI (`ci.yml`, on every PR)
 
-`lint.yml` runs [actionlint](https://github.com/rhysd/actionlint) and [zizmor](https://docs.zizmor.sh/) over the workflows on every PR and push to `main`, zizmor at the `auditor` persona. They run as background steps of one job, so both always run, and any finding from either fails it. actionlint's `.github/actionlint.yaml` lists runner labels newer than its built-in list, and ignores its errors on background steps in `lint.yml` until it supports them. For zizmor, every write permission needs a comment saying why it's there and every job needs a `name`. `.github/zizmor.yml` lowers its minimum Dependabot cooldown to the 3 days configured.
+`lint.yml` runs on every PR and push to `main`, in two jobs. Each runs its tools as background steps, so all of them always run, and any finding fails the job.
 
-- **lint:** hadolint, shfmt, and betterleaks over the repository.
-- **preflight:** builds both architectures and runs the smoke tests inside the build.
-- **sources-plan:** runs `scripts/plan-sources.sh --check` on the exported manifests, so a copyleft component whose exact source can't be resolved fails the PR instead of the publish.
-- **runtime:** DinD checks in a dedicated privileged container with no host socket ([architecture.md](architecture.md#docker)).
+- **Workflows:** [actionlint](https://github.com/rhysd/actionlint) and [zizmor](https://docs.zizmor.sh/), zizmor at the `auditor` persona. They stay on the runner: zizmor's action mounts the workspace into a container by its runner path, which a job container doesn't have.
+- **Repository:** hadolint over the Dockerfiles and kits, shfmt over every shell script it recognizes (including the bats tests), and betterleaks over the git history. It runs inside the published image, as a consumer would ([usage.md](usage.md#github-actions)). actionlint's `.github/actionlint.yaml` lists runner labels newer than its built-in list, and ignores its errors on background steps in `lint.yml` until it supports them. For zizmor, every write permission needs a comment saying why it's there and every job needs a `name`. `.github/zizmor.yml` lowers its minimum Dependabot cooldown to the 3 days configured.
+
+- **preflight** (planned): builds both architectures and runs the smoke tests inside the build.
+- **runtime:** builds the image natively on each architecture, loads it into the runner's daemon, and runs `test/runtime.sh` in a privileged container with no host socket and its own volumes for the daemon's data ([architecture.md](architecture.md#docker)). The script refuses to run if another daemon is reachable, then checks that the daemon answering is the container's, and builds and runs an image and a compose service without pulling anything. The build reads publish's cache for its platform and writes none. It also uploads each platform's `/legal/manifest.tsv`, before the checks, so sources-plan runs even when they fail.
+- **sources-plan:** runs `scripts/build-sources.sh --plan-only` on both platforms' manifests, so a copyleft component whose exact source can't be resolved fails the PR instead of the publish. Source images already in GHCR with the same key show as reused in the summary.
 
 The GitHub Actions `container:` check needs an image in a registry, so it runs in `publish.yml` against the pushed digest.
 
@@ -82,7 +85,7 @@ The rules behind that shape:
 
 Rebuilding the same commit doesn't reproduce the same digest. A refresh reruns every `RUN` step, and timestamps, logs, and caches change most layers even when nothing installed changed. Run 40313178179, a refresh of the commit run 40265483889 built, changed 38 of 42 arm64 layers, with an identical config and an identical inventory. So `publish.yml` compares what the image is made of instead, against Quay's `latest`, before anything is pushed:
 
-1. **Build inputs.** The `changes` job diffs this commit against the one `latest` was built from (its index's `org.opencontainers.image.revision`), over the files that reach the image or its source images: everything `.dockerignore` admits to the build context, `.dockerignore` itself, `docker-bake.hcl`, and `publish.yml`, which sets the image's annotations. That covers the Dockerfile's logic, `rootfs/`, the scripts, and the base image pin. The scripts that only compare or copy manifests, or point the kits at an image, are left out.
+1. **Build inputs.** The `changes` job diffs this commit against the one `latest` was built from (its index's `org.opencontainers.image.revision`), over the files that reach the image or its source images: everything `.dockerignore` admits to the build context, `.dockerignore` itself, `docker-bake.hcl`, and `publish.yml`, which sets the image's annotations. That covers the Dockerfile's logic, `rootfs/`, the scripts, and the base image pin. The scripts that only compare or copy manifests, or point the kits at an image, are left out, and so is `test/runtime.sh`, which `ci.yml` runs against a built image.
 2. **Inventory.** Unchanged inputs can still produce a different image when a refresh installs newer apt packages or agents. On a refresh, `preflight` builds the `preflight` target, which pushes nothing and exports each platform's `/legal/manifest.tsv`. `inventory` compares it with `latest`'s, ignoring the project row's revision. Every installed apt package is a row with its version and `.deb` SHA512, and the agents' rows carry their binary checksums.
 
 | Inputs | Run | Result |

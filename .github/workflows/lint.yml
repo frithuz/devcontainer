@@ -49,3 +49,49 @@ jobs:
           persona: auditor
           advanced-security: false
           annotations: true
+
+  # The repository's own tools, from the image the repository publishes. Pinned by hand: Dependabot
+  # doesn't update container: images, and kits.yml's GITHUB_TOKEN can't push workflow changes
+  # (docs/maintenance.md#updates-dependabot-cant-handle).
+  repository:
+    name: Lint the repository
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+    container:
+      image: ghcr.io/frithuz/devcontainer:build-40358718718@sha256:1598abcab8bf07ec98e0edea830d77177cf82d1c3cfff9027dd02a769cdd2454
+      options: --user root
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # betterleaks scans every commit.
+          fetch-depth: 0
+          persist-credentials: false
+
+      # The checkout belongs to the runner's user, not root (docs/usage.md#github-actions).
+      - name: Trust the checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      # Like the workflow linters, each tool runs in the background of the others, so all of them
+      # always run.
+
+      # Uses .hadolint.yaml.
+      - name: Run hadolint
+        id: hadolint
+        background: true
+        run: hadolint Dockerfile source.Dockerfile sandboxes/*/*.dockerfile
+
+      # Every shell script shfmt recognizes, by extension or shebang, including the bats tests.
+      - name: Run shfmt
+        id: shfmt
+        background: true
+        run: shfmt --diff .
+
+      - name: Run betterleaks
+        id: betterleaks
+        background: true
+        run: betterleaks git --no-banner --redact --verbose .

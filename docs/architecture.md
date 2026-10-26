@@ -6,9 +6,10 @@
 - `rootfs/`: files copied into the image as-is (the `BASH_ENV` script and `start-dockerd`).
 - `legal/`, `scripts/`: the committed `/legal` documents, the scripts that collect notices and plan source images, and their schema-validated YAML data.
 - `source.Dockerfile`: builds [source images](legal.md#source-images).
-- `.github/workflows/`: `lint.yml` (actionlint and zizmor), `publish.yml`, partly implemented ([maintenance.md](maintenance.md#publishing-publishyml)), and `kits.yml`, which keeps the sandbox kits pinned to the latest image ([maintenance.md](maintenance.md#sandbox-kits)).
+- `test/`: `runtime.sh`, the DinD checks, run by `ci.yml` against a built image.
+- `.github/workflows/`: `lint.yml` (the workflow and repository linters), `ci.yml` (DinD checks and source planning on PRs), `publish.yml`, partly implemented ([maintenance.md](maintenance.md#publishing-publishyml)), and `kits.yml`, which keeps the sandbox kits pinned to the latest image ([maintenance.md](maintenance.md#sandbox-kits)).
 - `sandboxes/`: Docker Sandboxes kits, one directory per agent ([usage.md](usage.md#agent-sandboxes-sbx)).
-- Planned, not yet present: `test/` (smoke and DinD checks), and the CI workflow in `.github/`.
+- Planned, not yet present: `test/smoke.sh` and the `preflight` job in `ci.yml`.
 
 ## Dockerfile structure
 
