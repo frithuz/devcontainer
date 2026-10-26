@@ -12,8 +12,8 @@ die() {
 
 [ "$#" -eq 1 ] || die 'expected one commit message file'
 case $1 in
-	/*) message=$1 ;;
-	*) message=./$1 ;;
+/*) message=$1 ;;
+*) message=./$1 ;;
 esac
 [ -f "$message" ] && [ ! -L "$message" ] && [ -r "$message" ] &&
 	[ -w "$message" ] || die "cannot safely read and write $message"
@@ -25,7 +25,7 @@ trap 'rm -rf "$work"' 0
 trap 'exit 1' HUP INT TERM
 
 cp -p "$message" "$work/original" || die 'cannot read the commit message'
-tr -d '\000' < "$work/original" > "$work/text" ||
+tr -d '\000' <"$work/original" >"$work/text" ||
 	die 'cannot check the commit message for NUL bytes'
 cmp -s "$work/original" "$work/text" ||
 	die 'cannot safely process a commit message containing NUL bytes'
@@ -45,12 +45,12 @@ find_entries() {
 			else
 				print
 		}
-	' "$1" > "$work/marked" || die 'cannot mark commit message lines safely'
+	' "$1" >"$work/marked" || die 'cannot mark commit message lines safely'
 
 	# Always recognize the standard colon separator, regardless of user config.
 	# --parse implies --only-input, so configured trailer commands cannot run.
 	git -c trailer.separators=: interpret-trailers --parse --no-divider \
-		< "$work/marked" > "$work/parsed" ||
+		<"$work/marked" >"$work/parsed" ||
 		die 'Git could not parse commit trailers (Git 2.22 or newer is required)'
 
 	awk -v marker="$marker" '
@@ -60,14 +60,14 @@ find_entries() {
 			sub(/:.*/, "", line)
 			print line
 		}
-	' "$work/parsed" > "$work/entries" ||
+	' "$work/parsed" >"$work/entries" ||
 		die 'cannot locate parsed trailers in the commit message'
 }
 
 find_entries "$work/original"
 [ -s "$work/entries" ] || exit 0
 
-bytes=$(wc -c < "$work/original") || die 'cannot measure the commit message'
+bytes=$(wc -c <"$work/original") || die 'cannot measure the commit message'
 cp -p "$work/original" "$work/replacement" ||
 	die 'cannot prepare a commit message replacement'
 awk -v bytes="$bytes" '
@@ -81,7 +81,7 @@ awk -v bytes="$bytes" '
 		if (!dropping)
 			printf "%s%s", $0, (end <= bytes ? "\n" : "")
 	}
-' "$work/entries" "$work/original" > "$work/replacement" ||
+' "$work/entries" "$work/original" >"$work/replacement" ||
 	die 'cannot write the sanitized commit message'
 
 # Removing a whole footer must not expose an earlier prose paragraph as a new

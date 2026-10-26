@@ -24,7 +24,7 @@ setup() {
 
 	message=$work/repo/message
 	expected=$work/expected
-	printf 'hooks: test sanitization\n\nCo-Authored-By: Example\n' > "$message"
+	printf 'hooks: test sanitization\n\nCo-Authored-By: Example\n' >"$message"
 }
 
 teardown() {
@@ -67,12 +67,12 @@ expect_failure() {
 }
 
 fail_utility() {
-	printf '#!/bin/sh\nexit 1\n' > "$work/bin/$1"
+	printf '#!/bin/sh\nexit 1\n' >"$work/bin/$1"
 	chmod +x "$work/bin/$1"
 }
 
 @test "body mentions without trailers remain unchanged" {
-	cat > "$message" <<'EOF'
+	cat >"$message" <<'EOF'
 hooks: mention Co-Authored-By in the subject
 
 Discuss Co-Authored-By: attribution in ordinary prose.
@@ -84,26 +84,26 @@ EOF
 }
 
 @test "subject without final newline remains unchanged" {
-	printf 'hooks: no final newline' > "$message"
+	printf 'hooks: no final newline' >"$message"
 	cp "$message" "$expected"
 	check_message
 }
 
 @test "empty message remains for Git to validate" {
-	: > "$message"
+	: >"$message"
 	cp "$message" "$expected"
 	check_message
 }
 
 @test "one co-author trailer is removed" {
-	cat > "$message" <<'EOF'
+	cat >"$message" <<'EOF'
 hooks: remove a trailer
 
 Keep the body.
 
 Co-Authored-By: Example <example@example.invalid>
 EOF
-	cat > "$expected" <<'EOF'
+	cat >"$expected" <<'EOF'
 hooks: remove a trailer
 
 Keep the body.
@@ -113,19 +113,19 @@ EOF
 }
 
 @test "multiple case variants and empty co-author values are removed" {
-	cat > "$message" <<'EOF'
+	cat >"$message" <<'EOF'
 hooks: remove repeated trailers
 
 CO-AUTHORED-BY: First <first@example.invalid>
 co-authored-by: Second <second@example.invalid>
 Co-AuThOrEd-By :
 EOF
-	printf 'hooks: remove repeated trailers\n\n' > "$expected"
+	printf 'hooks: remove repeated trailers\n\n' >"$expected"
 	check_message
 }
 
 @test "mixed trailers and continuations preserve original formatting" {
-	cat > "$message" <<'EOF'
+	cat >"$message" <<'EOF'
 hooks: preserve mixed trailers
 
 Co-Authored-By: an example in the body
@@ -141,7 +141,7 @@ co-authored-by: Second <second@example.invalid>
   remove this too
 Signed-off-by: Signer <signer@example.invalid>
 EOF
-	cat > "$expected" <<'EOF'
+	cat >"$expected" <<'EOF'
 hooks: preserve mixed trailers
 
 Co-Authored-By: an example in the body
@@ -156,7 +156,7 @@ EOF
 }
 
 @test "trailer-shaped subject remains unchanged" {
-	cat > "$message" <<'EOF'
+	cat >"$message" <<'EOF'
 Co-Authored-By: subject text
 
 Reviewed-by: Reader
@@ -166,7 +166,7 @@ EOF
 }
 
 @test "comments inside and after the footer remain unchanged" {
-	cat > "$message" <<'EOF'
+	cat >"$message" <<'EOF'
 hooks: preserve comments
 
 Co-Authored-By: Example
@@ -177,7 +177,7 @@ Signed-off-by: Signer
 # Co-Authored-By: a comment, not a trailer
 # Please enter the commit message.
 EOF
-	cat > "$expected" <<'EOF'
+	cat >"$expected" <<'EOF'
 hooks: preserve comments
 
 # Keep this comment between trailers.
@@ -190,14 +190,14 @@ EOF
 }
 
 @test "non-trailer text in a Git-recognized block remains unchanged" {
-	cat > "$message" <<'EOF'
+	cat >"$message" <<'EOF'
 hooks: preserve non-trailer lines
 
 Signed-off-by: Signer
 Keep this non-trailer line in the recognized trailer block.
 Co-Authored-By: Example
 EOF
-	cat > "$expected" <<'EOF'
+	cat >"$expected" <<'EOF'
 hooks: preserve non-trailer lines
 
 Signed-off-by: Signer
@@ -207,7 +207,7 @@ EOF
 }
 
 @test "body divider does not hide trailers" {
-	cat > "$message" <<'EOF'
+	cat >"$message" <<'EOF'
 hooks: allow a divider in prose
 
 ---
@@ -215,7 +215,7 @@ This is part of the body.
 
 Co-Authored-By: Example
 EOF
-	cat > "$expected" <<'EOF'
+	cat >"$expected" <<'EOF'
 hooks: allow a divider in prose
 
 ---
@@ -226,7 +226,7 @@ EOF
 }
 
 @test "scissors and verbose diff remain untouched" {
-	cat > "$message" <<'EOF'
+	cat >"$message" <<'EOF'
 hooks: preserve verbose commit content
 
 Co-Authored-By: Example
@@ -236,7 +236,7 @@ diff --git a/example b/example
 --- a/example
 +++ b/example
 EOF
-	cat > "$expected" <<'EOF'
+	cat >"$expected" <<'EOF'
 hooks: preserve verbose commit content
 
 # ------------------------ >8 ------------------------
@@ -249,20 +249,20 @@ EOF
 }
 
 @test "CRLF and whitespace are preserved" {
-	printf 'hooks: preserve bytes\r\n\r\nBody with a tab\tand spaces  \r\n\r\nCo-Authored-By: Example\r\n\tfolded value\r\nReviewed-by :  Reader\r\n' > "$message"
-	printf 'hooks: preserve bytes\r\n\r\nBody with a tab\tand spaces  \r\n\r\nReviewed-by :  Reader\r\n' > "$expected"
+	printf 'hooks: preserve bytes\r\n\r\nBody with a tab\tand spaces  \r\n\r\nCo-Authored-By: Example\r\n\tfolded value\r\nReviewed-by :  Reader\r\n' >"$message"
+	printf 'hooks: preserve bytes\r\n\r\nBody with a tab\tand spaces  \r\n\r\nReviewed-by :  Reader\r\n' >"$expected"
 	check_message
 }
 
 @test "mixed footer without final newline is preserved" {
-	printf 'hooks: preserve final bytes\n\nCo-Authored-By: Example\nReviewed-by: Reader' > "$message"
-	printf 'hooks: preserve final bytes\n\nReviewed-by: Reader' > "$expected"
+	printf 'hooks: preserve final bytes\n\nCo-Authored-By: Example\nReviewed-by: Reader' >"$message"
+	printf 'hooks: preserve final bytes\n\nReviewed-by: Reader' >"$expected"
 	check_message
 }
 
 @test "co-author trailer without final newline is removed" {
-	printf 'hooks: remove final bytes\n\nCo-Authored-By: Example' > "$message"
-	printf 'hooks: remove final bytes\n\n' > "$expected"
+	printf 'hooks: remove final bytes\n\nCo-Authored-By: Example' >"$message"
+	printf 'hooks: remove final bytes\n\n' >"$expected"
 	check_message
 }
 
@@ -270,25 +270,25 @@ EOF
 	git config trailer.co-authored-by.key 'Renamed-Key'
 	git config trailer.review.cmd 'touch unexpected-command; echo unwanted'
 	git config trailer.separators '='
-	printf 'hooks: ignore trailer rewrites\n\nCo-Authored-By: Example\nReviewed-by : Reader\n' > "$message"
-	printf 'hooks: ignore trailer rewrites\n\nReviewed-by : Reader\n' > "$expected"
+	printf 'hooks: ignore trailer rewrites\n\nCo-Authored-By: Example\nReviewed-by : Reader\n' >"$message"
+	printf 'hooks: ignore trailer rewrites\n\nReviewed-by : Reader\n' >"$expected"
 	check_message
 	[ ! -e unexpected-command ]
 }
 
 @test "custom comment character is respected" {
 	git config core.commentChar ';'
-	printf 'hooks: custom comments\n\nCo-Authored-By: Example\n\n; Keep this comment.\n' > "$message"
-	printf 'hooks: custom comments\n\n\n; Keep this comment.\n' > "$expected"
+	printf 'hooks: custom comments\n\nCo-Authored-By: Example\n\n; Keep this comment.\n' >"$message"
+	printf 'hooks: custom comments\n\n\n; Keep this comment.\n' >"$expected"
 	check_message
 }
 
 @test "absolute and relative message paths with spaces and a leading dash work" {
 	local message_with_spaces="$work/repo/-message with spaces"
 	mv "$message" "$message_with_spaces"
-	printf 'hooks: test sanitization\n\n' > "$expected"
+	printf 'hooks: test sanitization\n\n' >"$expected"
 	check_message "$message_with_spaces"
-	printf 'hooks: test sanitization\n\nCo-Authored-By: Example\n' > "$message_with_spaces"
+	printf 'hooks: test sanitization\n\nCo-Authored-By: Example\n' >"$message_with_spaces"
 	check_message '-message with spaces'
 }
 
@@ -310,12 +310,12 @@ EOF
 }
 
 @test "NUL input is rejected without changing the message" {
-	printf 'hooks: reject NUL\n\nCo-Authored-By: Example\000hidden\n' > "$message"
+	printf 'hooks: reject NUL\n\nCo-Authored-By: Example\000hidden\n' >"$message"
 	expect_failure run_hook "$message"
 }
 
 @test "newly exposed footer is rejected without changing the message" {
-	printf 'hooks: ambiguous footer\n\nCo-Authored-By: body example\n\nCo-Authored-By: footer\n' > "$message"
+	printf 'hooks: ambiguous footer\n\nCo-Authored-By: body example\n\nCo-Authored-By: footer\n' >"$message"
 	expect_failure run_hook "$message"
 }
 
@@ -364,7 +364,7 @@ EOF
 @test "replacement write failure leaves the original message intact" {
 	local real_awk
 	real_awk=$(command -v awk)
-	cat > "$work/bin/awk" <<'EOF'
+	cat >"$work/bin/awk" <<'EOF'
 #!/bin/sh
 case $2 in
 	bytes=*) exit 1 ;;
@@ -376,7 +376,7 @@ EOF
 }
 
 @test "Git runs the hook for a normal commit" {
-	cat > "$message" <<'EOF'
+	cat >"$message" <<'EOF'
 hooks: create a normal commit
 
 Keep this commit body.
@@ -385,7 +385,7 @@ Co-Authored-By: Example <example@example.invalid>
   folded attribution
 Reviewed-by: Reader <reader@example.invalid>
 EOF
-	cat > "$expected" <<'EOF'
+	cat >"$expected" <<'EOF'
 hooks: create a normal commit
 
 Keep this commit body.
@@ -394,7 +394,7 @@ Reviewed-by: Reader <reader@example.invalid>
 EOF
 	run git -c commit.cleanup=strip commit -q --allow-empty -F "$message"
 	[ "$status" -eq 0 ]
-	git log -1 --format=format:%B > "$work/committed"
+	git log -1 --format=format:%B >"$work/committed"
 	diff -u "$expected" "$work/committed"
 }
 
@@ -402,7 +402,7 @@ EOF
 	git commit -q --allow-empty -m 'hooks: initial commit'
 	local first
 	first=$(git rev-parse HEAD)
-	cat > "$message" <<'EOF'
+	cat >"$message" <<'EOF'
 hooks: amend a commit
 
 Mention Co-Authored-By in prose.
@@ -412,7 +412,7 @@ co-authored-by: Second <second@example.invalid>
   folded attribution
 Signed-off-by: Signer <signer@example.invalid>
 EOF
-	cat > "$expected" <<'EOF'
+	cat >"$expected" <<'EOF'
 hooks: amend a commit
 
 Mention Co-Authored-By in prose.
@@ -422,17 +422,17 @@ EOF
 	run git -c commit.cleanup=strip commit -q --amend --allow-empty -F "$message"
 	[ "$status" -eq 0 ]
 	[ "$(git rev-parse HEAD)" != "$first" ]
-	git log -1 --format=format:%B > "$work/committed"
+	git log -1 --format=format:%B >"$work/committed"
 	diff -u "$expected" "$work/committed"
 }
 
 @test "Git preserves the sanitized message when amending without editing" {
-	printf 'hooks: amend without editing\n\nCo-Authored-By: Example\nReviewed-by: Reader\n' > "$message"
-	printf 'hooks: amend without editing\n\nReviewed-by: Reader\n' > "$expected"
+	printf 'hooks: amend without editing\n\nCo-Authored-By: Example\nReviewed-by: Reader\n' >"$message"
+	printf 'hooks: amend without editing\n\nReviewed-by: Reader\n' >"$expected"
 	git -c commit.cleanup=strip commit -q --allow-empty -F "$message"
 	run git commit -q --amend --allow-empty --no-edit
 	[ "$status" -eq 0 ]
-	git log -1 --format=format:%B > "$work/committed"
+	git log -1 --format=format:%B >"$work/committed"
 	diff -u "$expected" "$work/committed"
 }
 
