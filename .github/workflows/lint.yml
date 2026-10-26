@@ -72,10 +72,6 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      # The checkout belongs to the runner's user, not root (docs/usage.md#github-actions).
-      - name: Trust the checkout
-        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-
       # Like the workflow linters, each tool runs in the background of the others, so all of them
       # always run.
 
@@ -91,7 +87,12 @@ jobs:
         background: true
         run: shfmt --diff .
 
+      # The checkout belongs to the runner's user, not root, so git needs it marked safe
+      # (docs/usage.md#github-actions). betterleaks runs git without the global and system config,
+      # so it's passed through git's environment instead.
       - name: Run betterleaks
         id: betterleaks
         background: true
-        run: betterleaks git --no-banner --redact --verbose .
+        run: |
+          GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="$GITHUB_WORKSPACE" \
+            betterleaks git --no-banner --redact --verbose .
