@@ -1,0 +1,186 @@
+# syntax=docker/sandbox-kit:3
+# Codex on the devcontainer image. The credential and config seed follow Docker's codex
+# workload (github.com/docker/sandbox-kit-spec, examples/codex), without the version
+# re-pin and Docker Desktop hooks: the image installs Codex itself. Codex keeps its
+# binaries in ~/.codex, so nothing mounts over that directory.
+schemaVersion: "3"
+displayName: Codex (devcontainer)
+description: OpenAI Codex on the frithuz devcontainer image
+sourceUrl: https://github.com/frithuz/devcontainer
+licenses: [CC0-1.0]
+
+kind: workload
+
+args:
+  model:
+    default: ""
+    pattern: '^[A-Za-z0-9._-]*$'
+    description: Codex model to use (config.toml `model`); empty keeps the CLI default
+    env: CODEX_MODEL
+  reasoningEffort:
+    default: ""
+    pattern: '^(none|minimal|low|medium|high|xhigh|max|ultra|persistent)?$'
+    description: Reasoning effort (config.toml `model_reasoning_effort`); empty keeps the CLI default
+    env: CODEX_REASONING_EFFORT
+
+# The version the image installed. The agent may update itself inside the sandbox.
+# scripts/update-kits.sh rewrites this line and the dockerfile's FROM together.
+provides: ["codex@0.164.0"]
+
+capabilities:
+  - type: com.docker.sandbox/sbx@1
+
+  # The agent's API and update hosts (Codex updates from GitHub releases), then the
+  # image's apt sources and its toolchains' package registries.
+  - type: com.docker.sandbox/network-policy@1
+    config:
+      runtime:
+        allow:
+          - api.openai.com:443
+          - openai.com:443
+          - auth.openai.com:443
+          - chatgpt.com:443
+          - files.openai.com:443
+          - releases.openai.com:443
+          - api.github.com:443
+          - github.com:443
+          - release-assets.githubusercontent.com:443
+          - codeload.github.com:443
+          - archive.ubuntu.com
+          - security.ubuntu.com
+          - ports.ubuntu.com
+          - ppa.launchpadcontent.net:443
+          - download.docker.com:443
+          - registry.npmjs.org:443
+          - pypi.org:443
+          - files.pythonhosted.org:443
+          - proxy.golang.org:443
+          - sum.golang.org:443
+
+  # Both apiKey and oauth: the host's binding picks the mode. OAuth model calls go
+  # through chatgpt.com, so it's a resource host.
+  - type: com.docker.sandbox/credential@1
+    optional: true
+    description: OpenAI API access (API key or ChatGPT OAuth)
+    config:
+      service: openai
+      phase: runtime
+      apiKey:
+        name: OPENAI_API_KEY
+        proxyManaged: true
+        inject:
+          - {domain: api.openai.com, header: Authorization, format: "Bearer %s"}
+          - {domain: openai.com, header: Authorization, format: "Bearer %s"}
+      oauth:
+        tokenEndpoint: {host: auth.openai.com, path: /oauth/token}
+        resourceHosts:
+          - chatgpt.com
+        sentinels:
+          accessToken: oai-oat01-proxy-managed
+          refreshToken: oai-ort01-proxy-managed
+
+  - type: com.docker.sandbox/lifecycle@1
+    config:
+      install:
+        # Rewritten on every create from the bound auth mode, so it's idempotent. Top-level
+        # keys go before the tables. The arg patterns admit no quote or backslash, so
+        # they're safe in TOML strings.
+        - command: |
+            set -e
+            mkdir -p /home/agent/.codex /home/agent/.agents
+            mode="${SBX_CRED_OPENAI_MODE:-none}"
+            cfg=/home/agent/.codex/config.toml
+            cat > "$cfg" <<'EOF'
+            approval_policy = "never"
+            sandbox_mode = "danger-full-access"
+            mcp_oauth_credentials_store = "file"
+            EOF
+            model='${{ kit.args.model }}'
+            effort='${{ kit.args.reasoningEffort }}'
+            [ -z "$model" ] || printf 'model = "%s"\n' "$model" >> "$cfg"
+            [ -z "$effort" ] || printf 'model_reasoning_effort = "%s"\n' "$effort" >> "$cfg"
+            case "$mode" in
+              oauth|apikey) echo 'forced_login_method = "api"' >> "$cfg" ;;
+            esac
+            if [ "$mode" = oauth ]; then
+              cat >> "$cfg" <<'EOF'
+            model_provider = "sandboxd"
+
+            [model_providers.sandboxd]
+            name = "Sandbox Proxy"
+            base_url = "https://chatgpt.com/backend-api/codex"
+            experimental_bearer_token = "oai-oat01-proxy-managed"
+            requires_openai_auth = false
+            EOF
+            fi
+            ws="${WORKSPACE_DIR:-/home/agent/workspace}"
+            esc=$(printf '%s' "$ws" | sed 's/\\/\\\\/g; s/"/\\"/g')
+            cat >> "$cfg" <<EOF
+
+            [projects."$esc"]
+            trust_level = "trusted"
+            EOF
+            case "$mode" in
+              oauth|apikey) printf '{\n  "OPENAI_API_KEY": "proxy-managed"\n}\n' > /home/agent/.codex/auth.json ;;
+              *) rm -f /home/agent/.codex/auth.json ;;
+            esac
+          user: agent
+          env: [SBX_CRED_OPENAI_MODE, WORKSPACE_DIR]
+          description: Seed Codex config and auth from the bound auth mode
+      startup:
+        # Appended once; a later start finds the table and leaves it alone.
+        - command: |
+            set -e
+            [ -n "$MCP_GATEWAY_URL" ] || exit 0
+            cfg="$HOME/.codex/config.toml"
+            touch "$cfg"
+            grep -q '^\[mcp_servers.mcp-gateway\]' "$cfg" && exit 0
+            esc() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+            url=$(esc "$MCP_GATEWAY_URL")
+            auth=$(esc "$MCP_SENTINEL_TOKEN_NAME")
+            cat >> "$cfg" <<EOF
+
+            [mcp_servers.mcp-gateway]
+            url = "$url"
+            http_headers = { Authorization = "Bearer $auth" }
+            EOF
+          user: agent
+          env: [MCP_GATEWAY_URL, MCP_SENTINEL_TOKEN_NAME]
+          description: Register the sandbox MCP gateway in ~/.codex/config.toml
+
+  - type: com.docker.sandbox/agent-sessions@1
+    config:
+      prompt: ["exec", "--", "{{.Prompt}}"]
+      resume: ["resume", "{{.SessionID}}"]
+      continue: ["resume", "--last"]
+
+  - type: com.docker.sandbox/agent-interactive-sessions@1
+    optional: true
+    config:
+      prompt: ["--", "{{.Prompt}}"]
+      continue: ["resume", "--last"]
+      resume: ["resume", "{{.SessionID}}"]
+      sessionPicker: ["resume"]
+
+  - type: com.docker.sandbox/agent-skills@1
+    optional: true
+    config:
+      path: /home/agent/.agents/skills
+
+  - type: com.docker.sandbox/agent-context@2
+    config:
+      filename: AGENTS.md
+      directory: /home/agent/.codex
+      content: |
+        ## Sandbox environment
+
+        This sandbox runs the frithuz devcontainer image (Ubuntu 26.04 LTS) with one
+        pinned toolset: Go, Node with pnpm, Python with uv, gh, task, jq, yq, and linters
+        such as golangci-lint, hadolint, and shfmt. /legal/manifest.tsv lists everything.
+
+        - Persistent environment comes from `BASH_ENV` (/etc/devcontainer/env.sh), not
+          shell profiles. Don't rely on `.bashrc` or `/etc/profile`.
+        - `go install` and `pnpm add -g` write to shared, group-writable directories that
+          are already on `PATH`.
+        - Never run `start-dockerd` here. Container access is up to the sandbox.
+        - Credentials are proxy-managed. Tokens in local config files are sentinels.

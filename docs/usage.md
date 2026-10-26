@@ -94,18 +94,24 @@ Ordinary container jobs use the runner's daemon, through the socket the standard
 
 ## Agent sandboxes (`sbx`)
 
-> Planned: the kits under `sandboxes/` don't exist yet.
+The image meets the [Docker Sandboxes custom image requirements](https://docs.docker.com/ai/sandboxes/customize/author/base-images/#use-your-own-linux-image) ([architecture.md](architecture.md#docker-sandboxes-contract)). On its own it starts a bash shell. To run an agent, use a **kit** under `sandboxes/`: `claude` or `codex`. Each is a [v3 workload](https://docs.docker.com/ai/sandboxes/customize/) made of two files:
 
-The image meets the [Docker Sandboxes custom image requirements](https://docs.docker.com/ai/sandboxes/customize/author/base-images/#use-your-own-linux-image) ([architecture.md](architecture.md#docker-sandboxes-contract)). On its own it starts a bash shell. To run an agent, use a **kit**: a thin Dockerfile that pins the image by digest and sets the agent as `ENTRYPOINT`, plus a descriptor declaring the `sbx`, network-policy, and credential capabilities.
+- `<agent>.dockerfile` pins the image by digest and sets the agent as `ENTRYPOINT`.
+- `<agent>.yaml` is the descriptor. Its `provides` states the agent version the pinned image installed. It declares the `sbx`, network-policy, credential, volume, and lifecycle capabilities, and seeds the agent's config from the credential mode the host binds.
 
-**Kits aren't published.** `sbx` builds them from this repository at a pinned commit, so a given commit always builds the same sandbox:
+V3 needs `sbx` v0.45 or later, and v3 workloads only take v3 mixins.
+
+**Kits aren't published.** `sbx` builds them from this repository at a pinned commit, so a given commit always builds the same sandbox. Remote kit sources default to Docker Hub only, so allow this repository once:
 
 ```sh
-sbx run 'git+https://github.com/<owner>/devcontainer#ref=<COMMIT>&dir=sandboxes/claude' <workspace>
+sbx settings set kit.allowedSources '["docker.io/","github.com/frithuz/devcontainer"]'
+sbx run 'git+https://github.com/frithuz/devcontainer.git#ref=<COMMIT>&dir=sandboxes/claude' <workspace>
 ```
 
-When working on a kit, run it from a local checkout: `sbx run ./sandboxes/claude <workspace>`.
+`kit.allowedSources` replaces the whole list, so keep any sources you already allow. When working on a kit, run it from a local checkout: `sbx run ./sandboxes/claude <workspace>`. To build one without `sbx`, use the kit frontend directly: `docker buildx build -f sandboxes/claude/claude.yaml sandboxes/claude`.
 
-- No credentials are in the image. The sandbox's credential proxy injects them at runtime.
-- Agents may auto-update inside the sandbox, so the network policy must allow their update hosts. The full allowlist for each kit is deferred until the kits are in use.
+- Pass `--kit-arg model=<id>` or `--kit-arg reasoningEffort=<level>` to set the agent's defaults. Both are empty by default, which keeps the CLI's own default.
+- No credentials are in the image. The sandbox's credential proxy injects them at runtime, as an API key or OAuth, whichever the host has bound.
+- Agents may auto-update inside the sandbox, so each kit allows its agent's update hosts, along with the image's apt sources and the npm, PyPI, and Go module registries.
+- Claude Code's session state lives on sandbox volumes. Codex keeps its binaries in `~/.codex`, so nothing is mounted there.
 - Don't run `start-dockerd` inside a sandbox. Container access there is up to `sbx`.

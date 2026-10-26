@@ -7,7 +7,8 @@
 - `legal/`, `scripts/`: the committed `/legal` documents, the scripts that collect notices and plan source images, and their schema-validated YAML data.
 - `source.Dockerfile`: builds [source images](legal.md#source-images).
 - `.github/workflows/`: `lint.yml` (actionlint and zizmor) and `publish.yml`, partly implemented ([maintenance.md](maintenance.md#publishing-publishyml)).
-- Planned, not yet present: `sandboxes/` (Docker Sandboxes kits), `test/` (smoke and DinD checks), and Dependabot and the CI workflow in `.github/`.
+- `sandboxes/`: Docker Sandboxes kits, one directory per agent ([usage.md](usage.md#agent-sandboxes-sbx)).
+- Planned, not yet present: `test/` (smoke and DinD checks), and Dependabot and the CI workflow in `.github/`.
 
 ## Dockerfile structure
 

@@ -1,0 +1,212 @@
+# syntax=docker/sandbox-kit:3
+# Claude Code on the devcontainer image. The credential, volumes, and settings seed follow
+# Docker's claude workload (github.com/docker/sandbox-kit-spec, examples/claude), without
+# the version re-pin and Docker Desktop hooks: the image installs Claude Code itself.
+schemaVersion: "3"
+displayName: Claude Code (devcontainer)
+description: Claude Code on the frithuz devcontainer image
+sourceUrl: https://github.com/frithuz/devcontainer
+licenses: [CC0-1.0]
+
+kind: workload
+
+args:
+  model:
+    default: ""
+    pattern: '^[A-Za-z0-9._-]*$'
+    description: Claude model to use (settings.json `model`); empty keeps the CLI default
+    env: CLAUDE_MODEL
+  reasoningEffort:
+    default: ""
+    enum: ["", low, medium, high, xhigh, max, auto]
+    description: Effort level (settings.json `effortLevel`); empty keeps the CLI default
+    env: CLAUDE_REASONING_EFFORT
+
+# The version the image installed. The agent may update itself inside the sandbox.
+# scripts/update-kits.sh rewrites this line and the dockerfile's FROM together.
+provides: ["claude@2.1.310"]
+
+capabilities:
+  - type: com.docker.sandbox/sbx@1
+
+  # The agent's API and update hosts, then the image's apt sources and its toolchains'
+  # package registries.
+  - type: com.docker.sandbox/network-policy@1
+    config:
+      runtime:
+        allow:
+          - api.anthropic.com:443
+          - platform.claude.com:443
+          - downloads.claude.ai:443
+          - claude.com:443
+          - mcp-proxy.anthropic.com:443
+          - bridge.claudeusercontent.com:443
+          - archive.ubuntu.com
+          - security.ubuntu.com
+          - ports.ubuntu.com
+          - ppa.launchpadcontent.net:443
+          - download.docker.com:443
+          - registry.npmjs.org:443
+          - pypi.org:443
+          - files.pythonhosted.org:443
+          - proxy.golang.org:443
+          - sum.golang.org:443
+
+  # Both apiKey and oauth: the host's binding picks the mode. No proxyManaged, because
+  # Claude Code reads its mode from the settings.json seed below.
+  - type: com.docker.sandbox/credential@1
+    optional: true
+    description: Anthropic API access (API key or claude.ai OAuth)
+    config:
+      service: anthropic
+      phase: runtime
+      apiKey:
+        name: ANTHROPIC_API_KEY
+        inject:
+          - {domain: api.anthropic.com, header: x-api-key, format: "%s"}
+          - {domain: mcp-proxy.anthropic.com, header: x-api-key, format: "%s"}
+      oauth:
+        tokenEndpoint: {host: platform.claude.com, path: /v1/oauth/token}
+        sentinels:
+          accessToken: sk-ant-oat01-proxy-managed
+          refreshToken: sk-ant-ort01-proxy-managed
+        credentialFile:
+          path: ~/.claude/.credentials.json
+          structure:
+            claudeAiOauth:
+              accessToken: "{{.AccessToken}}"
+              refreshToken: "{{.RefreshToken}}"
+              expiresAt: "{{.ExpiresAt}}"
+              scopes: "{{.Scopes}}"
+            primaryApiKey: "{{.PrimaryApiKey}}"
+
+  - type: com.docker.sandbox/agent-sessions@1
+    description: Drive claude sessions programmatically
+    config:
+      prompt: ["-p", "--", "{{.Prompt}}"]
+      continue: ["--continue"]
+      resume: ["--resume", "{{.SessionID}}"]
+
+  - type: com.docker.sandbox/agent-interactive-sessions@1
+    optional: true
+    description: Open claude's terminal UI on a chosen session
+    config:
+      prompt: ["--", "{{.Prompt}}"]
+      continue: ["--continue"]
+      resume: ["--resume", "{{.SessionID}}"]
+      sessionPicker: ["--resume"]
+
+  # Session state survives recreating the sandbox. Only subdirectories are mounted, so the
+  # seeded settings.json and .credentials.json are rewritten on every create. Unsized
+  # volumes get 512 MiB, so each one states its size.
+  - type: com.docker.sandbox/volume@1
+    description: Conversation history
+    config: {path: /home/agent/.claude/projects, size: 2g}
+  - type: com.docker.sandbox/volume@1
+    description: Per-session state, needed by `claude -c`
+    config: {path: /home/agent/.claude/sessions, size: 512m}
+  - type: com.docker.sandbox/volume@1
+    description: TodoWrite state
+    config: {path: /home/agent/.claude/todos, size: 512m}
+  - type: com.docker.sandbox/volume@1
+    description: Bash state snapshots
+    config: {path: /home/agent/.claude/shell-snapshots, size: 512m}
+
+  - type: com.docker.sandbox/lifecycle@1
+    config:
+      install:
+        # The image ships its own agent-owned ~/.claude.json, so this rewrites it whole
+        # with the onboarding and trust flags for the workspace.
+        - command: |
+            set -e
+            ws="${WORKSPACE_DIR:-/}"
+            esc=$(printf '%s' "$ws" | sed 's/\\/\\\\/g; s/"/\\"/g; s/\t/\\t/g; s/\r/\\r/g')
+            projects="\"/\": { \"hasTrustDialogAccepted\": true }"
+            [ "$ws" = "/" ] || projects="$projects, \"$esc\": { \"hasTrustDialogAccepted\": true }"
+            printf '%s\n' "{
+              \"bypassPermissionsModeAccepted\": true,
+              \"hasCompletedOnboarding\": true,
+              \"projects\": { $projects }
+            }" > /home/agent/.claude.json
+            chown agent:agent /home/agent/.claude.json
+          user: "0"
+          env: [WORKSPACE_DIR]
+          description: Seed Claude onboarding and trust flags
+
+        # Volume mounts can leave ~/.claude root-owned before install runs.
+        - command: mkdir -p /home/agent/.claude && chown agent:agent /home/agent/.claude
+          user: "0"
+          description: Ensure ~/.claude is agent-owned
+
+        # apiKeyHelper only when a credential is bound; without one Claude Code offers
+        # /login. The arg patterns admit no quote or backslash, so they're safe in JSON.
+        # settings.json rejects effortLevel max and auto; those go through the env block.
+        - command: |
+            set -e
+            helper=''
+            if [ "${SBX_CRED_ANTHROPIC_MODE:-none}" != none ]; then
+              helper='"apiKeyHelper": "echo proxy-managed",'
+            fi
+            model='${{ kit.args.model }}'
+            effort='${{ kit.args.reasoningEffort }}'
+            extra=''
+            [ -z "$model" ] || extra="\"model\": \"$model\","
+            case "$effort" in
+              '') ;;
+              max|auto) extra="$extra \"env\": { \"CLAUDE_CODE_EFFORT_LEVEL\": \"$effort\" }," ;;
+              *) extra="$extra \"effortLevel\": \"$effort\"," ;;
+            esac
+            printf '%s\n' "{
+              $helper $extra
+              \"permissions\": { \"defaultMode\": \"bypassPermissions\" },
+              \"bypassPermissionsModeAccepted\": true,
+              \"skipDangerousModePermissionPrompt\": true
+            }" > /home/agent/.claude/settings.json
+          user: agent
+          env: [SBX_CRED_ANTHROPIC_MODE]
+          description: Seed Claude settings.json from the bound auth mode
+
+        # `claude mcp add` exits 1 when the entry already exists, which a recreate can
+        # carry forward.
+        - command: &register-mcp-gateway |
+            set -e
+            [ -n "$MCP_GATEWAY_URL" ] || exit 0
+            claude mcp add mcp-gateway "$MCP_GATEWAY_URL" \
+              --transport http \
+              --scope user \
+              --header "Authorization: Bearer $MCP_SENTINEL_TOKEN_NAME" || true
+          user: agent
+          env: [MCP_GATEWAY_URL, MCP_SENTINEL_TOKEN_NAME]
+          description: Register the sandbox MCP gateway
+      startup:
+        # Block volumes mount root-owned, and the agent can't chown them itself.
+        - command: [sh, -c, "chown -R agent:agent /home/agent/.claude/projects /home/agent/.claude/sessions /home/agent/.claude/todos /home/agent/.claude/shell-snapshots 2>/dev/null || true"]
+          user: "0"
+          description: Re-own the session-state volumes to agent
+        - command: *register-mcp-gateway
+          user: agent
+          env: [MCP_GATEWAY_URL, MCP_SENTINEL_TOKEN_NAME]
+          description: Register the sandbox MCP gateway (startup fallback)
+
+  - type: com.docker.sandbox/agent-skills@1
+    optional: true
+    config:
+      path: /home/agent/.claude/skills
+
+  - type: com.docker.sandbox/agent-context@2
+    config:
+      filename: CLAUDE.md
+      directory: /home/agent/.claude
+      content: |
+        ## Sandbox environment
+
+        This sandbox runs the frithuz devcontainer image (Ubuntu 26.04 LTS) with one
+        pinned toolset: Go, Node with pnpm, Python with uv, gh, task, jq, yq, and linters
+        such as golangci-lint, hadolint, and shfmt. /legal/manifest.tsv lists everything.
+
+        - Persistent environment comes from `BASH_ENV` (/etc/devcontainer/env.sh), not
+          shell profiles. Don't rely on `.bashrc` or `/etc/profile`.
+        - `go install` and `pnpm add -g` write to shared, group-writable directories that
+          are already on `PATH`.
+        - Never run `start-dockerd` here. Container access is up to the sandbox.
+        - Credentials are proxy-managed. Tokens in local config files are sentinels.
