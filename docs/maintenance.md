@@ -23,7 +23,7 @@ Both workflows build through [`docker/github-builder`](https://github.com/docker
 
 ## CI (`ci.yml`, on every PR)
 
-`lint.yml` runs [actionlint](https://github.com/rhysd/actionlint) and [zizmor](https://docs.zizmor.sh/) over the workflows on every PR and push to `main`, zizmor at the `auditor` persona. They run as background steps of one job, so both always run, and any finding from either fails it. actionlint's `.github/actionlint.yaml` lists runner labels newer than its built-in list, and ignores its errors on background steps in `lint.yml` until it supports them. For zizmor, every write permission needs a comment saying why it's there and every job needs a `name`.
+`lint.yml` runs [actionlint](https://github.com/rhysd/actionlint) and [zizmor](https://docs.zizmor.sh/) over the workflows on every PR and push to `main`, zizmor at the `auditor` persona. They run as background steps of one job, so both always run, and any finding from either fails it. actionlint's `.github/actionlint.yaml` lists runner labels newer than its built-in list, and ignores its errors on background steps in `lint.yml` until it supports them. For zizmor, every write permission needs a comment saying why it's there and every job needs a `name`. `.github/zizmor.yml` lowers its minimum Dependabot cooldown to the 3 days configured.
 
 - **lint:** hadolint, shfmt, and betterleaks over the repository.
 - **preflight:** builds both architectures and runs the smoke tests inside the build.

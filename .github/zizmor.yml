@@ -1,0 +1,5 @@
+# Accepts the 3-day cooldown in dependabot.yml, Dependabot's own default, instead of zizmor's 7.
+rules:
+  dependabot-cooldown:
+    config:
+      days: 3
