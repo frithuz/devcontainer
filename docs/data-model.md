@@ -1,6 +1,6 @@
 # Inventory and registry records (draft)
 
-> Draft: only source images are implemented (`scripts/build-source-image.sh`). The other records are a proposal. Turn them into JSON Schemas when implementing, plus semantic validation for what a schema can't express: cross-record references, source closure, hashes, and platform coverage.
+> Draft: only source images and source indexes are implemented (`scripts/build-source-image.sh`, `scripts/source-indexes.sh`). The other records are a proposal. Turn them into JSON Schemas when implementing, plus semantic validation for what a schema can't express: cross-record references, source closure, hashes, and platform coverage.
 
 These records connect what's in an image, where its source is, and what happened during publication. Durable records live as OCI artifacts in the image's own repositories, written to GHCR first and mirrored to Quay, so the evidence travels with the image instead of living in GitHub workflow artifacts. Workflow artifacts can carry pending records temporarily, but they aren't the long-term store.
 
@@ -8,7 +8,7 @@ These records connect what's in an image, where its source is, and what happened
 
 | Record | Where | Purpose |
 | --- | --- | --- |
-| `inventory` | `/legal/inventory.json`, and a layer in source indexes | Exact installed components and source requirements, per platform |
+| `inventory` | `/legal/inventory.json`, and a layer of the source index's record | Exact installed components and source requirements, per platform |
 | `source-image` | `/source/SOURCE.json` in each source image | One root program's complete source at one exact version |
 | `source-index` | Referrer attached to an image index or platform manifest | Maps that image's components to the source images supplied for it |
 | `publication` | Tagged artifact, written before building | Immutable publication intent and recovery identity |
@@ -37,7 +37,21 @@ Tags are `source-<root>-<version>-<key[0:8]>`, sanitized to the tag character se
 
 ## Source index
 
-An OCI image index of artifact type `application/vnd.frithuz.devcontainer.source.v1`, with `subject` set to the image index or a platform manifest. It lists the source images by digest and carries a record mapping each component to its source images, including elections and documented gaps. Because the source images are part of the referrer's graph and in the same repository, `oras cp -r` copies them along with the image.
+An OCI image index of artifact type `application/vnd.frithuz.devcontainer.source.v1`, with `subject` set to the image index or a platform manifest. The image index's source index covers every platform, and a platform manifest's covers only its architecture. Because the source images are part of the referrer's graph and in the same repository, `oras cp -r` copies them along with the image. `scripts/source-indexes.sh` builds them from `plan.tsv` with no timestamps, so a retry produces the same digest. Its `manifests`, in order:
+
+1. **The record:** a manifest of artifact type `application/vnd.frithuz.devcontainer.source.record.v1`, titled `source record`, with an empty config and one `application/vnd.frithuz.devcontainer.source.record.v1+json` layer. The layer maps the subject's components (`<arch>:<component>`, as in `plan.tsv`) to their source images, gaps, and elections:
+
+   ```json
+   {
+     "platform": "linux/arm64",
+     "sources": [{"tag": "source-…", "key": "sha256:…", "kind": "apt", "root": "bash", "version": "5.3-2ubuntu1", "digest": "sha256:…", "components": ["arm64:deb:bash"]}],
+     "gaps": [{"root": "pebble", "reason": "…", "components": ["arm64:pebble"]}],
+     "elections": [{"root": "…", "license": "…", "components": ["…"]}]
+   }
+   ```
+
+   `platform` is `null` in the image index's record. The inventory, once it exists, is a second layer.
+2. **The source images**, sorted by tag, each annotated with `org.opencontainers.image.title` (`<root> <version>`) and `vnd.frithuz.devcontainer.source.key`.
 
 Exactly one per subject: GHCR can't rewrite a referrer fallback index ([legal.md](legal.md#publishing)). For the same reason, publication events don't attach to the image as referrers.
 

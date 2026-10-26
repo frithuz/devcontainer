@@ -6,10 +6,11 @@ and Ubuntu packages including Bash and Git. `manifest.tsv` lists each component 
 and exact source provenance.
 
 The complete source of every copyleft component is published in the same registry repository as
-this image, as source images: one per root program and exact version, tagged `source-*`. Each
-published image has a source index attached (an OCI referrer of artifact type
-`application/vnd.frithuz.devcontainer.source.v1`) that lists its source images by digest. `oras` is
-installed in this image, so you can find the source from inside the container.
+this image, as source images: one per root program and exact version (on GHCR also tagged
+`source-*`). Each published image, and each of its platform manifests, has a source index attached
+(an OCI referrer of artifact type `application/vnd.frithuz.devcontainer.source.v1`) that lists its
+source images by digest. The first entry, the `source record`, maps each component to its source
+images. `oras` is installed in this image, so you can find the source from inside the container.
 
 The image can't know its own digest, so start from the image you pulled:
 

@@ -91,8 +91,8 @@ Roots come from each platform's `manifest.tsv`. apt packages need no configurati
 Both registries distribute the image, so **both carry the same source images and source indexes**. The order guarantees that no public tag points at an image before its complete source is in the same repository:
 
 1. `build` pushes the image to GHCR under its recovery tag only.
-2. `sources` builds the missing source images, then attaches **one source index per subject**: the image index and each platform manifest. A source index is an OCI referrer listing the source images by digest.
-3. GHCR is tagged. `promote` copies the image with its referrers to Quay, which carries the source along, then confirms and tags.
+2. `sources` builds the missing source images, then attaches **one source index per subject** (`scripts/source-indexes.sh`): the image index and each platform manifest. A source index is an OCI referrer listing, by digest, the source images that subject needs.
+3. GHCR is tagged. `promote` copies the image with its referrers to Quay by digest, which carries the source along, then confirms and tags. Only GHCR has `source-*` tags. Quay reaches its source images through the source indexes.
 
 The untagged image is reachable by digest as soon as it's pushed, like any manifest, but consumers find images through tags.
 
@@ -107,7 +107,7 @@ The untagged image is reachable by digest as soon as it's pushed, like any manif
 Nothing expires today. Images, source images, source indexes, and publication history are kept in both registries indefinitely. Any future cleanup must keep source **at least as long as every retained image that references it, in each registry**:
 
 - Source images are shared by many releases. Delete one only when no retained image's source index lists it.
-- Source indexes on Quay are untagged and linked only by `subject`. On GHCR they're reached through `sha256-*` fallback tags, so keep those tags as long as their subject.
+- Source indexes on Quay are untagged and linked only by `subject`, and Quay's source images are untagged, reached only through the source indexes that list them. On GHCR source indexes are reached through `sha256-*` fallback tags, so keep those tags as long as their subject.
 - Platform manifests can be shared between releases. Compute reachability from all retained publications before deleting anything, and never cascade-delete a release's children.
 
 Test failures never trigger deletion.

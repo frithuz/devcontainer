@@ -1,8 +1,8 @@
 # Builds the image once and publishes it with its source images (docs/maintenance.md#publishing).
 #
 # For now this pushes to GHCR under the recovery tag build-<run id>. A manual run can also tag
-# :latest, and only those runs are promoted to Quay. Not yet implemented: source indexes,
-# automatic public tags (:main, :latest, :YYYYMMDD), and verify (docs/legal.md#publishing).
+# :latest, and only those runs are promoted to Quay. Not yet implemented: automatic public tags
+# (:main, :latest, :YYYYMMDD) and verify (docs/legal.md#publishing).
 name: publish
 run-name: >-
   ${{ github.event_name == 'push'
@@ -28,6 +28,12 @@ on:
         default: false
 
 permissions: {}
+
+# setup-oras only knows the releases bundled with it, which can lag behind ORAS, so the jobs
+# install the release archive by URL. Take the checksum from the release's checksums.txt.
+env:
+  ORAS_URL: https://github.com/oras-project/oras/releases/download/v1.3.6/oras_1.3.6_linux_amd64.tar.gz
+  ORAS_CHECKSUM: 66fb0ad7206f3f6fa77ed5b552049d364ccf4b50b1684554f731f76302b52ca0
 
 # Runs and repairs share one group, and a run in progress is never cancelled.
 concurrency:
@@ -70,9 +76,10 @@ jobs:
     runs-on: ubuntu-26.04
     permissions:
       contents: read
-      packages: write # push the source images to GHCR
-    outputs:
-      tags: ${{ steps.tags.outputs.tags }}
+      packages: write # push the source images and source indexes to GHCR
+    defaults:
+      run:
+        shell: bash
     env:
       DIGEST: ${{ needs.build.outputs.digest }}
     steps:
@@ -85,6 +92,12 @@ jobs:
 
       - name: Set up Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Set up ORAS
+        uses: oras-project/setup-oras@005458ad77f1c8facd38a094e4af2e69e5607ff4 # v2.0.2
+        with:
+          url: ${{ env.ORAS_URL }}
+          checksum: ${{ env.ORAS_CHECKSUM }}
 
       - name: Log in to GHCR
         uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
@@ -114,10 +127,12 @@ jobs:
           SOURCE_PUSH: "true"
         run: SOURCE_REPOSITORY=$REPOSITORY SOURCE_REUSE=$REPOSITORY scripts/build-sources.sh -- --progress=plain
 
-      # Every source image the image needs, built or reused, for promote to copy to Quay.
-      - name: Record the source tags
-        id: tags
-        run: echo "tags=$(awk -F'\t' 'NR > 1 && $2 != "-" { print $2 }' out/sources/plan.tsv | paste -sd' ' -)" >>"$GITHUB_OUTPUT"
+      # One source index per subject, the image index and each platform manifest, so promote's
+      # copy of the image carries its source to Quay (docs/legal.md#publishing). GHCR has no
+      # Referrers API, so they're recorded in fallback tags. A retry keeps an identical source
+      # index and fails on a different one.
+      - name: Attach the source indexes
+        run: scripts/source-indexes.sh attach --referrers tag out/sources/plan.tsv "$REPOSITORY" "$DIGEST" | tee out/sources/indexes.tsv
 
       - name: Summary
         run: |
@@ -134,6 +149,12 @@ jobs:
               gsub(/\|/, "\\|")
               print "| " $1 " | " ($2 == "-" ? "-" : "`" $2 "`") " | " $5 " | " $6 " |"
             }' out/sources/plan.tsv
+            echo
+            echo "### Source indexes"
+            echo
+            echo "| Subject | Digest | Source index | Source images |"
+            echo "| --- | --- | --- | --- |"
+            awk -F'\t' '{ print "| " $1 " | `" $2 "` | `" $3 "` | " $4 " |" }' out/sources/indexes.tsv
           } >>"$GITHUB_STEP_SUMMARY"
 
   promote:
@@ -155,18 +176,20 @@ jobs:
         shell: bash
     env:
       DIGEST: ${{ needs.build.outputs.digest }}
-      SOURCE_TAGS: ${{ needs.sources.outputs.tags }}
       QUAY_ROBOT: frithuz+promote
       QUAY_AUDIENCE: quay
       QUAY_REPOSITORY: quay.io/frithuz/devcontainer
     steps:
-      # setup-oras only knows the releases bundled with it, which can lag behind ORAS, so it
-      # installs the release archive by URL. Take the checksum from the release's checksums.txt.
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
       - name: Set up ORAS
         uses: oras-project/setup-oras@005458ad77f1c8facd38a094e4af2e69e5607ff4 # v2.0.2
         with:
-          url: https://github.com/oras-project/oras/releases/download/v1.3.6/oras_1.3.6_linux_amd64.tar.gz
-          checksum: 66fb0ad7206f3f6fa77ed5b552049d364ccf4b50b1684554f731f76302b52ca0
+          url: ${{ env.ORAS_URL }}
+          checksum: ${{ env.ORAS_CHECKSUM }}
 
       - name: Set the GHCR repository
         run: echo "GHCR_REPOSITORY=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/devcontainer" >>"$GITHUB_ENV"
@@ -186,32 +209,19 @@ jobs:
           echo "::add-mask::$token"
           printf '%s' "$token" | oras login quay.io --username "$QUAY_ROBOT" --password-stdin
 
-      # Source goes first, so no tag in Quay points at the image before its source is there
-      # (docs/legal.md#publishing). An existing source-* tag must already have GHCR's digest. It's
-      # never overwritten, and a lookup error fails the step rather than counting as absent.
-      - name: Copy the source images
-        run: |
-          for tag in $SOURCE_TAGS; do
-            want=$(oras resolve "$GHCR_REPOSITORY:$tag")
-            if have=$(oras resolve "$QUAY_REPOSITORY:$tag" 2>resolve.err); then
-              if [[ $have != "$want" ]]; then
-                echo "::error::$QUAY_REPOSITORY:$tag is $have, but GHCR has $want"
-                exit 1
-              fi
-              echo "$tag already in Quay"
-              continue
-            fi
-            if ! grep -q 'not found' resolve.err; then
-              cat resolve.err >&2
-              exit 1
-            fi
-            oras cp "$GHCR_REPOSITORY@$want" "$QUAY_REPOSITORY:$tag"
-          done
-
-      # Referrers carry the signatures and attestations. Quay has the Referrers API, so requiring
-      # it makes a Quay-side problem fail instead of creating fallback tags.
+      # Copied by digest, untagged. Referrers carry the signatures, attestations, and source
+      # indexes, and each source index carries its source images, so Quay gets no source-* tags.
+      # Quay has the Referrers API, so requiring it makes a Quay-side problem fail instead of
+      # creating fallback tags.
       - name: Copy the image with its referrers
-        run: oras cp -r --to-distribution-spec v1.1-referrers-api "$GHCR_REPOSITORY@$DIGEST" "$QUAY_REPOSITORY:build-$GITHUB_RUN_ID,latest"
+        run: oras cp -r --to-distribution-spec v1.1-referrers-api "$GHCR_REPOSITORY@$DIGEST" "$QUAY_REPOSITORY@$DIGEST"
+
+      # No tag in Quay points at the image before its source is there (docs/legal.md#publishing).
+      - name: Check the source indexes
+        run: scripts/source-indexes.sh check --referrers api "$QUAY_REPOSITORY" "$DIGEST" | tee indexes.tsv
+
+      - name: Tag the image
+        run: oras tag "$QUAY_REPOSITORY@$DIGEST" "build-$GITHUB_RUN_ID" latest
 
       - name: Summary
         run: |
@@ -219,5 +229,10 @@ jobs:
             echo "## Promoted to Quay"
             echo
             echo "- Image: \`$QUAY_REPOSITORY:build-$GITHUB_RUN_ID@$DIGEST\`"
-            echo "- Source images: $(wc -w <<<"$SOURCE_TAGS")"
+            echo
+            echo "### Source indexes"
+            echo
+            echo "| Subject | Digest | Source index | Source images |"
+            echo "| --- | --- | --- | --- |"
+            awk -F'\t' '{ print "| " $1 " | `" $2 "` | `" $3 "` | " $4 " |" }' indexes.tsv
           } >>"$GITHUB_STEP_SUMMARY"

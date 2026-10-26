@@ -95,7 +95,7 @@ A job without `environment: quay`, or a run the environment's branch rule turns 
 
 ### Use it in the workflow
 
-The `promote` job in [`publish.yml`](../../.github/workflows/publish.yml) names `environment: quay` and has `id-token: write`. Its **Log in to Quay with OIDC federation** step requests a GitHub OIDC token for the audience `quay` (`QUAY_AUDIENCE`), exchanges it for a one-hour Quay token, masks both, and logs `oras` in. It then copies the source images, and then the image with its referrers, from GHCR.
+The `promote` job in [`publish.yml`](../../.github/workflows/publish.yml) names `environment: quay` and has `id-token: write`. Its **Log in to Quay with OIDC federation** step requests a GitHub OIDC token for the audience `quay` (`QUAY_AUDIENCE`), exchanges it for a one-hour Quay token, masks both, and logs `oras` in. It then copies the image with its referrers from GHCR by digest, untagged. The referrers include the source indexes, and each source index lists its source images, so the source arrives without `source-*` tags. `scripts/source-indexes.sh check` then requires one source index per subject, with everything it lists in Quay, before `oras tag` applies `build-<run id>` and `latest`.
 
 - **Token lifetime is one hour.** That matches Quay's one-hour protection for untagged pushes, which `promote` already has to finish within. Log in right before copying. If the job ever grows past an hour, log in again.
 - **The audience has to match.** Quay checks the token's `aud` against the federation entry's **OIDC audiences**, which default to `quay`. Without an `audience` parameter, GitHub sets `aud` to `https://github.com/frithuz`, and Quay rejects the token. Nothing in GitHub's settings controls the audience: the job asks for it when it requests the token. If the audience in Quay changes, change `QUAY_AUDIENCE` to match. Quay still accepts entries with no audiences but logs them as deprecated, so keep one set.
@@ -114,7 +114,7 @@ The `promote` job in [`publish.yml`](../../.github/workflows/publish.yml) names 
     quay.io/frithuz/devcontainer:main
   ```
 
-- **Referrer retention:** source indexes are untagged manifests that reach their image only through `subject` (source images are tagged `source-*`, so ordinary tag retention covers them). Quay protects digest-only pushes with a hidden temporary tag that expires after an hour by default. Quay's newer garbage collector keeps manifests that have a subject, but whether quay.io keeps untagged referrers indefinitely isn't documented. After the first publish, run the `oras discover` check above again **after more than an hour**, and again **after more than 14 days** (Quay's default Time Machine window). If the source index disappears, also give it a tag (e.g. `source-index-<subject-digest-hex>`) when attaching. A tag keeps it under normal tag retention.
+- **Referrer retention:** in Quay, source indexes are untagged manifests that reach their image only through `subject`, and source images are untagged too, reached only through the source indexes that list them. Quay protects digest-only pushes with a hidden temporary tag that expires after an hour by default. Quay's newer garbage collector keeps manifests that have a subject, and an index keeps what it lists, but whether quay.io keeps untagged referrers indefinitely isn't documented. After the first publish, run `scripts/source-indexes.sh check --referrers api quay.io/frithuz/devcontainer <digest>` again **after more than an hour**, and again **after more than 14 days** (Quay's default Time Machine window). If a source index or source image disappears, also give each source index a tag (e.g. `source-index-<subject-digest-hex>`) in `promote`. A tag keeps it, and everything it lists, under normal tag retention.
 
 ## Troubleshooting
 
@@ -122,6 +122,8 @@ The `promote` job in [`publish.yml`](../../.github/workflows/publish.yml) names 
 | --- | --- |
 | Exchange returns 401/403 | The audience doesn't match (`QUAY_AUDIENCE` against the entry's OIDC audiences), or the subject doesn't match: a job without `environment: quay`, a different environment name, or the mutable instead of the immutable prefix. Decode the OIDC token (it's a JWT) and compare its `aud` and `sub` claims with the federation entry |
 | `ACTIONS_ID_TOKEN_REQUEST_URL` is empty | The job is missing `permissions: id-token: write` |
+| Login succeeds, then the first push returns `unauthorized` | The robot can read the public repository but can't write to it. Give `frithuz+promote` **Write** on `devcontainer` (see [section 3](#3-robot-account-frithuzpromote)) |
+| `check` finds no source index on Quay | The subject has none on GHCR either (the `sources` job's summary lists them), or Quay didn't take a referrer. The copy step requires the Referrers API, so the copy itself would have failed |
 | Repository is private after the first promote | It was created by the push. Make it public in **Settings** |
 | The robot can reach other repositories | An organization **Default Permission** or team membership grants it. Remove it (see [section 1](#1-organization)) |
 | A step fails with 401 halfway through `promote` | The token expired (more than an hour old). Log in again before continuing |
