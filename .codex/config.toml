@@ -1,0 +1,5 @@
+# Codex reads project MCP servers only from here, in TOML, so this mirrors .agents/mcp.json,
+# the source of truth. Change both together.
+[mcp_servers.nushell]
+command = "nu"
+args = ["--mcp"]
