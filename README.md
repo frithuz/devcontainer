@@ -6,7 +6,7 @@ A single Ubuntu 26.04 LTS container image, `quay.io/frithuz/devcontainer` (mirro
 2. **GitHub Actions CI.** Jobs run inside the image, so CI uses the same tools developers do.
 3. **Agent sandboxes.** Coding agents run inside the image through [Docker Sandboxes (`sbx`)](https://docs.docker.com/ai/sandboxes/).
 
-> **Status: in progress.** The image is published, and the Claude Code and Codex sandbox kits build from this repository. PR CI runs the linters, the DinD checks, and source planning. The smoke tests and parts of publishing are still designs; the docs mark those parts as planned.
+> **Status: in progress.** The image is published, and the Claude Code and Codex sandbox kits build from this repository. PR CI runs the linters, the smoke tests, the DinD checks, and source planning. Parts of publishing are still designs; the docs mark those parts as planned.
 
 ## Principles
 

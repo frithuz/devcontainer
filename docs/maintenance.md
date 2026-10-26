@@ -1,6 +1,6 @@
 # Maintenance
 
-> Planned: `ci.yml` has no `preflight` job and `test/smoke.sh` doesn't exist yet, and Dependabot covers only the `docker` ecosystem so far. `publish.yml` so far only builds, pushes to GHCR under the recovery tag `build-<run id>` (also `latest` on pushes to `main`, and optionally on manual runs), publishes the source images and attaches the source indexes, and, only on runs that tag `latest`, promotes the image with its source to Quay under the same tags: automatic public tags and `verify` are still to come. This page describes the intended design.
+> Planned: Dependabot covers only the `docker` ecosystem so far. `publish.yml` so far only builds, pushes to GHCR under the recovery tag `build-<run id>` (also `latest` on pushes to `main`, and optionally on manual runs), publishes the source images and attaches the source indexes, and, only on runs that tag `latest`, promotes the image with its source to Quay under the same tags: automatic public tags and `verify` are still to come. This page describes the intended design.
 
 ## Dependabot
 
@@ -29,18 +29,31 @@ Both workflows build through [`docker/github-builder`](https://github.com/docker
 - **Workflows:** [actionlint](https://github.com/rhysd/actionlint) and [zizmor](https://docs.zizmor.sh/), zizmor at the `auditor` persona. They stay on the runner: zizmor's action mounts the workspace into a container by its runner path, which a job container doesn't have.
 - **Repository:** hadolint over the Dockerfiles and kits, shfmt over every shell script it recognizes (including the bats tests), and betterleaks over the git history. It runs inside the published image, as a consumer would ([usage.md](usage.md#github-actions)). actionlint's `.github/actionlint.yaml` lists runner labels newer than its built-in list, and ignores its errors on background steps in `lint.yml` until it supports them. For zizmor, every write permission needs a comment saying why it's there and every job needs a `name`. `.github/zizmor.yml` lowers its minimum Dependabot cooldown to the 3 days configured.
 
-- **preflight** (planned): builds both architectures and runs the smoke tests inside the build.
-- **runtime:** builds the image natively on each architecture, loads it into the runner's daemon, and runs `test/runtime.sh` in a privileged container with no host socket and its own volumes for the daemon's data ([architecture.md](architecture.md#docker)). The script refuses to run if another daemon is reachable, then checks that the daemon answering is the container's, and builds and runs an image and a compose service without pulling anything. The build reads publish's cache for its platform and writes none. It also uploads each platform's `/legal/manifest.tsv`, before the checks, so sources-plan runs even when they fail.
+- **image:** builds the image natively on each architecture and loads it into the runner's daemon. It then builds the `preflight` target, which runs the [smoke tests](#preflight-checks-testsmokesh) inside the build and reuses the image's layers from the same builder. The job fails on the exported status and lists the failures in its summary. Last, it runs `test/runtime.sh` in a privileged container with no host socket and its own volumes for the daemon's data ([architecture.md](architecture.md#docker)). The script refuses to run if another daemon is reachable, then checks that the daemon answering is the container's, and builds and runs an image and a compose service without pulling anything. The build reads publish's cache for its platform and writes none. It also uploads each platform's `/legal/manifest.tsv`, before the checks, so sources-plan runs even when they fail. The DinD checks run even when the smoke tests fail.
 - **sources-plan:** runs `scripts/build-sources.sh --plan-only` on both platforms' manifests, so a copyleft component whose exact source can't be resolved fails the PR instead of the publish. Source images already in GHCR with the same key show as reused in the summary.
 
 The GitHub Actions `container:` check needs an image in a registry, so it runs in `publish.yml` against the pushed digest.
 
 ### Preflight checks (`test/smoke.sh`)
 
-The smoke tests run in the PR build and against the published digest, on both architectures, as both `agent` and root. They're split in two because they test different things:
+The smoke tests run in the PR build, on both architectures, as both `agent` and root. They're planned to run against the published digest too, in `verify`. They're split in two because they test different things:
 
 - **Command lookup** runs under `env -i` with only `HOME` and the default `PATH`, the way GitHub Actions sees the image. Every tool must run. Pinned tools must also report their expected version, while unpinned ones only need to be present. Running as root as well verifies the chained agent symlinks. Python also imports every stdlib module that's backed by a shared library.
 - **Image environment** keeps the image's `ENV` and resets only `PATH`. It checks that the pnpm configuration applies as `agent`, as root, and with an empty `HOME`, that `agent` can write to the shared install targets, that the sandbox contract and sudo behavior hold, and that the locale is set without warnings.
+
+The `preflight` stage runs the script as root, and the script runs each part once as root and once as `agent`. It records the report and exit status in `smoke.txt` and `smoke-status` instead of failing the build, so a refresh's inventory never depends on the tests. Only `test/`, the `Dockerfile`, and `scripts/legal-components.yaml` are mounted, so other changes leave the result cached.
+
+- **Pinned tools** are the components in `scripts/legal-components.yaml`. A component named after its stage must report the version that stage pins: the first version number in its `FROM` tag (`golang:1.27-trixie` pins 1.27, and 1.27.3 matches), or the module version in a `go install` stage. Image tools must resolve from `/usr/local/bin`.
+- **Other commands** (apt packages, aliases, `gh`, and the agents) are listed in `test/smoke.sh`. A new command that isn't a component goes there.
+
+To run them locally:
+
+```sh
+NATIVE=1 docker buildx bake preflight        # out/preflight/smoke.txt and smoke-status
+docker run --rm --user root --network none \
+  --mount type=bind,source="$PWD",target=/mnt/src,readonly \
+  devcontainer:local bash /mnt/src/test/smoke.sh
+```
 
 ## Publishing (`publish.yml`)
 
@@ -85,7 +98,7 @@ The rules behind that shape:
 
 Rebuilding the same commit doesn't reproduce the same digest. A refresh reruns every `RUN` step, and timestamps, logs, and caches change most layers even when nothing installed changed. Run 40313178179, a refresh of the commit run 40265483889 built, changed 38 of 42 arm64 layers, with an identical config and an identical inventory. So `publish.yml` compares what the image is made of instead, against Quay's `latest`, before anything is pushed:
 
-1. **Build inputs.** The `changes` job diffs this commit against the one `latest` was built from (its index's `org.opencontainers.image.revision`), over the files that reach the image or its source images: everything `.dockerignore` admits to the build context, `.dockerignore` itself, `docker-bake.hcl`, and `publish.yml`, which sets the image's annotations. That covers the Dockerfile's logic, `rootfs/`, the scripts, and the base image pin. The scripts that only compare or copy manifests, or point the kits at an image, are left out, and so is `test/runtime.sh`, which `ci.yml` runs against a built image.
+1. **Build inputs.** The `changes` job diffs this commit against the one `latest` was built from (its index's `org.opencontainers.image.revision`), over the files that reach the image or its source images: everything `.dockerignore` admits to the build context, `.dockerignore` itself, `docker-bake.hcl`, and `publish.yml`, which sets the image's annotations. That covers the Dockerfile's logic, `rootfs/`, the scripts, and the base image pin. The scripts that only compare or copy manifests, or point the kits at an image, are left out, and so is `test/`: the tests never reach the image.
 2. **Inventory.** Unchanged inputs can still produce a different image when a refresh installs newer apt packages or agents. On a refresh, `preflight` builds the `preflight` target, which pushes nothing and exports each platform's `/legal/manifest.tsv`. `inventory` compares it with `latest`'s, ignoring the project row's revision. Every installed apt package is a row with its version and `.deb` SHA512, and the agents' rows carry their binary checksums.
 
 | Inputs | Run | Result |
@@ -162,7 +175,7 @@ The no-co-author rule in [AGENTS.md](../AGENTS.md) still applies.
 ## Contributor expectations
 
 - **License.** Contributions are accepted under [CC0-1.0](../LICENSE). Contribute only work you can dedicate, and keep imported third-party material under its own license ([legal.md](legal.md#project-license)).
-- **Adding a tool.** Prefer a pinned upstream image with a static or glibc-compatible binary. Justify any scripted install in the PR. Either way, make its command resolve under the default `PATH`, and add it to the smoke tests and to `scripts/legal-components.yaml` in the same PR. The build fails on an ELF file it can't attribute.
+- **Adding a tool.** Prefer a pinned upstream image with a static or glibc-compatible binary. Justify any scripted install in the PR. Either way, make its command resolve under the default `PATH`, and add it to `scripts/legal-components.yaml` in the same PR, which also makes the smoke tests check it. A command that isn't a component goes in `test/smoke.sh`'s list. The build fails on an ELF file it can't attribute.
 - Never add an unpinned `FROM` or an unchecked download. `curl | sh` is allowed only for the agent installers.
 - Keep build-only tooling out of the final stage. Fetching belongs in builder stages.
 - Don't break the [sandbox contract](architecture.md#docker-sandboxes-contract).

@@ -342,14 +342,24 @@ USER agent
 WORKDIR /home/agent/workspace
 CMD ["/bin/bash"]
 
-# Preflight: smoke tests run here (Phase 5); never published. Also exports the image's
-# manifest.tsv, from which scripts/plan-sources.sh derives the source images.
+# Preflight: never published. Runs the smoke tests (test/smoke.sh) and exports their report and
+# exit status, plus the image's manifest.tsv, from which scripts/plan-sources.sh derives the
+# source images. A failing test doesn't fail the build: ci.yml fails on the exported status, and
+# publish.yml only needs the manifest. Only the files the tests read are mounted, so other changes
+# keep the result cached.
 FROM image AS preflight-run
-RUN bash <<'EOF'
+# Root keeps the image's ENV, which sudo would reset; the script drops to agent itself. Never
+# published, and the default stage below is back to agent.
+# hadolint ignore=DL3002
+USER root
+RUN --mount=type=bind,source=test,target=/mnt/src/test \
+    --mount=type=bind,source=Dockerfile,target=/mnt/src/Dockerfile \
+    --mount=type=bind,source=scripts/legal-components.yaml,target=/mnt/src/scripts/legal-components.yaml bash <<'EOF'
 set -euxo pipefail
 mkdir -p /tmp/out
-echo "preflight placeholder" >/tmp/out/report.txt
-task --version >>/tmp/out/report.txt
+status=0
+bash /mnt/src/test/smoke.sh 2>&1 | tee /tmp/out/smoke.txt || status=$?
+echo "$status" >/tmp/out/smoke-status
 cp /legal/manifest.tsv /tmp/out/manifest.tsv
 EOF
 

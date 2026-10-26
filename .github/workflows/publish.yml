@@ -153,7 +153,8 @@ jobs:
           } >>"$GITHUB_STEP_SUMMARY"
 
   # A refresh with unchanged inputs builds the preflight target first, which pushes nothing and
-  # exports each platform's /legal/manifest.tsv. It shares build's cache scope (bake.yml defaults
+  # exports each platform's /legal/manifest.tsv. It also runs the smoke tests, but records their
+  # result instead of failing, so they never block the comparison. It shares build's cache scope (bake.yml defaults
   # to the target's name) and vars, so build reuses the refreshed layers instead of rerunning them.
   preflight:
     name: Build the inventory

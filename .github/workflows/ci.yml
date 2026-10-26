@@ -1,6 +1,5 @@
 # Checks a PR's image before it can be published (docs/maintenance.md#ci-ciyml-on-every-pr).
-# lint.yml lints the repository and the workflows. Not yet implemented: preflight, which runs the
-# smoke tests inside the build.
+# lint.yml lints the repository and the workflows.
 name: ci
 run-name: >-
   ${{ format('CI PR #{0}: {1}', github.event.pull_request.number, github.event.pull_request.title) }}
@@ -16,10 +15,11 @@ concurrency:
 
 jobs:
   # Builds the image natively on each architecture and loads it into the runner's daemon, then
-  # runs the DinD checks in a privileged container with no host socket. The build reads publish's
-  # cache for that platform, and writes none, so PRs never evict it.
-  runtime:
-    name: Docker-in-Docker (${{ matrix.arch }})
+  # runs the smoke tests inside the build (the preflight target) and the DinD checks in a
+  # privileged container with no host socket. The image build reads publish's cache for that
+  # platform, and writes none, so PRs never evict it. preflight reuses its layers from the builder.
+  image:
+    name: Image checks (${{ matrix.arch }})
     strategy:
       fail-fast: false
       matrix:
@@ -45,6 +45,7 @@ jobs:
 
       # publish.yml's bake.yml caches the image target under image-linux-<arch>.
       - name: Build the image
+        id: image
         uses: docker/bake-action@59cb1203cd42bcefd40a1b6d73b589e48c86040e # v7.5.0
         with:
           source: .
@@ -71,8 +72,44 @@ jobs:
           path: out/manifests/
           if-no-files-found: error
 
+      # The smoke tests run in the build, which exports their report and exit status to
+      # out/preflight/ instead of failing, so the report is shown either way. The image's layers
+      # come from the build above, in the same builder, given the same vars.
+      - name: Run the smoke tests
+        uses: docker/bake-action@59cb1203cd42bcefd40a1b6d73b589e48c86040e # v7.5.0
+        with:
+          source: .
+          targets: preflight
+          vars: |
+            NATIVE=true
+            REVISION=${{ github.sha }}
+
+      - name: Report the smoke tests
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          status=$(cat out/preflight/smoke-status)
+          {
+            echo "## Smoke tests (linux/$ARCH)"
+            echo
+            echo "- Passed: $(grep -c '^ok' out/preflight/smoke.txt)"
+            echo "- Failed: $(grep -c '^not ok' out/preflight/smoke.txt)"
+            if ((status != 0)); then
+              echo
+              echo '```text'
+              grep -v '^ok' out/preflight/smoke.txt
+              echo '```'
+            fi
+          } >>"$GITHUB_STEP_SUMMARY"
+          while IFS= read -r line; do
+            echo "::error title=Smoke test (linux/$ARCH)::${line#not ok - }"
+          done < <(grep '^not ok' out/preflight/smoke.txt || true)
+          exit "$status"
+
       # Anonymous volumes, removed with the container, so the daemon's data is exclusive to it.
+      # Runs even when the smoke tests fail, as long as the image built.
       - name: Run the DinD checks
+        if: ${{ !cancelled() && steps.image.outcome == 'success' }}
         run: |
           docker run --rm --privileged \
             --mount type=volume,target=/var/lib/docker \
@@ -85,8 +122,8 @@ jobs:
   # (docs/legal.md#source-images). Nothing is fetched or built.
   sources-plan:
     name: Plan the source images
-    needs: runtime
-    # Needs only the manifests, which runtime uploads before its DinD checks.
+    needs: image
+    # Needs only the manifests, which image uploads before its tests.
     if: ${{ !cancelled() }}
     runs-on: ubuntu-26.04
     permissions:
@@ -118,7 +155,7 @@ jobs:
         run: |
           for arch in amd64 arm64; do
             if [[ ! -s out/manifests/linux_$arch/manifest.tsv ]]; then
-              echo "::error::No manifest for linux/$arch; its runtime job didn't build the image"
+              echo "::error::No manifest for linux/$arch; its image job didn't build the image"
               exit 1
             fi
           done

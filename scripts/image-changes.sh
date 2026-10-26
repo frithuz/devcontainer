@@ -22,8 +22,8 @@ cd "$(dirname "$0")/.."
 
 # What reaches the image or its source images: everything .dockerignore admits to the build
 # context, plus the build definitions and the workflow that sets the image's annotations. The
-# scripts that only compare, copy, or point the kits at images are left out, and so is the DinD
-# test, which ci.yml runs against a built image.
+# scripts that only compare, copy, or point the kits at images are left out, and so are the tests,
+# which never reach the image.
 inputs=(.dockerignore docker-bake.hcl .github/workflows/publish.yml)
 while IFS= read -r line; do
 	[[ $line == '!'* ]] || continue
@@ -32,7 +32,7 @@ while IFS= read -r line; do
 done <.dockerignore
 inputs+=(
 	':(exclude)scripts/copy-manifests.sh' ':(exclude)scripts/image-changes.sh'
-	':(exclude)scripts/update-kits.sh' ':(exclude)test/runtime.sh'
+	':(exclude)scripts/update-kits.sh' ':(exclude)test/'
 )
 
 usage() {
