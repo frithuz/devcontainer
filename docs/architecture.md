@@ -119,4 +119,4 @@ The `com.docker.sandbox/sbx@1` capability is declared in each kit descriptor, no
 
 ## Image metadata
 
-The image carries OCI labels and a `devcontainer.metadata` label with the default `remoteUser: agent`, so a consumer's `devcontainer.json` can stay minimal. `org.opencontainers.image.licenses` is `CC0-1.0`, for the project's own contribution only ([legal.md](legal.md#packaging-and-metadata)).
+The image carries OCI labels and a `devcontainer.metadata` label with the default `remoteUser: agent`, so a consumer's `devcontainer.json` can stay minimal. The Dockerfile sets the fixed ones (title, description, licenses, vendor). `docker-bake.hcl` adds the ones a build knows, when it's given them: source, revision, a documentation permalink to `docs/usage.md` at the building commit, and the base image's name and digest, which `publish.yml` reads from the image stage's `FROM` pin. The published image index carries the same values as annotations. `org.opencontainers.image.licenses` is `CC0-1.0`, for the project's own contribution only ([legal.md](legal.md#packaging-and-metadata)).

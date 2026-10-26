@@ -28,6 +28,8 @@ FROM tools AS plan-run
 ARG SOURCE_RECIPE_REPOSITORY
 ARG SOURCE_RECIPE_REVISION
 ARG SOURCE_REUSE
+ARG REVISION
+ARG REPOSITORY_URL
 # config is a named context from docker-bake.hcl (the Dockerfile's config stage).
 RUN --mount=type=bind,source=scripts,target=/mnt/scripts --mount=type=bind,from=manifests,target=/mnt/manifests \
     --mount=type=bind,from=config,target=/mnt/config bash <<'EOF'

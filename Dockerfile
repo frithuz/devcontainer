@@ -336,6 +336,7 @@ EOF
 LABEL org.opencontainers.image.title="devcontainer" \
       org.opencontainers.image.description="Ubuntu 26.04 LTS image with one pinned toolset for devcontainers, GitHub Actions CI, and agent sandboxes. Copyleft source is attached as OCI referrers; see /legal/SOURCE.md." \
       org.opencontainers.image.licenses="CC0-1.0" \
+      org.opencontainers.image.vendor="frithuz" \
       devcontainer.metadata='[{"remoteUser":"agent"}]'
 USER agent
 WORKDIR /home/agent/workspace

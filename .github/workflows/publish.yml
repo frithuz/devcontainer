@@ -41,8 +41,51 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # The image's base.name and base.digest come from the image stage's FROM line. It stays a
+  # literal pin, rather than an ARG, because Dependabot doesn't update FROM lines that use one.
+  base:
+    name: Read the base image
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    outputs:
+      name: ${{ steps.base.outputs.name }}
+      digest: ${{ steps.base.outputs.digest }}
+    steps:
+      - name: Check out the Dockerfile
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: Dockerfile
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      # A Docker Hub short name is written out in full: ubuntu:26.04 is
+      # docker.io/library/ubuntu:26.04.
+      - name: Read the image stage's FROM
+        id: base
+        run: |
+          ref=$(awk '$1 == "FROM" && $3 == "AS" && $4 == "image" { print $2 }' Dockerfile)
+          if [[ ! $ref =~ ^([^@]+)@(sha256:[0-9a-f]{64})$ ]]; then
+            echo "::error file=Dockerfile::The image stage's FROM isn't a single <name>@sha256:<digest> pin: ${ref:-none}"
+            exit 1
+          fi
+          name=${BASH_REMATCH[1]} digest=${BASH_REMATCH[2]}
+          first=${name%%/*}
+          if [[ $name != */* ]]; then
+            name=docker.io/library/$name
+          elif [[ $first != *.* && $first != *:* && $first != localhost ]]; then
+            name=docker.io/$name
+          fi
+          echo "name=$name" >>"$GITHUB_OUTPUT"
+          echo "digest=$digest" >>"$GITHUB_OUTPUT"
+          echo "$name@$digest"
+
   build:
     name: Build and push to GHCR
+    needs: base
     uses: docker/github-builder/.github/workflows/bake.yml@cbc9d42f8c89a55623392aadd03600965b80e963 # v1.18.1
     permissions:
       contents: read
@@ -59,6 +102,9 @@ jobs:
       # stage (docs/architecture.md#dockerfile-structure).
       vars: |
         REVISION=${{ github.sha }}
+        REPOSITORY_URL=${{ github.server_url }}/${{ github.repository }}
+        BASE_NAME=${{ needs.base.outputs.name }}
+        BASE_DIGEST=${{ needs.base.outputs.digest }}
         REFRESH=${{ (github.event_name == 'schedule' || inputs.refresh) && github.run_id || '' }}
       meta-images: ghcr.io/${{ github.repository_owner }}/devcontainer
       meta-tags: |
@@ -66,10 +112,15 @@ jobs:
         type=raw,value=latest,enable=${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' && inputs.latest }}
       # finalize assembles the multi-platform index, and only these annotations reach it. They're
       # added to metadata-action's standard OCI annotations, and replace any with the same key.
-      # GHCR shows the index's description. Keep it the same as the Dockerfile's label.
+      # GHCR shows the index's description. Keep it, and the vendor, the same as the Dockerfile's
+      # labels, and the rest the same as docker-bake.hcl's.
       set-meta-annotations: true
       meta-annotations: |
         org.opencontainers.image.description=Ubuntu 26.04 LTS image with one pinned toolset for devcontainers, GitHub Actions CI, and agent sandboxes. Copyleft source is attached as OCI referrers; see /legal/SOURCE.md.
+        org.opencontainers.image.vendor=frithuz
+        org.opencontainers.image.documentation=${{ github.server_url }}/${{ github.repository }}/blob/${{ github.sha }}/docs/usage.md
+        org.opencontainers.image.base.name=${{ needs.base.outputs.name }}
+        org.opencontainers.image.base.digest=${{ needs.base.outputs.digest }}
     secrets:
       registry-auths: |
         - registry: ghcr.io
@@ -127,10 +178,13 @@ jobs:
 
       # Source images already in the repository with the same key are reused, not rebuilt. The
       # plan lists the repository's tags anonymously, so the package must be public.
+      # REVISION and REPOSITORY_URL give each newly built source image its documentation permalink.
       - name: Build and push the source images
         env:
           MANIFESTS: out/manifests
           SOURCE_PUSH: "true"
+          REVISION: ${{ github.sha }}
+          REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}
         run: SOURCE_REPOSITORY=$REPOSITORY SOURCE_REUSE=$REPOSITORY scripts/build-sources.sh -- --progress=plain
 
       # One source index per subject, the image index and each platform manifest, so promote's

@@ -12,8 +12,23 @@ variable "REFRESH" {
   default = ""
 }
 
-# Project revision recorded in /legal/manifest.tsv; CI passes the commit SHA.
+# Project revision recorded in /legal/manifest.tsv; CI passes the commit SHA. With
+# REPOSITORY_URL, it also sets the images' source, revision, and documentation permalink.
 variable "REVISION" {
+  default = ""
+}
+
+# This repository's web URL; CI passes it.
+variable "REPOSITORY_URL" {
+  default = ""
+}
+
+# The image stage's base, as pinned in its FROM line; CI reads them from the Dockerfile.
+variable "BASE_NAME" {
+  default = ""
+}
+
+variable "BASE_DIGEST" {
   default = ""
 }
 
@@ -64,6 +79,7 @@ function "platforms" {
 }
 
 # Source images are reproducible: fixed timestamps, so identical inputs give identical digests.
+# Only the documentation annotation, a permalink to the building commit, varies between commits.
 function "source_output" {
   params = [tag]
   result = SOURCE_PUSH ? ["type=registry,rewrite-timestamp=true"] : ["type=oci,dest=out/sources/oci/${tag},tar=false,rewrite-timestamp=true"]
@@ -87,6 +103,18 @@ target "image" {
   inherits = ["_common"]
   target   = "image"
   tags     = [TAG]
+  # Left out when the build doesn't say, rather than set empty.
+  labels = merge(
+    REVISION != "" && REPOSITORY_URL != "" ? {
+      "org.opencontainers.image.source"        = REPOSITORY_URL
+      "org.opencontainers.image.revision"      = REVISION
+      "org.opencontainers.image.documentation" = "${REPOSITORY_URL}/blob/${REVISION}/docs/usage.md"
+    } : {},
+    BASE_NAME != "" && BASE_DIGEST != "" ? {
+      "org.opencontainers.image.base.name"   = BASE_NAME
+      "org.opencontainers.image.base.digest" = BASE_DIGEST
+    } : {},
+  )
 }
 
 target "preflight" {
@@ -127,6 +155,8 @@ target "source-plan" {
     SOURCE_RECIPE_REPOSITORY = SOURCE_RECIPE_REPOSITORY
     SOURCE_RECIPE_REVISION   = SOURCE_RECIPE_REVISION
     SOURCE_REUSE             = SOURCE_REUSE
+    REVISION                 = REVISION
+    REPOSITORY_URL           = REPOSITORY_URL
   }
   output = ["type=local,dest=out/sources"]
 }

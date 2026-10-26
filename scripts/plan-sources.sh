@@ -23,6 +23,10 @@
 #   SOURCE_RECIPE_REPOSITORY, SOURCE_RECIPE_REVISION: this repository's URL and the last commit
 #     that changed scripts/build-source-image.sh; part of every source image's identity.
 #   SOURCE_PLANS_CONTEXT: the --out directory as docker buildx bake sees it (default: out/sources).
+#   REVISION, REPOSITORY_URL: the commit doing the build and this repository's web URL. With
+#     both, each source image's documentation annotation is a permalink to legal/SOURCE.md at
+#     that commit. It's not part of the key, so a reused source image keeps the commit that
+#     built it.
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -34,6 +38,11 @@ readonly copyleft='GPL|MPL|EPL|CDDL|EUPL|NOASSERTION'
 # The annotations below are part of every source image but not otherwise of its key. Bump this
 # when they change, so every source image is rebuilt with the new ones.
 readonly annotations_version=1
+documentation=
+if [[ -n ${REVISION:-} && -n ${REPOSITORY_URL:-} ]]; then
+	documentation=$REPOSITORY_URL/blob/$REVISION/legal/SOURCE.md
+fi
+readonly documentation
 
 config=
 check=false
@@ -120,7 +129,7 @@ finish() {
 	version=$(jq -r .version <<<"$identity")
 	readable="source-$(sanitize "$root")-$(sanitize "$version")"
 	jq -cn --argjson identity "$identity" --argjson fetch "$fetch" --argjson expect "$expect" \
-		--arg key "$key" --arg tag "${readable:0:119}-${key:7:8}" --arg url "$url" '{
+		--arg key "$key" --arg tag "${readable:0:119}-${key:7:8}" --arg url "$url" --arg documentation "$documentation" '{
 			tag: $tag, key: $key, identity: $identity, fetch: $fetch, expect: $expect,
 			annotations: ({
 				"org.opencontainers.image.title": "\($identity.root) \($identity.version)",
@@ -138,9 +147,11 @@ finish() {
 						"\($identity.root) \($identity.version): its vendored build scripts and the copyleft archives it bundles"
 					end) + ", as shipped in frithuz/devcontainer."),
 				"org.opencontainers.image.source": $url,
+				"org.opencontainers.image.vendor": "frithuz",
 				"org.opencontainers.image.version": $identity.version,
 				"vnd.frithuz.devcontainer.source.key": $key
-			} + if $identity.ref.commit then {"org.opencontainers.image.revision": $identity.ref.commit} else {} end)
+			} + if $identity.ref.commit then {"org.opencontainers.image.revision": $identity.ref.commit} else {} end
+			+ if $documentation != "" then {"org.opencontainers.image.documentation": $documentation} else {} end)
 		}'
 }
 
@@ -364,6 +375,28 @@ for decision in "${!decisions[@]}"; do
 		gaps=$((gaps + 1))
 		note "gap: $root ($(sort -u <<<"${decisions[$decision]}" | paste -sd' ' -)): $root_note"
 	fi
+done
+
+# --- Licenses --------------------------------------------------------------------------------
+# A source image's licenses annotation: its covered components' licenses, when every one is an
+# SPDX expression, joined with AND. Only scripts/legal-components.yaml's components have SPDX
+# licenses (its schema requires them). apt packages carry Debian copyright names, so apt source
+# images get none. Go modules' licenses aren't in manifest.tsv, so go-module rows are left out
+# and a Go root gets its binaries' licenses, though its vendored modules can add others.
+for key in "${!plan[@]}"; do
+	licenses=$(sort -u <<<"${covers[$key]}" | grep . | awk -F'\t' '
+		NR == FNR { license[$1 ":" $2] = $4; next }
+		{ component = substr($0, index($0, ":") + 1) }
+		component ~ /^go-module:/ { next }
+		component ~ /^deb:/ || license[$0] == "" || license[$0] == "NOASSERTION" { print "!"; next }
+		{ print license[$0] }' "$rows" - | sort -u)
+	if [[ -z $licenses ]] || grep -qxF '!' <<<"$licenses"; then
+		continue
+	fi
+	if (($(wc -l <<<"$licenses") > 1)); then
+		licenses=$(awk '{ printf "%s%s", (NR > 1 ? " AND " : ""), (/ / ? "(" $0 ")" : $0) }' <<<"$licenses")
+	fi
+	plan[$key]=$(jq -c --arg licenses "$licenses" '.annotations["org.opencontainers.image.licenses"] = $licenses' <<<"${plan[$key]}")
 done
 
 # --- Reuse -----------------------------------------------------------------------------------
