@@ -86,7 +86,7 @@ EOF
 FROM scratch AS config
 COPY --from=config-run /config/ /
 
-# Final image: the steps from docs/architecture.md, in order.
+# Final image. Step order is chosen for cache reuse (docs/architecture.md#dockerfile-structure).
 FROM ubuntu:26.04@sha256:c098726dd9b9733f3e885f8de0ef375206a311b0a317eadc40d347b1115fb944 AS image
 
 # Selects the per-architecture apt lists cache: each architecture has its own lists.

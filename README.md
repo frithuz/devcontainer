@@ -6,7 +6,7 @@ A single Ubuntu 26.04 LTS container image, `quay.io/frithuz/devcontainer` (mirro
 2. **GitHub Actions CI.** Jobs run inside the image, so CI uses the same tools developers do.
 3. **Agent sandboxes.** Coding agents run inside the image through [Docker Sandboxes (`sbx`)](https://docs.docker.com/ai/sandboxes/).
 
-> **Status: draft.** This README and `docs/` describe how the repository *will* work. Nothing is built yet.
+> **Status: in progress.** The image and its source images build locally. CI, publishing, tests, and sandbox kits are still designs; the docs mark those parts as planned.
 
 ## Principles
 
@@ -22,12 +22,12 @@ A single Ubuntu 26.04 LTS container image, `quay.io/frithuz/devcontainer` (mirro
 
 | Document | Covers |
 | --- | --- |
-| [`docs/tooling.md`](docs/tooling.md) | What's in the image, where each tool comes from, how it's updated |
-| [`docs/architecture.md`](docs/architecture.md) | Repo layout, build stages, users, environment, `sbx` contract |
+| [`docs/tooling.md`](docs/tooling.md) | How tools are chosen and installed, and per-tool quirks |
+| [`docs/architecture.md`](docs/architecture.md) | Build structure, `PATH`, shared directories, users, Docker, environment, `sbx` contract |
 | [`docs/usage.md`](docs/usage.md) | Consuming the image as a devcontainer, in CI, and in sandboxes |
 | [`docs/maintenance.md`](docs/maintenance.md) | Dependabot, CI, releases, contributor expectations |
-| [`docs/legal.md`](docs/legal.md) | Project license, its implications, and third-party notices shipped in `/legal` |
-| [`docs/data-model.md`](docs/data-model.md) | Draft schemas for inventories, source images and indexes, and registry-backed publication records |
+| [`docs/legal.md`](docs/legal.md) | Project license, third-party notices, and copyleft source publication |
+| [`docs/data-model.md`](docs/data-model.md) | Draft design of inventories, source images and indexes, and registry-backed publication records |
 | [`docs/integrations/`](docs/integrations/) | Setup for external services: [Quay.io](docs/integrations/quayio.md), [GHCR mirror](docs/integrations/ghcr.md), [1Password](docs/integrations/1password.md) |
 
 ## License
