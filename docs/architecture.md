@@ -8,7 +8,7 @@
 - `source.Dockerfile`: builds [source images](legal.md#source-images).
 - `.github/workflows/`: `lint.yml` (actionlint and zizmor), `publish.yml`, partly implemented ([maintenance.md](maintenance.md#publishing-publishyml)), and `kits.yml`, which keeps the sandbox kits pinned to the latest image ([maintenance.md](maintenance.md#sandbox-kits)).
 - `sandboxes/`: Docker Sandboxes kits, one directory per agent ([usage.md](usage.md#agent-sandboxes-sbx)).
-- Planned, not yet present: `test/` (smoke and DinD checks), and Dependabot and the CI workflow in `.github/`.
+- Planned, not yet present: `test/` (smoke and DinD checks), and the CI workflow in `.github/`.
 
 ## Dockerfile structure
 

@@ -1,10 +1,10 @@
 # Maintenance
 
-> Planned: Dependabot, `ci.yml`, and `test/` don't exist yet. `publish.yml` so far only builds, pushes to GHCR under the recovery tag `build-<run id>` (also `latest` on pushes to `main`, and optionally on manual runs), publishes the source images and attaches the source indexes, and, only on runs that tag `latest`, promotes the image with its source to Quay under the same tags: automatic public tags and `verify` are still to come. This page describes the intended design.
+> Planned: `ci.yml` and `test/` don't exist yet, and Dependabot covers only the `docker` ecosystem so far. `publish.yml` so far only builds, pushes to GHCR under the recovery tag `build-<run id>` (also `latest` on pushes to `main`, and optionally on manual runs), publishes the source images and attaches the source indexes, and, only on runs that tag `latest`, promotes the image with its source to Quay under the same tags: automatic public tags and `verify` are still to come. This page describes the intended design.
 
 ## Dependabot
 
-Dependabot runs weekly on two ecosystems: `docker`, for every pinned `FROM` (plus the kits' reference to this image), and `github-actions`, for actions pinned by commit SHA.
+Dependabot runs weekly on two ecosystems: `docker`, for every pinned `FROM` in `Dockerfile` and `source.Dockerfile`, and `github-actions`, for actions pinned by commit SHA. Both wait out a 3-day cooldown after a release before proposing it. The kits' reference to this image is left to `kits.yml` ([sandbox kits](#sandbox-kits)), because a bump must rewrite each kit's `provides` with it.
 
 - Lint tools are grouped into one PR. Go, Node, and Python stay **ungrouped**, so each language bump gets its own reviewable PR.
 - Go and Python minor lines, Node majors, and Ubuntu LTS bases count as major updates. They get separate PRs and need a human merge. Patch and digest-only updates can auto-merge once CI passes. Pre-release tags are ignored.

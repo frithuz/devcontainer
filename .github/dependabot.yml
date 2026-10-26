@@ -1,0 +1,11 @@
+# Keeps the pinned FROM references current (docs/maintenance.md#dependabot). Only the root
+# directory is scanned, which covers Dockerfile and source.Dockerfile. The sandbox kits pin this
+# image and are updated by kits.yml instead.
+version: 2
+updates:
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 3
