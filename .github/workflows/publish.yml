@@ -4,7 +4,12 @@
 # source indexes, the public tags (:main, :latest, :YYYYMMDD), verify, and promote to Quay. Public
 # tags wait for the source indexes (docs/legal.md#publishing).
 name: publish
-run-name: Publish
+run-name: >-
+  ${{ github.event_name == 'push'
+      && format('Publish {0}: {1}', github.ref_name, github.event.head_commit.message)
+      || github.event_name == 'schedule'
+      && format('Publish {0} — weekly refresh', github.ref_name)
+      || format('Publish {0} — manual{1} by @{2}', github.ref_name, inputs.refresh && ' refresh' || '', github.actor) }}
 
 on:
   push:
