@@ -1,6 +1,6 @@
 # Maintenance
 
-> Planned: `.github/` (Dependabot, `ci.yml`, `publish.yml`) and `test/` don't exist yet. This page describes the intended design.
+> Planned: Dependabot, `ci.yml`, and `test/` don't exist yet. `publish.yml` so far only builds, pushes to GHCR under the recovery tag `build-<run id>`, and publishes the source images: source indexes, public tags, `verify`, and `promote` are still to come. This page describes the intended design.
 
 ## Dependabot
 
@@ -22,6 +22,8 @@ Both workflows build through [`docker/github-builder`](https://github.com/docker
 `bake.yml` can't hand an image back to the calling workflow: it either pushes to a registry or exports files. That's why PR checks run *inside* the build (the `preflight` target, which exports its results), and why publishing pushes once and has every later job pull that digest.
 
 ## CI (`ci.yml`, on every PR)
+
+`lint.yml` runs [actionlint](https://github.com/rhysd/actionlint) and [zizmor](https://docs.zizmor.sh/) over the workflows on every PR and push to `main`, zizmor at the `auditor` persona. They run as background steps of one job, so both always run, and any finding from either fails it. actionlint's `.github/actionlint.yaml` lists runner labels newer than its built-in list, and ignores its errors on background steps in `lint.yml` until it supports them. For zizmor, every write permission needs a comment saying why it's there and every job needs a `name`.
 
 - **lint:** hadolint, shfmt, and betterleaks over the repository.
 - **preflight:** builds both architectures and runs the smoke tests inside the build.

@@ -1,0 +1,116 @@
+# Builds the image once and publishes it with its source images (docs/maintenance.md#publishing).
+#
+# For now this pushes to GHCR only, under the recovery tag build-<run id>. Not yet implemented:
+# source indexes, the public tags (:main, :latest, :YYYYMMDD), verify, and promote to Quay. Public
+# tags wait for the source indexes (docs/legal.md#publishing).
+name: publish
+run-name: Publish
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+    inputs:
+      refresh:
+        description: Refresh the apt packages and agent installs, like the weekly build
+        type: boolean
+        default: false
+
+permissions: {}
+
+# Runs and repairs share one group, and a run in progress is never cancelled.
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build and push to GHCR
+    uses: docker/github-builder/.github/workflows/bake.yml@cbc9d42f8c89a55623392aadd03600965b80e963 # v1.18.1
+    permissions:
+      contents: read
+      packages: write # push the image to GHCR
+      id-token: write # signing, and signed cache entries
+    with:
+      target: image
+      output: image
+      push: true
+      sbom: true
+      cache: true
+      cache-mode: max
+      # REFRESH changes on scheduled (and requested) runs to re-run every RUN step of the image
+      # stage (docs/architecture.md#dockerfile-structure).
+      vars: |
+        REVISION=${{ github.sha }}
+        REFRESH=${{ (github.event_name == 'schedule' || inputs.refresh) && github.run_id || '' }}
+      meta-images: ghcr.io/${{ github.repository_owner }}/devcontainer
+      meta-tags: type=raw,value=build-${{ github.run_id }}
+    secrets:
+      registry-auths: |
+        - registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+  sources:
+    name: Publish source images
+    needs: build
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      packages: write # push the source images to GHCR
+    env:
+      DIGEST: ${{ needs.build.outputs.digest }}
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # build-sources.sh keys source images on the last commit that changed the recipe.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Log in to GHCR
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set the repository
+        run: echo "REPOSITORY=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/devcontainer" >>"$GITHUB_ENV"
+
+      # Each platform's manifest comes from the pushed digest, never from a rebuild. COPY --from
+      # doesn't run anything, so the other platform needs no emulation.
+      - name: Copy the manifests out of the image
+        run: |
+          docker buildx build --platform linux/amd64,linux/arm64 --output type=local,dest=out/manifests - <<EOF
+          FROM scratch
+          COPY --from=$REPOSITORY@$DIGEST /legal/manifest.tsv /
+          EOF
+          find out/manifests -name manifest.tsv
+
+      # Source images already in the repository with the same key are reused, not rebuilt. The
+      # plan lists the repository's tags anonymously, so the package must be public.
+      - name: Build and push the source images
+        env:
+          MANIFESTS: out/manifests
+          SOURCE_PUSH: "true"
+        run: SOURCE_REPOSITORY=$REPOSITORY SOURCE_REUSE=$REPOSITORY scripts/build-sources.sh -- --progress=plain
+
+      - name: Summary
+        run: |
+          {
+            echo "## Published to GHCR"
+            echo
+            echo "- Image: \`$REPOSITORY:build-$GITHUB_RUN_ID@$DIGEST\`"
+            echo
+            echo "### Source images"
+            echo
+            echo '```'
+            cut -f1,2,5,6 out/sources/plan.tsv | column -t -s $'\t'
+            echo '```'
+          } >>"$GITHUB_STEP_SUMMARY"

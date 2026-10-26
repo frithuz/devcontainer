@@ -1,0 +1,48 @@
+name: lint
+run-name: Lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions: {}
+
+concurrency:
+  group: lint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  workflows:
+    name: Lint workflows
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The linters run in the background of each other, so both always run. The job's implicit
+      # wait-all at the end fails it if either one fails.
+
+      # Uses .github/actionlint.yaml. The image includes shellcheck, which checks the run: scripts.
+      - name: Run actionlint
+        id: actionlint
+        background: true
+        uses: docker://rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: -color
+
+      # Any finding at the auditor persona fails the step. Findings show as annotations instead of
+      # code scanning alerts, which would need security-events: write and don't fail the run.
+      - name: Run zizmor
+        id: zizmor
+        background: true
+        uses: zizmorcore/zizmor-action@53290badfa369cb0bf7ad16342cb62c2fa47ac7b # v0.8.0
+        with:
+          version: 1.31.1
+          persona: auditor
+          advanced-security: false
+          annotations: true

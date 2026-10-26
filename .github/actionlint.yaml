@@ -1,0 +1,12 @@
+# GitHub-hosted runner labels newer than actionlint's built-in list.
+self-hosted-runner:
+  labels:
+    - ubuntu-26.04
+    - ubuntu-26.04-arm
+
+# actionlint 1.7.12 doesn't know background steps yet
+# (https://github.com/rhysd/actionlint/issues/693). Remove this once it does.
+paths:
+  .github/workflows/lint.yml:
+    ignore:
+      - 'unexpected key "background" for step '
