@@ -1,8 +1,8 @@
 # Builds the image once and publishes it with its source images (docs/maintenance.md#publishing).
 #
-# For now this pushes to GHCR under the recovery tag build-<run id>. A manual run can also tag
-# :latest, and only those runs are promoted to Quay. Not yet implemented: automatic public tags
-# (:main, :latest, :YYYYMMDD) and verify (docs/legal.md#publishing).
+# For now this pushes to GHCR under the recovery tag build-<run id>. Pushes to main also tag
+# :latest, and so can a manual run. Only those runs are promoted to Quay. Not yet implemented:
+# automatic public tags (:main, :YYYYMMDD) and verify (docs/legal.md#publishing).
 name: publish
 run-name: >-
   ${{ github.event_name == 'push'
@@ -63,7 +63,7 @@ jobs:
       meta-images: ghcr.io/${{ github.repository_owner }}/devcontainer
       meta-tags: |
         type=raw,value=build-${{ github.run_id }}
-        type=raw,value=latest,enable=${{ github.event_name == 'workflow_dispatch' && inputs.latest }}
+        type=raw,value=latest,enable=${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' && inputs.latest }}
     secrets:
       registry-auths: |
         - registry: ghcr.io
@@ -162,7 +162,7 @@ jobs:
     needs: [build, sources]
     # Only runs that tag latest go to Quay. Every other run stays on GHCR. Keep this in step with
     # the build's latest tag.
-    if: github.event_name == 'workflow_dispatch' && inputs.latest
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' && inputs.latest
     runs-on: ubuntu-26.04
     # Quay's robot federation trusts only this environment's OIDC subject, and only main can
     # deploy to it (docs/integrations/quayio.md).

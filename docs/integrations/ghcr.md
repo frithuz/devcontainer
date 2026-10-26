@@ -1,6 +1,6 @@
 # GHCR (mirror)
 
-`ghcr.io/<owner>/devcontainer` is the **public build destination and mirror** of the image. `bake.yml` pushes there first, and `promote` copies that digest to Quay. After synchronization, both registries carry the same images, tags, signatures, and source. There's no private staging package. For now only runs that tag `latest` are promoted, so GHCR also carries the intermediate builds that Quay doesn't.
+`ghcr.io/<owner>/devcontainer` is the **public build destination and mirror** of the image. `bake.yml` pushes there first, and `promote` copies that digest to Quay. After synchronization, both registries carry the same images, tags, signatures, and source. There's no private staging package. For now only runs that tag `latest` (pushes to `main`, and manual runs that ask for it) are promoted, so GHCR also carries the scheduled and other manual builds that Quay doesn't.
 
 The mirror exists for two reasons:
 
