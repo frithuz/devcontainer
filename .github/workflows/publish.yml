@@ -6,7 +6,7 @@
 name: publish
 run-name: >-
   ${{ github.event_name == 'push'
-      && format('Publish {0}: {1}', github.ref_name, github.event.head_commit.message)
+      && format('Publish {0}', github.ref_name)
       || github.event_name == 'schedule'
       && format('Publish {0} — weekly refresh', github.ref_name)
       || format('Publish {0} — manual{1} by @{2}', github.ref_name, inputs.refresh && ' refresh' || '', github.actor) }}
