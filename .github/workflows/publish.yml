@@ -1,8 +1,8 @@
 # Builds the image once and publishes it with its source images (docs/maintenance.md#publishing).
 #
-# For now this pushes to GHCR only, under the recovery tag build-<run id>, with an optional
-# :latest tag on manual runs. Not yet implemented: source indexes, automatic public tags
-# (:main, :latest, :YYYYMMDD), verify, and promote to Quay (docs/legal.md#publishing).
+# For now this pushes to GHCR under the recovery tag build-<run id>. A manual run can also tag
+# :latest, and only those runs are promoted to Quay. Not yet implemented: source indexes,
+# automatic public tags (:main, :latest, :YYYYMMDD), and verify (docs/legal.md#publishing).
 name: publish
 run-name: >-
   ${{ github.event_name == 'push'
@@ -23,7 +23,7 @@ on:
         type: boolean
         default: false
       latest:
-        description: Also tag the built image as latest on GHCR
+        description: Also tag the built image as latest, and promote it to Quay
         type: boolean
         default: false
 
@@ -71,6 +71,8 @@ jobs:
     permissions:
       contents: read
       packages: write # push the source images to GHCR
+    outputs:
+      tags: ${{ steps.tags.outputs.tags }}
     env:
       DIGEST: ${{ needs.build.outputs.digest }}
     steps:
@@ -112,6 +114,11 @@ jobs:
           SOURCE_PUSH: "true"
         run: SOURCE_REPOSITORY=$REPOSITORY SOURCE_REUSE=$REPOSITORY scripts/build-sources.sh -- --progress=plain
 
+      # Every source image the image needs, built or reused, for promote to copy to Quay.
+      - name: Record the source tags
+        id: tags
+        run: echo "tags=$(awk -F'\t' 'NR > 1 && $2 != "-" { print $2 }' out/sources/plan.tsv | paste -sd' ' -)" >>"$GITHUB_OUTPUT"
+
       - name: Summary
         run: |
           {
@@ -124,4 +131,87 @@ jobs:
             echo '```'
             cut -f1,2,5,6 out/sources/plan.tsv | column -t -s $'\t'
             echo '```'
+          } >>"$GITHUB_STEP_SUMMARY"
+
+  promote:
+    name: Promote to Quay
+    needs: [build, sources]
+    # Only runs that tag latest go to Quay. Every other run stays on GHCR. Keep this in step with
+    # the build's latest tag.
+    if: github.event_name == 'workflow_dispatch' && inputs.latest
+    runs-on: ubuntu-26.04
+    # Quay's robot federation trusts only this environment's OIDC subject, and only main can
+    # deploy to it (docs/integrations/quayio.md).
+    environment: quay
+    permissions:
+      contents: read
+      packages: read # copy from GHCR
+      id-token: write # Quay robot federation
+    defaults:
+      run:
+        shell: bash
+    env:
+      DIGEST: ${{ needs.build.outputs.digest }}
+      SOURCE_TAGS: ${{ needs.sources.outputs.tags }}
+      QUAY_ROBOT: frithuz+promote
+      QUAY_AUDIENCE: quay
+      QUAY_REPOSITORY: quay.io/frithuz/devcontainer
+    steps:
+      - name: Set up ORAS
+        uses: oras-project/setup-oras@005458ad77f1c8facd38a094e4af2e69e5607ff4 # v2.0.2
+        with:
+          version: 1.3.6
+
+      - name: Set the GHCR repository
+        run: echo "GHCR_REPOSITORY=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/devcontainer" >>"$GITHUB_ENV"
+
+      - name: Log in to GHCR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$GH_TOKEN" | oras login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+
+      # Exchanges the job's OIDC token for a one-hour Quay token. No Quay credential is stored. The
+      # audience must be one of the federation entry's OIDC audiences in Quay.
+      - name: Log in to Quay with OIDC federation
+        run: |
+          oidc=$(curl -fsS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$QUAY_AUDIENCE" | jq -er .value)
+          echo "::add-mask::$oidc"
+          token=$(curl -fsS --user "$QUAY_ROBOT:$oidc" https://quay.io/oauth2/federation/robot/token | jq -er .token)
+          echo "::add-mask::$token"
+          printf '%s' "$token" | oras login quay.io --username "$QUAY_ROBOT" --password-stdin
+
+      # Source goes first, so no tag in Quay points at the image before its source is there
+      # (docs/legal.md#publishing). An existing source-* tag must already have GHCR's digest. It's
+      # never overwritten, and a lookup error fails the step rather than counting as absent.
+      - name: Copy the source images
+        run: |
+          for tag in $SOURCE_TAGS; do
+            want=$(oras resolve "$GHCR_REPOSITORY:$tag")
+            if have=$(oras resolve "$QUAY_REPOSITORY:$tag" 2>resolve.err); then
+              if [[ $have != "$want" ]]; then
+                echo "::error::$QUAY_REPOSITORY:$tag is $have, but GHCR has $want"
+                exit 1
+              fi
+              echo "$tag already in Quay"
+              continue
+            fi
+            if ! grep -q 'not found' resolve.err; then
+              cat resolve.err >&2
+              exit 1
+            fi
+            oras cp "$GHCR_REPOSITORY@$want" "$QUAY_REPOSITORY:$tag"
+          done
+
+      # Referrers carry the signatures and attestations. Quay has the Referrers API, so requiring
+      # it makes a Quay-side problem fail instead of creating fallback tags.
+      - name: Copy the image with its referrers
+        run: oras cp -r --to-distribution-spec v1.1-referrers-api "$GHCR_REPOSITORY@$DIGEST" "$QUAY_REPOSITORY:build-$GITHUB_RUN_ID,latest"
+
+      - name: Summary
+        run: |
+          {
+            echo "## Promoted to Quay"
+            echo
+            echo "- Image: \`$QUAY_REPOSITORY:build-$GITHUB_RUN_ID@$DIGEST\`"
+            echo "- Source images: $(wc -w <<<"$SOURCE_TAGS")"
           } >>"$GITHUB_STEP_SUMMARY"

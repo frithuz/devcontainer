@@ -1,6 +1,6 @@
 # GHCR (mirror)
 
-`ghcr.io/<owner>/devcontainer` is the **public build destination and mirror** of the image. `bake.yml` pushes there first, and `promote` copies that digest to Quay. After synchronization, both registries carry the same images, tags, signatures, and source. There's no private staging package.
+`ghcr.io/<owner>/devcontainer` is the **public build destination and mirror** of the image. `bake.yml` pushes there first, and `promote` copies that digest to Quay. After synchronization, both registries carry the same images, tags, signatures, and source. There's no private staging package. For now only runs that tag `latest` are promoted, so GHCR also carries the intermediate builds that Quay doesn't.
 
 The mirror exists for two reasons:
 
@@ -27,7 +27,7 @@ The mirror exists for two reasons:
 | `sources` | `contents: read`, `packages: write` | `oras` and `docker` login with `GITHUB_TOKEN` |
 | `tag-ghcr` | `contents: read`, `packages: write` | `oras` login with `GITHUB_TOKEN` |
 | `verify` | `contents: read`, `packages: read` | none (public) |
-| `promote` | `contents: read`, `packages: read`, `id-token: write` (Quay federation) | `oras` login with `GITHUB_TOKEN` |
+| `promote` (environment `quay`) | `contents: read`, `packages: read`, `id-token: write` (Quay federation) | `oras` login with `GITHUB_TOKEN` |
 
 `GITHUB_TOKEN` is created for each run and expires when the run ends. It isn't a stored secret.
 

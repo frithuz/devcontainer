@@ -1,6 +1,6 @@
 # Maintenance
 
-> Planned: Dependabot, `ci.yml`, and `test/` don't exist yet. `publish.yml` so far only builds, pushes to GHCR under the recovery tag `build-<run id>` (optionally also `latest` on manual runs), and publishes the source images: source indexes, automatic public tags, `verify`, and `promote` are still to come. This page describes the intended design.
+> Planned: Dependabot, `ci.yml`, and `test/` don't exist yet. `publish.yml` so far only builds, pushes to GHCR under the recovery tag `build-<run id>` (optionally also `latest` on manual runs), publishes the source images, and, only on runs that tag `latest`, promotes the image and its source images to Quay under the same tags: source indexes, automatic public tags, and `verify` are still to come. This page describes the intended design.
 
 ## Dependabot
 
@@ -41,7 +41,7 @@ The smoke tests run in the PR build and against the published digest, on both ar
 
 ## Publishing (`publish.yml`)
 
-For a manual run, select **Run workflow** and enable **Also tag the built image as latest on GHCR** (`latest`, off by default). The build pushes both `build-<run id>` and `latest` to the same image digest. This opt-in tag is applied during the build, before source publication, so it can move even if the later source job fails. The `refresh` input remains independent.
+For a manual run, select **Run workflow** and enable **Also tag the built image as latest, and promote it to Quay** (`latest`, off by default). The build pushes both `build-<run id>` and `latest` to the same image digest, and `promote` copies the image to Quay with both tags. For now these are the only runs that reach Quay: pushes to `main`, scheduled runs, and manual runs without `latest` stay on GHCR. On GHCR this opt-in tag is applied during the build, before source publication, so it can move even if the later source job fails. On Quay it's applied only after the source images are copied. The `refresh` input remains independent.
 
 The image goes to two public registries with the same tags, digests, signatures, and source:
 
@@ -83,7 +83,7 @@ Recovery of an interrupted publication is described in [integrations/ghcr.md](in
 ### Registry and signing
 
 - **GHCR** is a public package linked to this repository, written with `GITHUB_TOKEN`. Grant the Admin Actions role only once retention deletion exists ([integrations/ghcr.md](integrations/ghcr.md)).
-- **Quay** has one robot, `frithuz+promote`, with Write on `devcontainer` only, logging in exclusively through federation pinned to `main` ([integrations/quayio.md](integrations/quayio.md)). Create the repository as public before the first promote. A push that creates the repository creates it private.
+- **Quay** has one robot, `frithuz+promote`, with Write on `devcontainer` only, logging in exclusively through federation pinned to the `quay` environment, which only `main` can deploy to ([integrations/quayio.md](integrations/quayio.md)). Create the repository as public before the first promote. A push that creates the repository creates it private.
 - **Other credentials**, if ever needed, come from 1Password Workload Identity, never GitHub secrets ([integrations/1password.md](integrations/1password.md)).
 - **Attestations and signing:** `bake.yml` attaches an SBOM and SLSA provenance and signs keylessly with cosign on GHCR. `promote` copies the signatures to Quay with the image. The signing identity is `bake.yml` itself, so verification works the same against either registry.
 

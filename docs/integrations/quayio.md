@@ -2,7 +2,7 @@
 
 The image is published to **`quay.io/frithuz/devcontainer`**. This page covers the one-time setup in Quay and GitHub that the [publish workflow](../maintenance.md#publishing-publishyml) depends on.
 
-Quay is the **default distribution registry**. Only one job writes to it: **`promote`**, our own job. It copies the image, with its signatures, source indexes, and source images, from the [GHCR mirror](ghcr.md), confirms the source is attached, and applies the tags. Promotion runs independently of tests and continues when tests fail. It authenticates as a single robot account, **`frithuz+promote`**, using **OIDC federation only**. No Quay token is stored anywhere, in GitHub or elsewhere.
+Quay is the **default distribution registry**. Only one job writes to it: **`promote`**, our own job. It copies the image, with its signatures, source indexes, and source images, from the [GHCR mirror](ghcr.md), confirms the source is attached, and applies the tags. For now `promote` runs only on manual runs that tag `latest` ([maintenance.md](../maintenance.md#publishing-publishyml)); every other run stays on GHCR. Promotion runs independently of tests and continues when tests fail. It runs in the GitHub environment **`quay`** and authenticates as a single robot account, **`frithuz+promote`**, using **OIDC federation only**. No Quay token is stored anywhere, in GitHub or elsewhere.
 
 ## 1. Organization
 
@@ -37,7 +37,7 @@ Create it under **Organizations → frithuz → Robot Accounts → Create Robot 
 | Add to team | None |
 | Repository permissions | `devcontainer`: **Write** (push manifests and referrers, create and move tags) |
 | Default permissions | None |
-| Robot federation | Issuer `https://token.actions.githubusercontent.com`, subject `<prefix>:ref:refs/heads/main` (see [section 4](#4-oidc-federation)) |
+| Robot federation | Issuer `https://token.actions.githubusercontent.com`, subject `repo:frithuz@306324456/devcontainer@1433350495:environment:quay`, OIDC audiences `quay` (see [section 4](#4-oidc-federation)) |
 | Robot token | **Never copied or stored.** It exists but isn't used. If it's ever exposed, regenerate it to invalidate it. Federation keeps working |
 
 Steps:
@@ -49,68 +49,60 @@ The robot doesn't need **Admin**. That would let it change visibility, permissio
 
 ## 4. OIDC federation
 
-### Get the repository's immutable subject
+### The repository's immutable subject
 
 GitHub can issue OIDC subjects that use the repository's and owner's numeric IDs. The subject then can't be claimed by another repository that later takes over the same name.
 
-1. In the GitHub repository, open **Settings → Actions → OIDC**.
-2. Enable **Use immutable subject claim**.
-3. Copy the **Default subject claim prefix**. It has the form `repo:<owner>@<owner-id>/<repo>@<repo-id>`.
+**Use immutable subject claim** is enabled under **Settings → Actions → OIDC**. The repository's subject prefix is:
+
+```text
+repo:frithuz@306324456/devcontainer@1433350495
+```
+
+The IDs belong to the owner `frithuz` and the repository `devcontainer`. Renaming keeps them. Transferring the repository to another owner changes the owner ID, and recreating it changes the repository ID. Either one needs a new federation entry.
+
+### The `quay` environment
+
+`promote` runs in the GitHub environment `quay`. When a job names an environment, GitHub's subject names the environment instead of the ref, so the federation entry trusts the environment and the environment decides which runs may use it.
+
+In **Settings → Environments → quay**:
+
+| Setting | Value | Why |
+| --- | --- | --- |
+| Deployment branches and tags | **Selected branches and tags**, with the one rule `main` (branch) | Only runs on `main`, including scheduled runs, can enter the environment. PRs, forks, and other branches can't mint the subject |
+| Required reviewers | None | `promote` already runs only when someone starts a run with `latest` ticked. If scheduled runs promote later, reviewers would make them wait for approval. Add reviewers only if every promotion should be approved by hand |
+| Environment secrets and variables | None | Federation needs no stored credential |
+
+The environment was created with:
+
+```sh
+gh api -X PUT repos/frithuz/devcontainer/environments/quay \
+  --input - <<<'{"deployment_branch_policy": {"protected_branches": false, "custom_branch_policies": true}}'
+gh api -X POST repos/frithuz/devcontainer/environments/quay/deployment-branch-policies \
+  -f name=main -f type=branch
+```
 
 ### Configure federation on the robot
 
 1. In **Robot Accounts**, open the menu (⋮) on `frithuz+promote`, choose **Set robot federation**, and click **+**.
 2. Enter:
    - **Issuer URL:** `https://token.actions.githubusercontent.com`
-   - **Subject:** `<prefix>:ref:refs/heads/main`
+   - **Subject:** `repo:frithuz@306324456/devcontainer@1433350495:environment:quay`
+   - **OIDC audiences:** `quay` (the default)
 3. Save.
 
-The subject pins token minting to workflow runs on `main`. Scheduled runs execute on the default branch, so they match too. Runs from PRs, forks, and other branches get a different subject, and Quay rejects their tokens.
-
-**Optional, stricter:** run `promote` in a GitHub environment (e.g. `quay`, restricted to `main`, with required reviewers if wanted). Federate on `<prefix>:environment:quay` instead. With an environment set, GitHub's subject names the environment instead of the ref.
+A job without `environment: quay`, or a run the environment's branch rule turns away, gets a different subject, and Quay rejects its token.
 
 ### Use it in the workflow
 
-The job needs `id-token: write`. It requests a GitHub OIDC token, exchanges it for a one-hour Quay token, masks both, and logs `oras` in:
-
-```yaml
-promote:
-  needs: [build, sources]
-  runs-on: ubuntu-26.04
-  permissions:
-    contents: read
-    packages: read   # copy from the GHCR mirror
-    id-token: write  # Quay federation
-  env:
-    QUAY_ROBOT: frithuz+promote
-  steps:
-    - name: Log in to GHCR
-      shell: bash
-      env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }} # automatic per-run token, not a stored secret
-      run: |
-        set -euo pipefail
-        printf '%s' "${GH_TOKEN}" | oras login ghcr.io --username "${{ github.actor }}" --password-stdin
-    - name: Log in to Quay with OIDC federation
-      shell: bash
-      run: |
-        set -euo pipefail
-        oidc=$(curl -fsS -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
-          "${ACTIONS_ID_TOKEN_REQUEST_URL}" | jq -r .value)
-        echo "::add-mask::${oidc}"
-        token=$(curl -fsS --user "${QUAY_ROBOT}:${oidc}" \
-          https://quay.io/oauth2/federation/robot/token | jq -r .token)
-        echo "::add-mask::${token}"
-        printf '%s' "${token}" | oras login quay.io --username "${QUAY_ROBOT}" --password-stdin
-    # ... copy by digest with referrers, confirm source, tag (see maintenance.md#workflow and legal.md#publishing)
-```
+The `promote` job in [`publish.yml`](../../.github/workflows/publish.yml) names `environment: quay` and has `id-token: write`. Its **Log in to Quay with OIDC federation** step requests a GitHub OIDC token for the audience `quay` (`QUAY_AUDIENCE`), exchanges it for a one-hour Quay token, masks both, and logs `oras` in. It then copies the source images, and then the image with its referrers, from GHCR.
 
 - **Token lifetime is one hour.** That matches Quay's one-hour protection for untagged pushes, which `promote` already has to finish within. Log in right before copying. If the job ever grows past an hour, log in again.
-- Requests without an explicit `audience` parameter use GitHub's default `aud`. Quay's federation config takes only an issuer and a subject.
+- **The audience has to match.** Quay checks the token's `aud` against the federation entry's **OIDC audiences**, which default to `quay`. Without an `audience` parameter, GitHub sets `aud` to `https://github.com/frithuz`, and Quay rejects the token. Nothing in GitHub's settings controls the audience: the job asks for it when it requests the token. If the audience in Quay changes, change `QUAY_AUDIENCE` to match. Quay still accepts entries with no audiences but logs them as deprecated, so keep one set.
 
 ## 5. Verify
 
-- **Federation:** run `publish.yml` manually on `main` (`workflow_dispatch`). The Quay login step should print `Login Succeeded`. To check that it's rejected elsewhere, run the same login step from another branch: the exchange should fail with an auth error.
+- **Federation:** run `publish.yml` manually on `main` (`workflow_dispatch`) with **Also tag the built image as latest, and promote it to Quay** ticked. Without it, `promote` is skipped. The Quay login step should print `Login Succeeded`. To check that it's rejected elsewhere, run the workflow the same way from another branch: `promote` should fail before it starts because the `quay` environment's branch rule refuses it.
 - **No stored credentials:** the repository should have no Actions secrets, and the organization only `OP_INTEGRATION_KEY` if [1Password](1password.md) is ever adopted.
 - **Promotion:** after a run, the Quay tags point at the same digests as the GHCR tags, and the signatures verify against the Quay reference.
 - **Independent testing:** a deliberately failing test still allows `promote` to finish. The workflow reports the test failure and the successful sync separately. Copy failures retry and report incomplete synchronization; recovery uses the same digest ([GHCR recovery](ghcr.md#synchronization-and-recovery)).
@@ -128,7 +120,7 @@ promote:
 
 | Symptom | Likely cause |
 | --- | --- |
-| Exchange returns 401/403 | The subject doesn't match: wrong ref, a job using an `environment`, or the mutable instead of the immutable prefix. Decode the OIDC token's `sub` claim (it's a JWT) and compare it with the federation entry |
+| Exchange returns 401/403 | The audience doesn't match (`QUAY_AUDIENCE` against the entry's OIDC audiences), or the subject doesn't match: a job without `environment: quay`, a different environment name, or the mutable instead of the immutable prefix. Decode the OIDC token (it's a JWT) and compare its `aud` and `sub` claims with the federation entry |
 | `ACTIONS_ID_TOKEN_REQUEST_URL` is empty | The job is missing `permissions: id-token: write` |
 | Repository is private after the first promote | It was created by the push. Make it public in **Settings** |
 | The robot can reach other repositories | An organization **Default Permission** or team membership grants it. Remove it (see [section 1](#1-organization)) |
