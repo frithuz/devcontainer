@@ -124,6 +124,14 @@ components:
     notices: [/legal/attribution/jv/LICENSE]
     paths: [/usr/local/bin/jv]
 
+  - name: task
+    stage: task
+    install: go-install
+    license: MIT
+    version: task --version
+    notices: [/legal/attribution/task/LICENSE]
+    paths: [/usr/local/bin/task]
+
   - name: gomplate
     stage: gomplate
     license: MIT

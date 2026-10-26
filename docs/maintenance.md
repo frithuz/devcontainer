@@ -12,7 +12,7 @@ Dependabot runs weekly on two ecosystems: `docker`, for every pinned `FROM` (plu
 ## Updates Dependabot can't handle
 
 - **apt packages** (base, git PPA, Docker Engine), **`gh`**, and the **agent CLIs** aren't pinned. The weekly build's refresh argument reinstalls them ([architecture.md](architecture.md#dockerfile-structure)). Other builds may reuse cached layers, so a push build can be up to a week behind on these.
-- **`jv`** is pinned as a Go module version in its builder stage and bumped by hand.
+- **`jv` and `task`** are pinned as Go module versions in their builder stages and bumped by hand.
 - **License files** are fetched from the installed version's upstream tag on every build, so there's nothing to track. When a tool is bumped, review its `SOURCE` checksums for a license change ([legal.md](legal.md#how-files-get-there)).
 
 ## Build definitions
@@ -90,6 +90,33 @@ Recovery of an interrupted publication is described in [integrations/ghcr.md](in
 - **Consumers** should pin `:YYYYMMDD@sha256:<digest>`. Date tags sort as versions, so the consumer's Dependabot proposes newer snapshots. With `:latest`, it can only bump the digest.
 - Only the image is published. Sandbox kits are consumed from git ([usage.md](usage.md#agent-sandboxes-sbx)).
 - **Retention:** nothing expires today. Any future deletion policy must follow the [legal retention rules](legal.md#retention).
+
+## Contributor setup
+
+From the repository root, run `task repo:init` with Task 3.54.0 or newer.
+Task is included in the devcontainer image.
+Alternatively, run `sh tools/repo-init.sh` directly without Task. Setup checks
+prerequisites and sets repository-local `core.hooksPath` to `.githooks`; it is
+safe to repeat and does not install tools or change global Git configuration.
+It warns before replacing a different hook directory for this checkout.
+
+The [commit-msg hook](../.githooks/commit-msg), its tests, and setup are copied
+from [frithuz/mdchk](https://github.com/frithuz/mdchk/tree/3cacdd9f70cfba8de46baddd4e35382f081e5adc/.githooks).
+On normal and amended commits, the hook removes all case variants of
+`Co-Authored-By:` trailers and their continuation lines. Git's trailer parser
+distinguishes these from subject and body text; unrelated trailers and other
+message bytes are preserved. A parsing or write failure rejects the commit.
+
+The hook requires POSIX `sh`, Git 2.22 or newer, and standard macOS/Linux Unix
+utilities. To run its integration tests with Bats 1.7 or newer:
+
+```sh
+bats .githooks/commit-msg.bats
+```
+
+Activation must be repeated for each clone. This is local enforcement:
+`--no-verify` and commands that do not invoke `commit-msg` can bypass it.
+The no-co-author rule in [AGENTS.md](../AGENTS.md) still applies.
 
 ## Contributor expectations
 

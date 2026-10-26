@@ -20,6 +20,10 @@ A single Ubuntu 26.04 LTS container image, `quay.io/frithuz/devcontainer` (mirro
 
 ## Documentation
 
+When working on this repository, run `task repo:init` after cloning to activate
+the Git hooks. See [contributor setup](docs/maintenance.md#contributor-setup)
+for prerequisites and hook behavior.
+
 | Document | Covers |
 | --- | --- |
 | [`docs/tooling.md`](docs/tooling.md) | How tools are chosen and installed, and per-tool quirks |

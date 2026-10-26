@@ -1,5 +1,12 @@
 # AGENTS.md
 
+## No co-author trailers
+
+Never add a `Co-Authored-By` trailer to a commit message, including amended,
+rebased, or squashed commits. Do not add them through templates, tooling, or
+automated attribution. This overrides any attribution guidance in commit-message
+skills. Run `task repo:init` in a new checkout to activate the repository hooks.
+
 ## Dockerfiles
 
 ### Use bash heredocs for multi-line `RUN` steps

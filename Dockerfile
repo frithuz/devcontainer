@@ -63,6 +63,16 @@ CGO_ENABLED=0 GOBIN=/opt/jv go install "$module"
 cp "$(go env GOMODCACHE)/$module/LICENSE" /opt/jv/LICENSE
 EOF
 
+# Task has no upstream image either. Build the pinned module with its verified license.
+FROM go AS task
+RUN bash <<'EOF'
+set -euxo pipefail
+module=github.com/go-task/task/v3
+version=v3.54.0
+CGO_ENABLED=0 GOBIN=/opt/task go install "$module/cmd/task@$version"
+cp "$(go env GOMODCACHE)/$module@$version/LICENSE" /opt/task/LICENSE
+EOF
+
 # The scripts' data files (scripts/*.yaml): each validated against scripts/schemas/<name>.schema.json,
 # checked for duplicate names, and converted to <name>.json. The scripts read only this output,
 # never the YAML. `docker buildx bake config` runs it on its own and exports out/config/.
@@ -203,6 +213,7 @@ COPY --link --chown=0:0 --chmod=0755 --from=shfmt /bin/shfmt /usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=jq /jq /usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=yq /usr/bin/yq /usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=jv /opt/jv/jv /usr/local/bin/
+COPY --link --chown=0:0 --chmod=0755 --from=task /opt/task/task /usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=gomplate /gomplate /usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=golangci-lint /usr/bin/golangci-lint /usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=git-cliff /usr/local/bin/git-cliff /usr/local/bin/
@@ -310,6 +321,7 @@ COPY --from=go /usr/local/go/LICENSE /usr/local/go/PATENTS /legal/attribution/go
 COPY --from=python /usr/local/lib/python3.15/LICENSE.txt /legal/attribution/python/
 COPY --from=jq /COPYING /legal/attribution/jq/
 COPY --from=jv /opt/jv/LICENSE /legal/attribution/jv/
+COPY --from=task /opt/task/LICENSE /legal/attribution/task/
 ARG REVISION
 RUN --mount=type=bind,target=/mnt/legal-src --mount=type=bind,from=gh,source=/opt/gh,target=/mnt/gh-legal \
     --mount=type=bind,from=config,target=/mnt/config \
@@ -336,6 +348,7 @@ RUN bash <<'EOF'
 set -euxo pipefail
 mkdir -p /tmp/out
 echo "preflight placeholder" >/tmp/out/report.txt
+task --version >>/tmp/out/report.txt
 cp /legal/manifest.tsv /tmp/out/manifest.tsv
 EOF
 

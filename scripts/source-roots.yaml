@@ -37,6 +37,15 @@ roots:
     vendoring: go-vendor
     note: MPL-2.0 modules (hashicorp/hcl)
 
+  - name: task
+    kind: git
+    repository: https://github.com/go-task/task
+    tag: "{version}"
+    module: github.com/go-task/task/v3
+    binaries: [task]
+    vendoring: go-vendor
+    note: MPL-2.0 modules (hashicorp/go-getter)
+
   - name: betterleaks
     kind: git
     repository: https://github.com/betterleaks/betterleaks
