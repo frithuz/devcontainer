@@ -41,7 +41,7 @@ The smoke tests run in the PR build and against the published digest, on both ar
 
 ## Publishing (`publish.yml`)
 
-Every push to `main` tags `latest`. For a manual run, select **Run workflow** and enable **Also tag the built image as latest, and promote it to Quay** (`latest`, off by default). Either way the build pushes both `build-<run id>` and `latest` to the same image digest, and `promote` copies the image to Quay with both tags. For now these are the only runs that reach Quay: scheduled runs and manual runs without `latest` stay on GHCR. On GHCR the `latest` tag is applied during the build, before source publication, so it can move even if the later source job fails. On Quay it's applied only after the source indexes and their source images are copied and checked. The `refresh` input remains independent.
+Every push to `main` tags `latest`, except one that only touches `sandboxes/`. For a manual run, select **Run workflow** and enable **Also tag the built image as latest, and promote it to Quay** (`latest`, off by default). Either way the build pushes both `build-<run id>` and `latest` to the same image digest, and `promote` copies the image to Quay with both tags. For now these are the only runs that reach Quay: scheduled runs and manual runs without `latest` stay on GHCR. On GHCR the `latest` tag is applied during the build, before source publication, so it can move even if the later source job fails. On Quay it's applied only after the source indexes and their source images are copied and checked. The `refresh` input remains independent.
 
 The image goes to two public registries with the same tags, digests, signatures, and source:
 
@@ -92,6 +92,27 @@ Recovery of an interrupted publication is described in [integrations/ghcr.md](in
 - **Consumers** should pin `:YYYYMMDD@sha256:<digest>`. Date tags sort as versions, so the consumer's Dependabot proposes newer snapshots. With `:latest`, it can only bump the digest.
 - Only the image is published. Sandbox kits are consumed from git ([usage.md](usage.md#agent-sandboxes-sbx)).
 - **Retention:** nothing expires today. Any future deletion policy must follow the [legal retention rules](legal.md#retention).
+
+### Sandbox kits
+
+Each kit pins the image in its dockerfile's `FROM` and states the agent version that image installed in its descriptor's `provides` (`claude@2.1.310`). The agent can still update itself inside a sandbox, so `provides` records what the image shipped, not what's running.
+
+The versions come from `/legal/manifest.tsv`, which every build writes for each platform. They can also be read from the registry without pulling the image, through the SBOM attestation (the `claude-code` and `codex` packages):
+
+```sh
+docker buildx imagetools inspect quay.io/frithuz/devcontainer:latest --format '{{json .SBOM}}'
+```
+
+`scripts/update-kits.sh <name>:<tag>@sha256:<digest>` copies both platforms' manifests out of an image and fails unless each agent has one version across them. It then rewrites every kit's `FROM` and `provides` together. Run it by hand to point the kits at any published image.
+
+`kits.yml` runs the script, and it starts two ways. `publish.yml` calls it after a promotion that tags `latest` in Quay, with that image. `promote` reports `latest` only after `oras tag` has applied it, so a run that promotes without `latest` leaves the kits alone. To point the kits at another image already in Quay, run **kits** by hand with its `quay.io/frithuz/devcontainer:<tag>@sha256:<digest>` reference.
+
+If anything changed, it builds the kits with the kit frontend, which validates each descriptor and runs the conformance checks. It then force-pushes one commit to `kits/update` and opens or updates that branch's PR. Runs take turns on that branch. Review and merge the PR like any other.
+
+- Scheduled builds don't reach Quay yet, so a weekly agent refresh reaches the kits only with the next push to `main`, or a manual run with `latest`.
+- A PR opened with `GITHUB_TOKEN` doesn't trigger other workflows, so `lint.yml` doesn't run on it. The kits build in `kits.yml` is its check.
+- Enable **Settings → Actions → General → Allow GitHub Actions to create and approve pull requests**, or `gh pr create` fails.
+- `publish.yml` ignores pushes that only touch `sandboxes/`. Otherwise merging a kits PR would publish a new image, which would open the next kits PR.
 
 ## Contributor setup
 

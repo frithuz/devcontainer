@@ -99,7 +99,7 @@ The image meets the [Docker Sandboxes custom image requirements](https://docs.do
 - `<agent>.dockerfile` pins the image by digest and sets the agent as `ENTRYPOINT`.
 - `<agent>.yaml` is the descriptor. Its `provides` states the agent version the pinned image installed. It declares the `sbx`, network-policy, credential, volume, and lifecycle capabilities, and seeds the agent's config from the credential mode the host binds.
 
-V3 needs `sbx` v0.45 or later, and v3 workloads only take v3 mixins.
+V3 needs `sbx` v0.45 or later, and v3 workloads only take v3 mixins. A publish run keeps the pins current through a PR ([maintenance.md](maintenance.md#sandbox-kits)).
 
 **Kits aren't published.** `sbx` builds them from this repository at a pinned commit, so a given commit always builds the same sandbox. Remote kit sources default to Docker Hub only, so allow this repository once:
 

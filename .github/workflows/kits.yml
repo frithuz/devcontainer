@@ -1,0 +1,117 @@
+# Points the sandbox kits at a published image, through one PR on a fixed branch that each run
+# replaces (docs/maintenance.md#sandbox-kits). publish.yml calls it once Quay has tagged a new
+# image latest. Run it by hand to point the kits at any image already in Quay.
+name: kits
+run-name: >-
+  ${{ github.event_name == 'workflow_dispatch'
+      && format('Update kits — manual by @{0}', github.actor)
+      || 'Update kits' }}
+
+on:
+  workflow_call:
+    inputs:
+      image:
+        description: The promoted image, as quay.io/frithuz/devcontainer:<tag>@sha256:<digest>
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      image:
+        description: Image to pin, as quay.io/frithuz/devcontainer:<tag>@sha256:<digest>
+        type: string
+        required: true
+
+permissions: {}
+
+jobs:
+  update:
+    name: Update the sandbox kits
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: write # push the update branch
+      pull-requests: write # open or update the PR
+    # Runs share the update branch, so they take turns.
+    concurrency:
+      group: kits
+      cancel-in-progress: false
+    defaults:
+      run:
+        shell: bash
+    env:
+      IMAGE: ${{ inputs.image }}
+      BRANCH: kits/update
+    steps:
+      # The kits pin only Quay, the default distribution registry.
+      - name: Check the image reference
+        run: |
+          if [[ ! $IMAGE =~ ^quay\.io/frithuz/devcontainer:[^@/]+@sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::Not a quay.io/frithuz/devcontainer:<tag>@sha256:<digest> reference: $IMAGE"
+            exit 1
+          fi
+
+      # The tip of main, not the built commit, so the PR doesn't undo later changes to the kits.
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Update the kits
+        id: update
+        run: |
+          scripts/update-kits.sh "$IMAGE" | tee versions.tsv
+          if git diff --quiet -- sandboxes; then
+            echo "changed=false" >>"$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >>"$GITHUB_OUTPUT"
+          fi
+
+      # The kit frontend validates each descriptor and runs the conformance checks while it
+      # builds. A PR opened with GITHUB_TOKEN doesn't trigger workflows, so this is the PR's check.
+      - name: Build the kits
+        if: steps.update.outputs.changed == 'true'
+        run: |
+          for kit in claude codex; do
+            docker buildx build --platform linux/amd64 --output type=cacheonly \
+              -f "sandboxes/$kit/$kit.yaml" "sandboxes/$kit"
+          done
+
+      - name: Open or update the pull request
+        if: steps.update.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          BASE: ${{ github.event.repository.default_branch }}
+        run: |
+          tag=${IMAGE#*:}
+          tag=${tag%@*}
+          title="sandboxes: update to devcontainer $tag"
+          {
+            echo "$title"
+            echo
+            echo "Points the claude and codex kits at a published image, and at the"
+            echo "agent versions it installed."
+            echo
+            echo "    $IMAGE"
+            echo
+            awk -F'\t' '{ print "    " $1 " " $2 " -> " $3 }' versions.tsv
+            echo
+            echo "Run: $RUN_URL"
+          } >message.txt
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898283+github-actions[bot]@users.noreply.github.com'
+          gh auth setup-git
+          git switch -C "$BRANCH"
+          git commit --quiet -F message.txt -- sandboxes
+          git push --force origin "$BRANCH"
+
+          tail -n +3 message.txt >body.md
+          if [[ -n $(gh pr list --head "$BRANCH" --state open --json number --jq '.[].number') ]]; then
+            gh pr edit "$BRANCH" --title "$title" --body-file body.md
+          else
+            gh pr create --base "$BASE" --head "$BRANCH" --title "$title" --body-file body.md
+          fi
