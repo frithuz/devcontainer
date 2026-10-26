@@ -12,6 +12,7 @@ The mirror exists for two reasons:
 - **No Referrers API.** Signatures and source indexes live in fallback indexes under `sha256-<digest>` tags, which show up in the package's version list. These are real tags: any cleanup has to keep them as long as their subject image ([legal.md](../legal.md#retention)).
 - **No registry `DELETE`** (it returns 405). Deletion goes through the GitHub Packages REST API only. That's why every subject gets exactly one source index, attached once ([legal.md](../legal.md#publishing)). `bake.yml`'s signatures attach to the attestation manifests, which are different subjects.
 - **Tagged earlier.** GHCR gets public tags right after `sources`. Quay gets them after `promote`.
+- **Descriptions come from the index.** For a multi-platform image, GHCR shows the image index's `org.opencontainers.image.description` annotation, not the config label. `publish.yml` sets the image's through `bake.yml`'s `meta-annotations`, and `scripts/plan-sources.sh` sets each source image's.
 
 ## Setup (once)
 

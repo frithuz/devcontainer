@@ -334,7 +334,7 @@ EOF
 
 # 15. Defaults for every context.
 LABEL org.opencontainers.image.title="devcontainer" \
-      org.opencontainers.image.description="Ubuntu 26.04 image with a shared toolset for devcontainers, CI, and agent sandboxes" \
+      org.opencontainers.image.description="Ubuntu 26.04 LTS image with one pinned toolset for devcontainers, GitHub Actions CI, and agent sandboxes. Copyleft source is attached as OCI referrers; see /legal/SOURCE.md." \
       org.opencontainers.image.licenses="CC0-1.0" \
       devcontainer.metadata='[{"remoteUser":"agent"}]'
 USER agent

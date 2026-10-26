@@ -31,6 +31,9 @@ readonly recipe_script=$here/build-source-image.sh
 # Licenses that owe source. NOASSERTION (an apt copyright file that isn't machine-readable)
 # can't be ruled out, so it owes source too.
 readonly copyleft='GPL|MPL|EPL|CDDL|EUPL|NOASSERTION'
+# The annotations below are part of every source image but not otherwise of its key. Bump this
+# when they change, so every source image is rebuilt with the new ones.
+readonly annotations_version=1
 
 config=
 check=false
@@ -74,8 +77,8 @@ trap 'rm -rf "$work"' EXIT
 recipe=$(jq -cn \
 	--arg repository "${SOURCE_RECIPE_REPOSITORY:-local}" \
 	--arg revision "${SOURCE_RECIPE_REVISION:-uncommitted}" \
-	--arg digest "sha256:$(sha256sum "$recipe_script" | cut -d' ' -f1)" \
-	'{repository: $repository, revision: $revision, path: "scripts/build-source-image.sh", digest: $digest}')
+	--arg digest "sha256:$(sha256sum "$recipe_script" | cut -d' ' -f1)" --argjson annotations "$annotations_version" \
+	'{repository: $repository, revision: $revision, path: "scripts/build-source-image.sh", digest: $digest, annotations: $annotations}')
 readonly recipe
 if [[ -z ${SOURCE_RECIPE_REVISION:-} ]]; then
 	note "SOURCE_RECIPE_REVISION is unset; keys won't match published source images"
@@ -121,6 +124,19 @@ finish() {
 			tag: $tag, key: $key, identity: $identity, fetch: $fetch, expect: $expect,
 			annotations: ({
 				"org.opencontainers.image.title": "\($identity.root) \($identity.version)",
+				"org.opencontainers.image.description": ("Corresponding source for " + (
+					if $identity.kind == "apt" then
+						($identity.ref.repository | sub("^https?://"; "")) as $repository
+						| if $repository == "archive.ubuntu.com/ubuntu" then
+							"Ubuntu source package \($identity.root) \($identity.version): its .dsc and archives from \($identity.ref.suite)"
+						else
+							"apt source package \($identity.root) \($identity.version): its .dsc and archives from \($repository) \($identity.ref.suite)"
+						end
+					elif $identity.kind == "git" then
+						"\($identity.root) \($identity.version): upstream git at commit \($identity.ref.commit[0:12]) with its Go modules vendored"
+					else
+						"\($identity.root) \($identity.version): its vendored build scripts and the copyleft archives it bundles"
+					end) + ", as shipped in frithuz/devcontainer."),
 				"org.opencontainers.image.source": $url,
 				"org.opencontainers.image.version": $identity.version,
 				"vnd.frithuz.devcontainer.source.key": $key

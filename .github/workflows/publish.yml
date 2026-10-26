@@ -64,6 +64,12 @@ jobs:
       meta-tags: |
         type=raw,value=build-${{ github.run_id }}
         type=raw,value=latest,enable=${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' && inputs.latest }}
+      # finalize assembles the multi-platform index, and only these annotations reach it. They're
+      # added to metadata-action's standard OCI annotations, and replace any with the same key.
+      # GHCR shows the index's description. Keep it the same as the Dockerfile's label.
+      set-meta-annotations: true
+      meta-annotations: |
+        org.opencontainers.image.description=Ubuntu 26.04 LTS image with one pinned toolset for devcontainers, GitHub Actions CI, and agent sandboxes. Copyleft source is attached as OCI referrers; see /legal/SOURCE.md.
     secrets:
       registry-auths: |
         - registry: ghcr.io

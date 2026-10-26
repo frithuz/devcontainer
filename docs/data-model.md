@@ -31,7 +31,7 @@ The inventory describes the image as built. Runtime package installs and agent s
 
 ## Source image
 
-The key is the hash of the source's identity: its kind (`apt`, `git`, or `bundle`), root, exact version, exact reference (`.dsc` digest, full commit, or archive digests), and recipe revision. It excludes image digests, dates, and which components use the source, which is what lets one source image serve every release. A corrected recipe changes the key even when the source didn't change.
+The key is the hash of the source's identity: its kind (`apt`, `git`, or `bundle`), root, exact version, exact reference (`.dsc` digest, full commit, or archive digests), and recipe (revision, script digest, and annotations version). It excludes image digests, dates, and which components use the source, which is what lets one source image serve every release. A corrected recipe changes the key even when the source didn't change. The annotations (title, description, source, version, revision, and key) are set at the index and manifest levels. They're written by `scripts/plan-sources.sh` rather than the recipe script, so changing them means bumping its `annotations_version`.
 
 Tags are `source-<root>-<version>-<key[0:8]>`, sanitized to the tag character set and at most 128 characters. Consumers' Dependabot ignores them, because it only proposes tags with the same format as the pinned one. Layers are deterministic (sorted entries, fixed timestamps, numeric owner zero), so identical inputs reproduce the same digest. `SOURCE.json` records every input with its digest and, for Go roots, the vendored modules with their `go.sum` hashes.
 

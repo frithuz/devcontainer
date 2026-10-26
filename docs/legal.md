@@ -69,7 +69,7 @@ Source is published as one **source image per root program per exact version**. 
 
 - **Reused across releases.** It's keyed by its identity (kind, root, exact reference, recipe revision), never by the image that uses it. An unchanged component is never collected or uploaded twice.
 - **Immutable.** An absent `source-*` tag is pushed. An existing tag with the expected digest is reused, and anything else fails without overwriting.
-- **Recipe changes rebuild everything.** The key includes `scripts/build-source-image.sh`'s digest and last commit, so changing the script changes every key. The fetch environment isn't in the key. If it ever changed the output, the immutability check would catch it as a conflict.
+- **Recipe changes rebuild everything.** The key includes `scripts/build-source-image.sh`'s digest and last commit, so changing the script changes every key. So does bumping `annotations_version` in `scripts/plan-sources.sh`, which is how changed annotations (such as each source image's description) reach the images already published. The fetch environment isn't in the key. If it ever changed the output, the immutability check would catch it as a conflict.
 
 Roots come from each platform's `manifest.tsv`. apt packages need no configuration: `scripts/source-apt.yaml` maps their repositories to source repositories. Only non-apt roots, gaps, and elections are listed in `scripts/source-roots.yaml`. Every copyleft component has to be covered by one of these, or planning fails. Go modules' licenses aren't in the manifest, so the Go programs that owe source are listed by hand. Quirks:
 
