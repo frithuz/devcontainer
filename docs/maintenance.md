@@ -41,7 +41,7 @@ The smoke tests run in the PR build and against the published digest, on both ar
 
 ## Publishing (`publish.yml`)
 
-Every push to `main` that touches the build's inputs tags `latest`: the files `.dockerignore` admits to the build context, `.dockerignore` itself, `docker-bake.hcl`, and `publish.yml`. Other pushes, such as docs or kits alone, don't publish. For a manual run, select **Run workflow** and enable **Also tag the built image as latest, and promote it to Quay** (`latest`, off by default). Either way the build pushes both `build-<run id>` and `latest` to the same image digest, and `promote` copies the image to Quay with both tags. For now these are the only runs that reach Quay: scheduled runs and manual runs without `latest` stay on GHCR. On GHCR the `latest` tag is applied during the build, before source publication, so it can move even if the later source job fails. On Quay it's applied only after the source indexes and their source images are copied and checked. The `refresh` input remains independent.
+A run publishes only a [material change](#material-changes) from Quay's `latest`. Every push to `main` starts a run, and one that doesn't touch the build's inputs, such as docs or kits alone, stops after the comparison. Pushes and scheduled refreshes that publish tag `latest`. For a manual run, select **Run workflow** and enable **Also tag the built image as latest, and promote it to Quay** (`latest`, off by default), and **force** to publish without a material change. A run that tags `latest` pushes both `build-<run id>` and `latest` to the same image digest, and `promote` copies the image to Quay with both tags. Manual runs without `latest` stay on GHCR. On GHCR the `latest` tag is applied during the build, before source publication, so it can move even if the later source job fails. On Quay it's applied only after the source indexes and their source images are copied and checked. The `refresh` input remains independent.
 
 The image goes to two public registries with the same tags, digests, signatures, and source:
 
@@ -78,6 +78,21 @@ The rules behind that shape:
 - **Date tags are never overwritten.** Before building, check the date tag in both registries. If it exists, resume the existing publication instead of building again. Wherever a date tag is applied, an existing tag with the same digest is success, and a different digest is a conflict. Registry lookup errors fail the check rather than counting as an absent tag.
 - **Quay's one-hour window.** Quay protects an untagged, digest-only push with a hidden temporary tag for one hour. `promote` has to copy, confirm, and tag within that hour, so it only copies, checks, and tags. That hour also matches the federated Quay token's lifetime.
 
+### Material changes
+
+Rebuilding the same commit doesn't reproduce the same digest. A refresh reruns every `RUN` step, and timestamps, logs, and caches change most layers even when nothing installed changed. Run 40313178179, a refresh of the commit run 40265483889 built, changed 38 of 42 arm64 layers, with an identical config and an identical inventory. So `publish.yml` compares what the image is made of instead, against Quay's `latest`, before anything is pushed:
+
+1. **Build inputs.** The `changes` job diffs this commit against the one `latest` was built from (its index's `org.opencontainers.image.revision`), over the files that reach the image or its source images: everything `.dockerignore` admits to the build context, `.dockerignore` itself, `docker-bake.hcl`, and `publish.yml`, which sets the image's annotations. That covers the Dockerfile's logic, `rootfs/`, the scripts, and the base image pin. The scripts that only compare or copy manifests, or point the kits at an image, are left out.
+2. **Inventory.** Unchanged inputs can still produce a different image when a refresh installs newer apt packages or agents. On a refresh, `preflight` builds the `preflight` target, which pushes nothing and exports each platform's `/legal/manifest.tsv`. `inventory` compares it with `latest`'s, ignoring the project row's revision. Every installed apt package is a row with its version and `.deb` SHA512, and the agents' rows carry their binary checksums.
+
+| Inputs | Run | Result |
+| --- | --- | --- |
+| Changed, or **force** (which skips the comparison, so it also works with no `latest` in Quay) | Any | Build and publish |
+| Unchanged | Refresh | Build and publish only if the inventory changed |
+| Unchanged | Any other | Nothing is built or pushed |
+
+`scripts/image-changes.sh` does both comparisons and prints what differs, and each job's summary shows the decision. When the inventory changed, `build` reuses `preflight`'s cache: both use the `image` cache scope and the same vars, so the refreshed layers aren't rebuilt. It still builds and pushes `image` itself, so the published image never takes its identity from preflight. The list of build inputs exists only there, derived from `.dockerignore`, so admitting a new path to the build context also makes it an input. `scripts/copy-manifests.sh` copies each platform's `/legal/manifest.tsv` out of a registry image, for the comparison, for source planning, and for `update-kits.sh`.
+
 Recovery of an interrupted publication is described in [integrations/ghcr.md](integrations/ghcr.md#synchronization-and-recovery) and the [data model draft](data-model.md).
 
 ### Registry and signing
@@ -109,10 +124,10 @@ docker buildx imagetools inspect quay.io/frithuz/devcontainer:latest --format '{
 
 If anything changed, it builds the kits with the kit frontend, which validates each descriptor and runs the conformance checks. It then force-pushes one commit to `kits/update` and opens or updates that branch's PR. Runs take turns on that branch. Review and merge the PR like any other.
 
-- Scheduled builds don't reach Quay yet, so a weekly agent refresh reaches the kits only with the next push that publishes, or a manual run with `latest`.
+- A weekly refresh reaches the kits when it publishes: when its inventory changed, or when the build inputs changed since `latest`, for example after a push whose publication failed.
 - A PR opened with `GITHUB_TOKEN` doesn't trigger other workflows, so `lint.yml` doesn't run on it. The kits build in `kits.yml` is its check.
 - Enable **Settings → Actions → General → Allow GitHub Actions to create and approve pull requests**, or `gh pr create` fails.
-- `publish.yml` runs on pushes only when they touch the build's inputs, so merging a kits PR doesn't publish a new image, which would open the next kits PR.
+- The kits aren't build inputs, so merging a kits PR starts a `publish` run that stops after the comparison. Otherwise it would publish a new image, which would open the next kits PR.
 
 ## Contributor setup
 

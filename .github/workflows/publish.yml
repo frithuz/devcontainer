@@ -1,9 +1,12 @@
 # Builds the image once and publishes it with its source images (docs/maintenance.md#publishing).
 #
-# For now this pushes to GHCR under the recovery tag build-<run id>. Pushes to main also tag
-# :latest, and so can a manual run. Only those runs are promoted to Quay. Not yet implemented:
-# automatic public tags (:main, :YYYYMMDD) and verify (docs/legal.md#publishing). After a
-# promotion that tags latest, kits.yml opens a PR that points the sandbox kits at the image.
+# A run builds only when the image would materially change from Quay's latest: its build inputs
+# changed, or a refresh changed its inventory (docs/maintenance.md#material-changes). Otherwise
+# nothing is pushed. A build pushes to GHCR under the recovery tag build-<run id>. Pushes to main,
+# scheduled refreshes, and manual runs that ask for it also tag :latest and are promoted to Quay.
+# Not yet implemented: automatic public tags (:main, :YYYYMMDD) and verify
+# (docs/legal.md#publishing). After a promotion that tags latest, kits.yml opens a PR that points
+# the sandbox kits at the image.
 name: publish
 run-name: >-
   ${{ github.event_name == 'push'
@@ -13,23 +16,10 @@ run-name: >-
       || format('Publish {0} — manual{1} by @{2}', github.ref_name, inputs.refresh && ' refresh' || '', github.actor) }}
 
 on:
+  # Every push runs, and the changes job decides from scripts/image-changes.sh's build inputs. A
+  # push that doesn't touch them, such as docs or a merged kits PR, stops there.
   push:
     branches: [main]
-    # Only what reaches the image or its source images: the build context .dockerignore admits,
-    # the build definitions, and this workflow. Keep it in step with .dockerignore. Everything
-    # else, including the kits, waits for the next build that does change, or a manual run. That
-    # also keeps a merged kits PR from publishing an image that would open the next one.
-    paths:
-      - .dockerignore
-      - Dockerfile
-      - source.Dockerfile
-      - docker-bake.hcl
-      - LICENSE
-      - legal/**
-      - rootfs/**
-      - scripts/**
-      - "!scripts/update-kits.sh"
-      - .github/workflows/publish.yml
   schedule:
     - cron: "17 5 * * 1"
   workflow_dispatch:
@@ -40,6 +30,10 @@ on:
         default: false
       latest:
         description: Also tag the built image as latest, and promote it to Quay
+        type: boolean
+        default: false
+      force:
+        description: Build and publish even without a material change from Quay's latest
         type: boolean
         default: false
 
@@ -99,9 +93,146 @@ jobs:
           echo "digest=$digest" >>"$GITHUB_OUTPUT"
           echo "$name@$digest"
 
+  # Compares this commit's build inputs with those of the commit Quay's latest was built from.
+  # Changed inputs, or force, build. Unchanged inputs on a refresh compare the inventory first.
+  # Unchanged inputs otherwise stop here: nothing could change, short of a cache miss.
+  changes:
+    name: Compare with the published image
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    outputs:
+      decision: ${{ steps.decide.outputs.decision }}
+      published: ${{ steps.published.outputs.ref }}
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The published image's commit can be anywhere in main's history. The diff fetches only
+          # the blobs it needs.
+          fetch-depth: 0
+          filter: blob:none
+          persist-credentials: false
+
+      # Resolved once, so every comparison in the run reads the same image. force skips the
+      # lookups, so it can publish when there's no latest to compare with.
+      - name: Resolve Quay's latest
+        id: published
+        if: ${{ !inputs.force }}
+        run: |
+          digest=$(docker buildx imagetools inspect quay.io/frithuz/devcontainer:latest --format '{{json .Manifest}}' | jq -er .digest)
+          echo "ref=quay.io/frithuz/devcontainer@$digest" >>"$GITHUB_OUTPUT"
+
+      - name: Decide
+        id: decide
+        env:
+          PUBLISHED: ${{ steps.published.outputs.ref }}
+          FORCE: ${{ inputs.force || false }}
+          REFRESH: ${{ github.event_name == 'schedule' || inputs.refresh || false }}
+        run: |
+          changed=-
+          [[ $FORCE == true ]] || changed=$(scripts/image-changes.sh inputs "$PUBLISHED")
+          if [[ $FORCE == true || $changed == true ]]; then
+            decision=build
+          elif [[ $REFRESH == true ]]; then
+            decision=compare
+          else
+            decision=skip
+          fi
+          echo "decision=$decision" >>"$GITHUB_OUTPUT"
+          {
+            echo "## Compared with $PUBLISHED"
+            echo
+            echo "- Build inputs changed: $changed"
+            echo "- Forced: $FORCE"
+            echo "- Refresh: $REFRESH"
+            echo "- Decision: **$decision**"
+          } >>"$GITHUB_STEP_SUMMARY"
+
+  # A refresh with unchanged inputs builds the preflight target first, which pushes nothing and
+  # exports each platform's /legal/manifest.tsv. It shares build's cache scope (bake.yml defaults
+  # to the target's name) and vars, so build reuses the refreshed layers instead of rerunning them.
+  preflight:
+    name: Build the inventory
+    needs: [base, changes]
+    if: needs.changes.outputs.decision == 'compare'
+    uses: docker/github-builder/.github/workflows/bake.yml@cbc9d42f8c89a55623392aadd03600965b80e963 # v1.18.1
+    permissions:
+      contents: read
+      id-token: write # signed cache entries
+    with:
+      target: preflight
+      output: local
+      artifact-upload: true
+      artifact-name: preflight
+      sign: "false"
+      cache: true
+      cache-scope: image
+      cache-mode: max
+      vars: |
+        REVISION=${{ github.sha }}
+        REPOSITORY_URL=${{ github.server_url }}/${{ github.repository }}
+        BASE_NAME=${{ needs.base.outputs.name }}
+        BASE_DIGEST=${{ needs.base.outputs.digest }}
+        REFRESH=${{ (github.event_name == 'schedule' || inputs.refresh) && github.run_id || '' }}
+
+  inventory:
+    name: Compare the inventory
+    needs: [changes, preflight]
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    outputs:
+      changed: ${{ steps.compare.outputs.changed }}
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Download the inventory
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: preflight
+          path: out/preflight
+
+      - name: Compare with the published inventory
+        id: compare
+        env:
+          PUBLISHED: ${{ needs.changes.outputs.published }}
+        run: |
+          status=0
+          changed=$(scripts/image-changes.sh inventory "$PUBLISHED" out/preflight 2>inventory.txt) || status=$?
+          cat inventory.txt
+          ((status == 0)) || exit "$status"
+          echo "changed=$changed" >>"$GITHUB_OUTPUT"
+          {
+            echo "## Inventory compared with $PUBLISHED"
+            echo
+            echo "- Changed: **$changed**"
+            echo
+            echo '```text'
+            cat inventory.txt
+            echo '```'
+          } >>"$GITHUB_STEP_SUMMARY"
+
+  # A skipped preflight skips inventory, so the jobs from here on state their own conditions:
+  # by default a job is skipped whenever any job it depends on, however indirectly, was.
   build:
     name: Build and push to GHCR
-    needs: base
+    needs: [base, changes, inventory]
+    if: >-
+      !cancelled() && needs.base.result == 'success' && needs.changes.result == 'success'
+      && (needs.changes.outputs.decision == 'build' || needs.inventory.outputs.changed == 'true')
     uses: docker/github-builder/.github/workflows/bake.yml@cbc9d42f8c89a55623392aadd03600965b80e963 # v1.18.1
     permissions:
       contents: read
@@ -125,7 +256,7 @@ jobs:
       meta-images: ghcr.io/${{ github.repository_owner }}/devcontainer
       meta-tags: |
         type=raw,value=build-${{ github.run_id }}
-        type=raw,value=latest,enable=${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' && inputs.latest }}
+        type=raw,value=latest,enable=${{ github.event_name != 'workflow_dispatch' || inputs.latest }}
       # finalize assembles the multi-platform index, and only these annotations reach it. They're
       # added to metadata-action's standard OCI annotations, and replace any with the same key.
       # GHCR shows the index's description. Keep it, and the vendor, the same as the Dockerfile's
@@ -146,6 +277,7 @@ jobs:
   sources:
     name: Publish source images
     needs: build
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
     runs-on: ubuntu-26.04
     permissions:
       contents: read
@@ -234,7 +366,9 @@ jobs:
     needs: [build, sources]
     # Only runs that tag latest go to Quay. Every other run stays on GHCR. Keep this in step with
     # the build's latest tag.
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' && inputs.latest
+    if: >-
+      !cancelled() && needs.sources.result == 'success'
+      && (github.event_name != 'workflow_dispatch' || inputs.latest)
     runs-on: ubuntu-26.04
     # Quay's robot federation trusts only this environment's OIDC subject, and only main can
     # deploy to it (docs/integrations/quayio.md).
@@ -328,7 +462,7 @@ jobs:
   kits:
     name: Update the sandbox kits
     needs: [build, promote]
-    if: needs.promote.outputs.latest == 'true'
+    if: ${{ !cancelled() && needs.promote.outputs.latest == 'true' }}
     # actionlint 1.7.12 rejects the $/ self-repository form zizmor prefers.
     uses: ./.github/workflows/kits.yml # zizmor: ignore[self-repository]
     permissions:

@@ -26,7 +26,7 @@ The Dockerfile has four kinds of stages. The comments in the file cover the deta
 
 apt is used only for what can't be copied: base OS packages, git, and Docker Engine. Every apt source is HTTPS. The base image ships plain-HTTP Ubuntu sources and no CA certificates, so the first `apt-get update` trusts the CA bundle from the pinned `go` stage. The apt lists live in a cache mount, so they never reach a layer.
 
-**The `preflight` stage** builds on `image` for PR CI and local checks, and is never published. It runs the smoke tests and exports each platform's `/legal/manifest.tsv`, which source planning starts from. Publishing builds `image` once and tests that exact digest. It never relies on preflight or cache reuse for the image's identity ([maintenance.md](maintenance.md#workflow)).
+**The `preflight` stage** builds on `image` for PR CI and local checks, and is never published. It runs the smoke tests and exports each platform's `/legal/manifest.tsv`, which source planning starts from. Publishing builds `image` once and tests that exact digest. It never relies on preflight or cache reuse for the image's identity ([maintenance.md](maintenance.md#workflow)). A refresh builds preflight first, only to decide whether the inventory changed ([maintenance.md](maintenance.md#material-changes)).
 
 ## Binary compatibility
 
