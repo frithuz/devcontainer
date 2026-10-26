@@ -177,6 +177,14 @@ components:
       tag: v{version}
       files: [LICENSE]
 
+  - name: nushell
+    stage: nushell
+    license: MIT
+    version: nu --version
+    notices: [/legal/attribution/nushell/LICENSE]
+    paths: [/usr/local/bin/nu]
+    purl: pkg:cargo/nu@{version}
+
   - name: pnpm
     stage: pnpm
     license: MIT

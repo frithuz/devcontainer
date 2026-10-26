@@ -17,10 +17,12 @@ FROM --platform=$BUILDPLATFORM golang:1.27-trixie@sha256:fbb7ae40b62ff8afe31662d
 FROM --platform=$BUILDPLATFORM ubuntu:26.04@sha256:c098726dd9b9733f3e885f8de0ef375206a311b0a317eadc40d347b1115fb944 AS ubuntu
 FROM --platform=$BUILDPLATFORM ghcr.io/jqlang/jq:1.8.2@sha256:b9c68867e5766576263a222e91db3de422d802069c7af70440e667a95344e486 AS jq
 FROM --platform=$BUILDPLATFORM ghcr.io/oras-project/oras:v1.3.6@sha256:9cfb578be975b762fd898b9d004243d8003aeb807a3e15b2ed212cdd1326c9eb AS oras
+FROM --platform=$BUILDPLATFORM ghcr.io/nushell/nushell:0.116.1-bookworm@sha256:3de167aad209014bffbc3ed90fc433199b1a835c88a91befe8aa9d9b7db2d428 AS nushell
 
 FROM go AS tools
 COPY --link --from=jq /jq /usr/local/bin/jq
 COPY --link --from=oras /bin/oras /usr/local/bin/oras
+COPY --link --from=nushell /usr/bin/nu /usr/local/bin/nu
 
 # Plan: resolve every root program's exact inputs. Upstream state changes without any build
 # input changing, so the bake target never caches this step.
@@ -32,10 +34,11 @@ ARG REVISION
 ARG REPOSITORY_URL
 # config is a named context from docker-bake.hcl (the Dockerfile's config stage).
 RUN --mount=type=bind,source=scripts,target=/mnt/scripts --mount=type=bind,from=manifests,target=/mnt/manifests \
-    --mount=type=bind,from=config,target=/mnt/config bash <<'EOF'
-set -euxo pipefail
-mapfile -t manifests < <(find /mnt/manifests -name manifest.tsv | sort)
-bash /mnt/scripts/plan-sources.sh --config /mnt/config --out /out ${SOURCE_REUSE:+--reuse "$SOURCE_REUSE"} "${manifests[@]}"
+    --mount=type=bind,from=config,target=/mnt/config nu /dev/stdin <<'EOF'
+let manifests = glob /mnt/manifests/**/manifest.tsv | sort
+let reuse = $env.SOURCE_REUSE? | default ''
+let reuse_args = if ($reuse | is-empty) { [] } else { [--reuse $reuse] }
+bash /mnt/scripts/plan-sources.sh --config /mnt/config --out /out ...$reuse_args ...$manifests
 EOF
 
 FROM scratch AS plan
@@ -47,16 +50,23 @@ FROM ubuntu AS fetch-apt
 # plain HTTP and it has no CA certificates, so ca-certificates is fetched trusting the go stage's
 # bundle (a pinned image). apt lists live in a cache mount (the deb-src fetches below keep theirs
 # in subdirectories of it).
+COPY --link --from=nushell /usr/bin/nu /usr/local/bin/nu
 RUN --mount=type=cache,id=source-apt-lists,target=/var/lib/apt/lists,sharing=locked \
-    --mount=type=bind,from=go,source=/etc/ssl/certs/ca-certificates.crt,target=/tmp/bootstrap-ca.crt bash <<'EOF'
-set -euxo pipefail
-sed -i 's|^URIs: http://|URIs: https://|' /etc/apt/sources.list.d/ubuntu.sources
-if grep -hE '^[[:space:]]*(URIs:|deb)' /etc/apt/sources.list /etc/apt/sources.list.d/* | grep -q 'http://'; then
-  echo "plain HTTP apt source left" >&2
-  exit 1
-fi
-apt-get -o Acquire::https::CAInfo=/tmp/bootstrap-ca.crt update
-apt-get -o Acquire::https::CAInfo=/tmp/bootstrap-ca.crt install -y --no-install-recommends ca-certificates
+    --mount=type=bind,from=go,source=/etc/ssl/certs/ca-certificates.crt,target=/tmp/bootstrap-ca.crt nu /dev/stdin <<'EOF'
+# Read each file fully before saving over it: save truncates it while a pipeline still reads.
+let ubuntu_sources = '/etc/apt/sources.list.d/ubuntu.sources'
+let https_sources = open --raw $ubuntu_sources
+  | str replace --all --regex '(?m)^URIs: http://' 'URIs: https://'
+$https_sources | save --force $ubuntu_sources
+let plain = glob /etc/apt/{sources.list,sources.list.d/*}
+  | each {|file| open --raw $file | lines } | flatten
+  | where $it =~ '^\s*(URIs:|deb)' and $it =~ 'http://'
+if ($plain | is-not-empty) {
+  error make {msg: $"plain HTTP apt source left: ($plain | str join ', ')"}
+}
+let bootstrap = [-o Acquire::https::CAInfo=/tmp/bootstrap-ca.crt]
+apt-get ...$bootstrap update
+apt-get ...$bootstrap install -y --no-install-recommends ca-certificates
 EOF
 
 COPY --link --from=jq /jq /usr/local/bin/jq

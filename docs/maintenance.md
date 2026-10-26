@@ -176,6 +176,6 @@ The no-co-author rule in [AGENTS.md](../AGENTS.md) still applies.
 
 - **License.** Contributions are accepted under [CC0-1.0](../LICENSE). Contribute only work you can dedicate, and keep imported third-party material under its own license ([legal.md](legal.md#project-license)).
 - **Adding a tool.** Prefer a pinned upstream image with a static or glibc-compatible binary. Justify any scripted install in the PR. Either way, make its command resolve under the default `PATH`, and add it to `scripts/legal-components.yaml` in the same PR, which also makes the smoke tests check it. A command that isn't a component goes in `test/smoke.sh`'s list. The build fails on an ELF file it can't attribute.
-- Never add an unpinned `FROM` or an unchecked download. `curl | sh` is allowed only for the agent installers.
+- Never add an unpinned `FROM` or an unchecked download. Piping a download to a shell is allowed only for the agent installers.
 - Keep build-only tooling out of the final stage. Fetching belongs in builder stages.
 - Don't break the [sandbox contract](architecture.md#docker-sandboxes-contract).

@@ -16,13 +16,19 @@ The Dockerfile has four kinds of stages. The comments in the file cover the deta
 
 **Source stages** declare each upstream image once, as a plain `image:tag@sha256:digest`. Dependabot's `docker` ecosystem can parse only that form, so build args never appear in a reference. Digests must be **multi-arch index digests**. A per-platform digest would make an arm64 build pull an amd64 binary.
 
-**Builder stages** hold anything fetched or built by script that doesn't belong in a user's home: `gh`, `jv`, the pnpm hard links, and the apt signing keys. That keeps `gnupg` and other fetch tooling out of the final image, which receives only `COPY --from=` output. The `config` stage validates `scripts/*.yaml` against their schemas and converts them to JSON. The scripts read only that output, so a malformed data file fails the build before anything uses it.
+**Builder stages** hold anything fetched or built by script that doesn't belong in a user's home: `gh`, `jv`, `task`, and the apt signing keys. That keeps `gnupg` and other fetch tooling out of the final image. Most start from `builder`, the `go` stage with nu added, because every `RUN` script is written in nu (AGENTS.md). The `config` stage validates `scripts/*.yaml` against their schemas and converts them to JSON. The scripts read only that output, so a malformed data file fails the build before anything uses it.
 
-**The final stage (`image`)** is ordered for cache reuse:
+**The `files` stage** lays out, under `/out`, every file the image copies in: the toolchains and standalone tools, the pnpm hard links, the `/usr/local/bin` symlinks, the apt signing keys, `rootfs/`, and the notices `/legal` starts from. Hard links survive because they're copied within one `COPY`.
 
-- The stage declares the `REFRESH` build argument before its first `RUN`, so the weekly build, which changes it, re-runs every `RUN` step. That's what refreshes the apt packages and the agent installs. Otherwise an unchanged `RUN` stays cached indefinitely, and rebuilding the pinned base digest doesn't refresh it. apt installs come first.
-- Pinned binaries are copied with independent `COPY --link` layers, which stay reusable when the apt layers below them change. Keep `REFRESH` out of their source stages, and don't rewrite those files in later steps. `COPY --link` can't follow a destination symlink from an earlier layer, so destinations must be real directories.
-- The agent installers run near the end, so refreshing them doesn't invalidate the toolchain copies.
+**The final stage (`image`)** has as few layers as possible, three:
+
+1. `COPY --link --from=files /out/ /`, first, so the setup step can use the toolchains and nu. It doesn't consume `REFRESH`.
+2. One `RUN` for the system and the agents: apt (base packages, git, Docker Engine), the locale, the shared directories, the `agent` user, and the agent installers. They run as `agent` through `setpriv`, which Claude Code's installer accepts, unlike `sudo`.
+3. The `/legal` step. It reads `REVISION`, which changes on every commit, so it stays separate. Merged into step 2, every build would reinstall everything.
+
+The `ENV` instructions sit between steps 2 and 3. They add no layers, and after step 2 the locale they select exists.
+
+The trade-off is cache reuse. Bumping any copied tool, or changing any file `files` copies, invalidates step 2, so apt and the agent installs run again. The stage declares `REFRESH` before step 2, so the weekly build, which changes it, re-runs it too. That's what refreshes the apt packages and the agent installs. Otherwise an unchanged step stays cached indefinitely, and rebuilding the pinned base digest doesn't refresh it. Keep `REFRESH` out of the copied tools' source stages. `COPY --link` can't follow a destination symlink from an earlier layer, so nothing under `/out` may land on one in the base image (`/bin`, `/lib`, and `/sbin` are symlinks in Ubuntu).
 
 apt is used only for what can't be copied: base OS packages, git, and Docker Engine. Every apt source is HTTPS. The base image ships plain-HTTP Ubuntu sources and no CA certificates, so the first `apt-get update` trusts the CA bundle from the pinned `go` stage. The apt lists live in a cache mount, so they never reach a layer.
 
@@ -57,7 +63,7 @@ Ubuntu's own `python3` isn't installed. `sudo-rs` depends on `python3:any` (for 
 `agent` (devcontainers, sandboxes) and root (CI) share `GOPATH` (`/go`), `PNPM_HOME` (`/usr/local/share/pnpm`), and `/usr/local/bin`, where `pnpm add -g` links bins. All three are `root:staff`, group-writable, and setgid, and `agent` is in `staff`:
 
 - With the default `022` umask, subdirectories created at runtime keep the `staff` group but aren't group-writable. That's fine, because each supported context runs as a single user.
-- `/usr/local/bin` gets this **on the directory only**. Never run `chown -R` or `chmod -R` over copied toolchains: changing ownership in a later layer duplicates every affected file into a new layer. Set ownership at copy time with `COPY --chown` instead.
+- `/usr/local/bin` gets this **on the directory only**. Never run `chown -R` or `chmod -R` over copied toolchains: changing ownership in a later layer duplicates every affected file into a new layer. Set ownership at copy time with `COPY --chown` instead, in the `files` stage.
 - `agent` can overwrite image binaries in `/usr/local/bin` through a global install. That's accepted, since `agent` already has passwordless root.
 
 `GOCACHE` stays per-user.
@@ -100,7 +106,13 @@ Anything that must hold in every context goes in `ENV`. Anything that needs shel
 
 - The `ENV PATH` adds `/go/bin` only as a convenience for `go install`ed tools.
 - `GOTOOLCHAIN=local` stops Go from silently downloading a different toolchain.
-- The locale `ENV` comes directly after `locale-gen`. Set earlier, every later build step would warn that the locale doesn't exist.
+- The locale `ENV` comes after the step that runs `locale-gen`. Set earlier, the step would warn throughout that the locale doesn't exist.
+
+### Login shell
+
+`agent`'s login shell is nu (`/usr/local/bin/nu`, listed in `/etc/shells`), so an interactive login, such as an editor's terminal, opens in nu. root keeps bash, and the image's `CMD` stays `/bin/bash`. The `ENV` and `BASH_ENV` rules above don't change: nothing may depend on nu's config either.
+
+The agent CLIs still run their commands in bash. Claude Code's Bash tool accepts only bash or zsh, so `CLAUDE_CODE_SHELL=/bin/bash` pins it rather than leaving it to detection. Codex reads the login shell from `/etc/passwd`, doesn't recognize nu, and falls back to bash on Linux. Neither runs nu for its tool calls, so don't point either one at it.
 
 No credentials, tokens, or user config are ever baked into the image. Auth always comes from the consuming context at runtime.
 

@@ -132,10 +132,10 @@ Claude Code is **preinstalled** under Anthropic's [terms for offering Claude Cod
 2. **Copyleft source gaps:**
    - **pebble:** its exact source isn't public (its commit isn't in `canonical/pebble` or on the Go proxy). The options: remove it (which means not shipping Ubuntu's base layer unchanged), ship it and accept the gap, or ask Canonical to publish the commit.
    - **hadolint:** the exact Haskell dependency set of the release build has to be established before its source image can be built.
-   - **Unknown licenses:** the Rust crates in uv and Codex, hadolint's Haskell packages, and whatever Claude Code bundles may add copyleft roots.
+   - **Unknown licenses:** the Rust crates in uv, nushell, and Codex, hadolint's Haskell packages, and whatever Claude Code bundles may add copyleft roots.
 3. **License gaps** reported by `collect-legal.sh`, which doesn't fail on them yet:
    - Ten bundled npm/pnpm modules ship only a `license` field, no license text.
    - jq's `COPYING` doesn't cover its bundled oniguruma.
    - Thirteen apt packages have copyright files that aren't machine-readable, so they're recorded as `NOASSERTION`. All mention GPL or LGPL, so their source is published regardless.
    - hadolint's and golangci-lint's `-only` recording is pending review.
-   - Transitive notices aren't collected yet for Rust binaries (uv, git-cliff, ripgrep, Codex) or Haskell (hadolint).
+   - Transitive notices aren't collected yet for Rust binaries (uv, git-cliff, nushell, ripgrep, Codex) or Haskell (hadolint).

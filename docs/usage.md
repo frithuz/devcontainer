@@ -94,7 +94,7 @@ Ordinary container jobs use the runner's daemon, through the socket the standard
 
 ## Agent sandboxes (`sbx`)
 
-The image meets the [Docker Sandboxes custom image requirements](https://docs.docker.com/ai/sandboxes/customize/author/base-images/#use-your-own-linux-image) ([architecture.md](architecture.md#docker-sandboxes-contract)). On its own it starts a bash shell. To run an agent, use a **kit** under `sandboxes/`: `claude` or `codex`. Each is a [v3 workload](https://docs.docker.com/ai/sandboxes/customize/) made of two files:
+The image meets the [Docker Sandboxes custom image requirements](https://docs.docker.com/ai/sandboxes/customize/author/base-images/#use-your-own-linux-image) ([architecture.md](architecture.md#docker-sandboxes-contract)). On its own it starts a bash shell (`agent`'s login shell is nu, but the `CMD` is bash). To run an agent, use a **kit** under `sandboxes/`: `claude` or `codex`. Each is a [v3 workload](https://docs.docker.com/ai/sandboxes/customize/) made of two files:
 
 - `<agent>.dockerfile` pins the image by digest and sets the agent as `ENTRYPOINT`.
 - `<agent>.yaml` is the descriptor. Its `provides` states the agent version the pinned image installed. It declares the `sbx`, network-policy, credential, volume, and lifecycle capabilities, and seeds the agent's config from the credential mode the host binds.
