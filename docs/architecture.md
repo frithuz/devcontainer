@@ -5,8 +5,9 @@
 - `Dockerfile`, `docker-bake.hcl`: the image and its Bake targets, shared by CI and local builds.
 - `rootfs/`: files copied into the image as-is (the `BASH_ENV` script and `start-dockerd`).
 - `legal/`, `scripts/`: the committed `/legal` documents, the scripts that collect notices and plan source images, and their schema-validated YAML data.
+- `scripts/build/`: the nu scripts the Dockerfiles' `RUN` steps mount and run, through `run.nu`, which prints each one and its sha256 into the build log first.
 - `source.Dockerfile`: builds [source images](legal.md#source-images).
-- `test/`: `smoke.sh`, the smoke tests the `preflight` stage runs, and `runtime.sh`, the DinD checks, run by `ci.yml` against a built image.
+- `test/`: `smoke.sh`, the smoke tests the `preflight` stage runs through `preflight.nu`, and `runtime.sh`, the DinD checks, run by `ci.yml` against a built image.
 - `.github/workflows/`: `lint.yml` (the workflow and repository linters), `ci.yml` (DinD checks and source planning on PRs), `publish.yml`, partly implemented ([maintenance.md](maintenance.md#publishing-publishyml)), and `kits.yml`, which keeps the sandbox kits pinned to the latest image ([maintenance.md](maintenance.md#sandbox-kits)).
 - `sandboxes/`: Docker Sandboxes kits, one directory per agent ([usage.md](usage.md#agent-sandboxes-sbx)).
 

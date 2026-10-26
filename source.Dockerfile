@@ -34,12 +34,10 @@ ARG REVISION
 ARG REPOSITORY_URL
 # config is a named context from docker-bake.hcl (the Dockerfile's config stage).
 RUN --mount=type=bind,source=scripts,target=/mnt/scripts --mount=type=bind,from=manifests,target=/mnt/manifests \
-    --mount=type=bind,from=config,target=/mnt/config nu /dev/stdin <<'EOF'
-let manifests = glob /mnt/manifests/**/manifest.tsv | sort
-let reuse = $env.SOURCE_REUSE? | default ''
-let reuse_args = if ($reuse | is-empty) { [] } else { [--reuse $reuse] }
-bash /mnt/scripts/plan-sources.sh --config /mnt/config --out /out ...$reuse_args ...$manifests
-EOF
+    --mount=type=bind,from=config,target=/mnt/config \
+    --mount=type=bind,source=scripts/build/run.nu,target=/mnt/src/scripts/build/run.nu \
+    --mount=type=bind,source=scripts/build/plan.nu,target=/mnt/src/scripts/build/plan.nu \
+    nu /mnt/src/scripts/build/run.nu /mnt/src/scripts/build/plan.nu
 
 FROM scratch AS plan
 COPY --from=plan-run /out/ /
@@ -52,22 +50,10 @@ FROM ubuntu AS fetch-apt
 # in subdirectories of it).
 COPY --link --from=nushell /usr/bin/nu /usr/local/bin/nu
 RUN --mount=type=cache,id=source-apt-lists,target=/var/lib/apt/lists,sharing=locked \
-    --mount=type=bind,from=go,source=/etc/ssl/certs/ca-certificates.crt,target=/tmp/bootstrap-ca.crt nu /dev/stdin <<'EOF'
-# Read each file fully before saving over it: save truncates it while a pipeline still reads.
-let ubuntu_sources = '/etc/apt/sources.list.d/ubuntu.sources'
-let https_sources = open --raw $ubuntu_sources
-  | str replace --all --regex '(?m)^URIs: http://' 'URIs: https://'
-$https_sources | save --force $ubuntu_sources
-let plain = glob /etc/apt/{sources.list,sources.list.d/*}
-  | each {|file| open --raw $file | lines } | flatten
-  | where $it =~ '^\s*(URIs:|deb)' and $it =~ 'http://'
-if ($plain | is-not-empty) {
-  error make {msg: $"plain HTTP apt source left: ($plain | str join ', ')"}
-}
-let bootstrap = [-o Acquire::https::CAInfo=/tmp/bootstrap-ca.crt]
-apt-get ...$bootstrap update
-apt-get ...$bootstrap install -y --no-install-recommends ca-certificates
-EOF
+    --mount=type=bind,from=go,source=/etc/ssl/certs/ca-certificates.crt,target=/tmp/bootstrap-ca.crt \
+    --mount=type=bind,source=scripts/build/run.nu,target=/mnt/src/scripts/build/run.nu \
+    --mount=type=bind,source=scripts/build/apt-bootstrap.nu,target=/mnt/src/scripts/build/apt-bootstrap.nu \
+    nu /mnt/src/scripts/build/run.nu /mnt/src/scripts/build/apt-bootstrap.nu
 
 COPY --link --from=jq /jq /usr/local/bin/jq
 # apt-keys is a named context from docker-bake.hcl (the Dockerfile's apt-keys stage).
