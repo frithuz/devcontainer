@@ -15,10 +15,21 @@ run-name: >-
 on:
   push:
     branches: [main]
-    # The kits aren't part of the image. Without this, merging a kits PR would publish a new
-    # image, and that would open the next kits PR.
-    paths-ignore:
-      - sandboxes/**
+    # Only what reaches the image or its source images: the build context .dockerignore admits,
+    # the build definitions, and this workflow. Keep it in step with .dockerignore. Everything
+    # else, including the kits, waits for the next build that does change, or a manual run. That
+    # also keeps a merged kits PR from publishing an image that would open the next one.
+    paths:
+      - .dockerignore
+      - Dockerfile
+      - source.Dockerfile
+      - docker-bake.hcl
+      - LICENSE
+      - legal/**
+      - rootfs/**
+      - scripts/**
+      - "!scripts/update-kits.sh"
+      - .github/workflows/publish.yml
   schedule:
     - cron: "17 5 * * 1"
   workflow_dispatch:

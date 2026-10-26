@@ -41,7 +41,7 @@ The smoke tests run in the PR build and against the published digest, on both ar
 
 ## Publishing (`publish.yml`)
 
-Every push to `main` tags `latest`, except one that only touches `sandboxes/`. For a manual run, select **Run workflow** and enable **Also tag the built image as latest, and promote it to Quay** (`latest`, off by default). Either way the build pushes both `build-<run id>` and `latest` to the same image digest, and `promote` copies the image to Quay with both tags. For now these are the only runs that reach Quay: scheduled runs and manual runs without `latest` stay on GHCR. On GHCR the `latest` tag is applied during the build, before source publication, so it can move even if the later source job fails. On Quay it's applied only after the source indexes and their source images are copied and checked. The `refresh` input remains independent.
+Every push to `main` that touches the build's inputs tags `latest`: the files `.dockerignore` admits to the build context, `.dockerignore` itself, `docker-bake.hcl`, and `publish.yml`. Other pushes, such as docs or kits alone, don't publish. For a manual run, select **Run workflow** and enable **Also tag the built image as latest, and promote it to Quay** (`latest`, off by default). Either way the build pushes both `build-<run id>` and `latest` to the same image digest, and `promote` copies the image to Quay with both tags. For now these are the only runs that reach Quay: scheduled runs and manual runs without `latest` stay on GHCR. On GHCR the `latest` tag is applied during the build, before source publication, so it can move even if the later source job fails. On Quay it's applied only after the source indexes and their source images are copied and checked. The `refresh` input remains independent.
 
 The image goes to two public registries with the same tags, digests, signatures, and source:
 
@@ -52,7 +52,7 @@ There are no versioned releases:
 
 | Tag | Published by | Meaning |
 | --- | --- | --- |
-| `:main` | Every push to `main` | Tip of `main`. Moves often |
+| `:main` | Every push to `main` that touches the build's inputs | Latest build of `main`. Moves often |
 | `:latest` | Every scheduled build | Most recent scheduled build |
 | `:YYYYMMDD` | Every scheduled build | Immutable snapshot, dated by the original run's creation, so reruns keep the date |
 
@@ -109,10 +109,10 @@ docker buildx imagetools inspect quay.io/frithuz/devcontainer:latest --format '{
 
 If anything changed, it builds the kits with the kit frontend, which validates each descriptor and runs the conformance checks. It then force-pushes one commit to `kits/update` and opens or updates that branch's PR. Runs take turns on that branch. Review and merge the PR like any other.
 
-- Scheduled builds don't reach Quay yet, so a weekly agent refresh reaches the kits only with the next push to `main`, or a manual run with `latest`.
+- Scheduled builds don't reach Quay yet, so a weekly agent refresh reaches the kits only with the next push that publishes, or a manual run with `latest`.
 - A PR opened with `GITHUB_TOKEN` doesn't trigger other workflows, so `lint.yml` doesn't run on it. The kits build in `kits.yml` is its check.
 - Enable **Settings → Actions → General → Allow GitHub Actions to create and approve pull requests**, or `gh pr create` fails.
-- `publish.yml` ignores pushes that only touch `sandboxes/`. Otherwise merging a kits PR would publish a new image, which would open the next kits PR.
+- `publish.yml` runs on pushes only when they touch the build's inputs, so merging a kits PR doesn't publish a new image, which would open the next kits PR.
 
 ## Contributor setup
 
