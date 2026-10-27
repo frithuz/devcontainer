@@ -12,7 +12,7 @@ Dependabot runs weekly on two ecosystems: `docker`, for every pinned `FROM` in `
 ## Updates Dependabot can't handle
 
 - **apt packages** (base, git PPA, Docker Engine), **`gh`**, and the **agent CLIs** aren't pinned. The weekly build's refresh argument reinstalls them ([architecture.md](architecture.md#dockerfile-structure)). Other builds may reuse cached layers, so a push build can be up to a week behind on these.
-- **`jv` and `task`** are pinned as Go module versions in their builder stages and bumped by hand.
+- **`jv`, `task`, and `dnslookup`** are pinned as Go module versions in their builder stages and bumped by hand.
 - **`lint.yml`'s container** pins a published image by tag and digest, bumped by hand. Dependabot doesn't update workflow `container:` images, and `kits.yml` can't do it either: `GITHUB_TOKEN` can't push changes to workflow files. Use GHCR's `build-<run id>` tag of Quay's current `latest`.
 - **License files** are fetched from the installed version's upstream tag on every build, so there's nothing to track. When a tool is bumped, review its `SOURCE` checksums for a license change ([legal.md](legal.md#how-files-get-there)).
 

@@ -6,8 +6,10 @@ let arch = dpkg --print-architecture | str trim
 
 apt-get upgrade -y
 let packages = [
-  bash ca-certificates curl less locales openssh-client sudo-rs
+  bash ca-certificates curl less locales neovim openssh-client sudo-rs
   media-types netbase tzdata
+  bat fd-find file fzf lsd ripgrep tmux unzip xz-utils zip
+  lsof netcat-openbsd openssl toybox trippy
   libatomic1
   libbz2-1.0 libdb5.3t64 libffi8 libgdbm6t64 liblzma5 libmpdec4 libncursesw6
   libreadline8t64 libsqlite3-0 libssl3t64 libtinfo6 libuuid1 libzstd1 zlib1g
@@ -85,6 +87,13 @@ agent ALL=(ALL) NOPASSWD:ALL
 chmod 0440 /etc/sudoers /etc/sudoers.d/agent
 visudo -c
 install -d -o agent -g agent /home/agent/workspace
+
+# Debian renames fd and bat to avoid name clashes; restore the upstream names.
+ln -s /usr/bin/fdfind /usr/local/bin/fd
+ln -s /usr/bin/batcat /usr/local/bin/bat
+# toybox picks its command from argv[0]; only these replace tools the image leaves out.
+ln -s /usr/bin/toybox /usr/local/bin/netstat
+ln -s /usr/bin/toybox /usr/local/bin/ifconfig
 
 # Shared /usr/local/bin and PNPM_HOME: the directories only, never recursively.
 chown root:staff /usr/local/bin

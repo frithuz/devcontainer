@@ -135,6 +135,6 @@ Claude Code is **preinstalled** under Anthropic's [terms for offering Claude Cod
 3. **License gaps** reported by `collect-legal.sh`, which doesn't fail on them yet:
    - Ten bundled npm/pnpm modules ship only a `license` field, no license text.
    - jq's `COPYING` doesn't cover its bundled oniguruma.
-   - Thirteen apt packages have copyright files that aren't machine-readable, so they're recorded as `NOASSERTION`. All mention GPL or LGPL, so their source is published regardless.
+   - Fifteen apt packages have copyright files that aren't machine-readable, so they're recorded as `NOASSERTION`. Most mention GPL or LGPL; zip and unzip (Info-ZIP) don't. Source planning treats `NOASSERTION` as copyleft, so their source is published regardless.
    - golangci-lint's `-only` recording is pending review.
    - Transitive notices aren't collected yet for Rust binaries (uv, git-cliff, nushell, ripgrep, Codex).

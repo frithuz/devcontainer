@@ -118,6 +118,14 @@ components:
     notices: [/legal/attribution/task/LICENSE]
     paths: [/usr/local/bin/task]
 
+  - name: dnslookup
+    stage: dnslookup
+    install: go-install
+    license: MIT
+    version: dnslookup --version
+    notices: [/legal/attribution/dnslookup/LICENSE]
+    paths: [/usr/local/bin/dnslookup]
+
   - name: gomplate
     stage: gomplate
     license: MIT

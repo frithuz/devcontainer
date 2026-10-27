@@ -55,6 +55,17 @@ RUN --mount=type=bind,source=scripts/build/run.nu,target=/mnt/src/scripts/build/
     --mount=type=bind,source=scripts/build/go-install.nu,target=/mnt/src/scripts/build/go-install.nu \
     nu /mnt/src/scripts/build/run.nu /mnt/src/scripts/build/go-install.nu
 
+# dnslookup, the DNS client (in place of dig, which is MPL-2.0): no upstream image either. Without
+# the linker flag it reports its version as "master".
+FROM builder AS dnslookup
+ARG MODULE=github.com/ameshkov/dnslookup@v1.12.0
+ARG PACKAGE=.
+ARG OUT=/opt/dnslookup
+ARG LDFLAGS="-X main.VersionString={version}"
+RUN --mount=type=bind,source=scripts/build/run.nu,target=/mnt/src/scripts/build/run.nu \
+    --mount=type=bind,source=scripts/build/go-install.nu,target=/mnt/src/scripts/build/go-install.nu \
+    nu /mnt/src/scripts/build/run.nu /mnt/src/scripts/build/go-install.nu
+
 # The scripts' data files (scripts/*.yaml): each validated against scripts/schemas/<name>.schema.json,
 # checked for duplicate names, and converted to <name>.json. The scripts read only this output,
 # never the YAML. `docker buildx bake config` runs it on its own and exports out/config/.
@@ -84,6 +95,7 @@ COPY --link --chown=0:0 --chmod=0755 --from=jq /jq /out/usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=yq /usr/bin/yq /out/usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=jv /opt/jv/jv /out/usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=task /opt/task/task /out/usr/local/bin/
+COPY --link --chown=0:0 --chmod=0755 --from=dnslookup /opt/dnslookup/dnslookup /out/usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=gomplate /gomplate /out/usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=golangci-lint /usr/bin/golangci-lint /out/usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=git-cliff /usr/local/bin/git-cliff /out/usr/local/bin/
@@ -99,6 +111,7 @@ COPY --link --from=python /usr/local/lib/python3.15/LICENSE.txt /out/legal/attri
 COPY --link --from=jq /COPYING /out/legal/attribution/jq/
 COPY --link --from=jv /opt/jv/LICENSE /out/legal/attribution/jv/
 COPY --link --from=task /opt/task/LICENSE /out/legal/attribution/task/
+COPY --link --from=dnslookup /opt/dnslookup/LICENSE /out/legal/attribution/dnslookup/
 COPY --link --from=nushell /usr/bin/LICENSE /out/legal/attribution/nushell/
 RUN --mount=type=bind,source=scripts/build/run.nu,target=/mnt/src/scripts/build/run.nu \
     --mount=type=bind,source=scripts/build/files.nu,target=/mnt/src/scripts/build/files.nu \
