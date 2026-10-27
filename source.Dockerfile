@@ -57,13 +57,11 @@ RUN --mount=type=cache,id=source-apt-lists,target=/var/lib/apt/lists,sharing=loc
 
 COPY --link --from=jq /jq /usr/local/bin/jq
 # apt-keys is a named context from docker-bake.hcl (the Dockerfile's apt-keys stage).
-# hadolint ignore=DL3022
 COPY --link --from=apt-keys /keys/ /etc/apt/keyrings/
 
 FROM tools AS fetch-git
 FROM tools AS fetch-bundle
 
-# hadolint ignore=DL3006
 FROM fetch-${KIND} AS fetch
 RUN --mount=type=bind,source=scripts/build-source-image.sh,target=/mnt/build-source-image.sh \
     --mount=type=bind,from=root-plan,target=/mnt/plan \

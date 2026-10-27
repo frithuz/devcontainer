@@ -75,12 +75,6 @@ jobs:
       # Like the workflow linters, each tool runs in the background of the others, so all of them
       # always run.
 
-      # Uses .hadolint.yaml.
-      - name: Run hadolint
-        id: hadolint
-        background: true
-        run: hadolint Dockerfile source.Dockerfile sandboxes/*/*.dockerfile
-
       # Every shell script shfmt recognizes, by extension or shebang, including the bats tests.
       - name: Run shfmt
         id: shfmt

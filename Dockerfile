@@ -7,7 +7,6 @@ FROM node:26-trixie-slim@sha256:36793bcbb160a6a16cede1e62b93f84e26b78a972a8a4c0b
 FROM python:3.15-slim-trixie@sha256:533b0b2f9b5d46fd097091cf826f27902f1d6c3bca714b6dc74551356aa97a51 AS python
 FROM ghcr.io/astral-sh/uv:0.13.5@sha256:32a7bb39b496babbd997b0a39a4d66c126bdaf5661b302bf6f06abda8deca6ff AS uv
 FROM ghcr.io/oras-project/oras:v1.3.6@sha256:9cfb578be975b762fd898b9d004243d8003aeb807a3e15b2ed212cdd1326c9eb AS oras
-FROM hadolint/hadolint:v2.15.1@sha256:32dac94127fd60b7b7e3fbfc65e1383b9b5e25c9bfd7b8536de7a539fe68a12d AS hadolint
 FROM mvdan/shfmt:v3.14.1@sha256:8c06884a35683d8763fba6c0d9484d11a61a96da65f8d497d6f625825a6043f2 AS shfmt
 FROM ghcr.io/jqlang/jq:1.8.2@sha256:b9c68867e5766576263a222e91db3de422d802069c7af70440e667a95344e486 AS jq
 FROM mikefarah/yq:4.54.1@sha256:4b3d9475d65571d28cbb19544d3820ec2945e4c8b2f18279394282b8dc3a592e AS yq
@@ -80,7 +79,6 @@ COPY --link --from=node /usr/local/lib/node_modules/npm /out/usr/local/lib/node_
 COPY --link --chown=0:0 --from=pnpm /opt/pnpm /out/opt/pnpm
 COPY --link --chown=0:0 --chmod=0755 --from=uv /uv /uvx /out/usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=oras /bin/oras /out/usr/local/bin/
-COPY --link --chown=0:0 --chmod=0755 --from=hadolint /bin/hadolint /out/usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=shfmt /bin/shfmt /out/usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=jq /jq /out/usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=yq /usr/bin/yq /out/usr/local/bin/
@@ -188,7 +186,6 @@ CMD ["/bin/bash"]
 FROM image AS preflight-run
 # Root keeps the image's ENV, which sudo would reset; the script drops to agent itself. Never
 # published, and the default stage below is back to agent.
-# hadolint ignore=DL3002
 USER root
 RUN --mount=type=bind,source=test,target=/mnt/src/test \
     --mount=type=bind,source=Dockerfile,target=/mnt/src/Dockerfile \

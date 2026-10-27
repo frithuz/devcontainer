@@ -1,5 +1,0 @@
-ignored:
-  # Docker Sandboxes requires `USER agent` by name (docs/architecture.md).
-  - DL3066
-  # Separate RUN steps follow the Dockerfile's numbered steps.
-  - DL3059

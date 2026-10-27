@@ -73,20 +73,6 @@ components:
       tag: v{version}
       files: [LICENSE]
 
-  - name: hadolint
-    stage: hadolint
-    license: GPL-3.0-only
-    version: hadolint --version
-    notices:
-      - /legal/attribution/hadolint/LICENSE
-      - /legal/attribution/hadolint/ThirdPartyNotices.txt
-    paths: [/usr/local/bin/hadolint]
-    upstream:
-      repository: hadolint/hadolint
-      tag: v{version}
-      files: [LICENSE, ThirdPartyNotices.txt]
-    purl: pkg:github/hadolint/hadolint@v{version}
-
   - name: shfmt
     stage: shfmt
     license: BSD-3-Clause

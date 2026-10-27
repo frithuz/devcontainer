@@ -1,6 +1,6 @@
 # Corresponding Source
 
-This image includes software under copyleft licenses (GPL, LGPL, and MPL-2.0), such as hadolint,
+This image includes software under copyleft licenses (GPL, LGPL, and MPL-2.0), such as
 golangci-lint, the bubblewrap and GStreamer/GLib libraries bundled with Codex, MPL-2.0 Go modules,
 and Ubuntu packages including Bash and Git. `manifest.tsv` lists each component with its license
 and exact source provenance.

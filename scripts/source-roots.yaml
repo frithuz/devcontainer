@@ -105,11 +105,6 @@ roots:
 # Copyleft components whose source can't be produced yet. Reported on every run but not fatal,
 # so they stay visible until they're resolved (docs/legal.md#open-questions).
 gaps:
-  - name: hadolint
-    repository: https://github.com/hadolint/hadolint
-    components: [hadolint]
-    reason: the exact Haskell dependency set of the release build isn't established
-
   - name: pebble
     repository: https://github.com/canonical/pebble
     components: [pebble]

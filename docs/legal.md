@@ -51,7 +51,7 @@ To inspect the attestation locally, export an OCI layout: `docker buildx bake im
 
 ## Copyleft components
 
-The image conveys GPL (v2 and v3), LGPL, and MPL-2.0 components: hadolint, golangci-lint, and pebble (GPLv3), Codex's bubblewrap and GStreamer/GLib (LGPL), MPL-2.0 Go modules in several tools and in Docker's binaries, and most of the Ubuntu base, including Bash and Git. Being unmodified or installed with apt doesn't remove the redistribution obligations ([GNU FAQ](https://www.gnu.org/licenses/gpl-faq.en.html#UnchangedJustBinary)).
+The image conveys GPL (v2 and v3), LGPL, and MPL-2.0 components: golangci-lint and pebble (GPLv3), Codex's bubblewrap and GStreamer/GLib (LGPL), MPL-2.0 Go modules in several tools and in Docker's binaries, and most of the Ubuntu base, including Bash and Git. Being unmodified or installed with apt doesn't remove the redistribution obligations ([GNU FAQ](https://www.gnu.org/licenses/gpl-faq.en.html#UnchangedJustBinary)).
 
 **Policy: publish the complete source of every copyleft component in the same registry repository as the image, before the image's tags are published.** One mechanism satisfies every license:
 
@@ -61,7 +61,7 @@ The image conveys GPL (v2 and v3), LGPL, and MPL-2.0 components: hadolint, golan
 
 Publishing the source avoids written offers and their three-year commitments. Source stays available as long as its image does.
 
-**What's owed:** a GPL or LGPL binary owes its *whole* Corresponding Source, including permissive modules compiled into it. An MPL module owes only itself. A dual license with a permissive option owes nothing once that option is elected, and elections are recorded in `scripts/source-roots.yaml`. hadolint and golangci-lint state no "or later", so they're recorded as `GPL-3.0-only`.
+**What's owed:** a GPL or LGPL binary owes its *whole* Corresponding Source, including permissive modules compiled into it. An MPL module owes only itself. A dual license with a permissive option owes nothing once that option is elected, and elections are recorded in `scripts/source-roots.yaml`. golangci-lint states no "or later", so it's recorded as `GPL-3.0-only`.
 
 ### Source images
 
@@ -76,7 +76,7 @@ Roots come from each platform's `manifest.tsv`. apt packages need no configurati
 - **Docker's apt repository publishes no source packages**, so moby, buildx, containerd, and runc are fetched from upstream git at the exact commit their binaries record. moby records an abbreviated commit, and gomplate and betterleaks record none, so those are trusted by tag.
 - **Go roots** are vendored, and every module the binaries report has to appear in `vendor/modules.txt` at the same version.
 - **Codex** is a `bundle`: a sparse checkout of its vendored bubblewrap and voice build scripts, plus the archives its `sources.json` lists.
-- **Gaps** (hadolint, pebble; see [Open questions](#open-questions)) are reported on every run but don't fail it, so they stay visible until they're resolved.
+- **Gaps** (pebble; see [Open questions](#open-questions)) are reported on every run but don't fail it, so they stay visible until they're resolved.
 
 ### Building source images
 
@@ -114,7 +114,7 @@ Test failures never trigger deletion.
 
 ## Transitive dependencies
 
-Most components are static Go or Rust binaries that embed their dependencies, and many of those dependencies' licenses require their notices to travel with the binary. A tool's top-level `LICENSE` doesn't cover them. Go modules are covered through `/legal/go/pkg/mod/`. Rust and Haskell aren't yet ([Open questions](#open-questions)). Adding or updating a dependency updates its notices and source coverage together.
+Most components are static Go or Rust binaries that embed their dependencies, and many of those dependencies' licenses require their notices to travel with the binary. A tool's top-level `LICENSE` doesn't cover them. Go modules are covered through `/legal/go/pkg/mod/`. Rust crates aren't yet ([Open questions](#open-questions)). Adding or updating a dependency updates its notices and source coverage together.
 
 ## Claude Code
 
@@ -131,11 +131,10 @@ Claude Code is **preinstalled** under Anthropic's [terms for offering Claude Cod
 1. **Distribution compliance review.** Before the first public release, confirm that source images in the image's own repository, linked by a source index, count as "the same place" under GPLv2/LGPL-2.x and as §6(d) directions under GPLv3. Also confirm coverage for the actual license versions and the recorded elections, complete transitive notices, and the Claude Code terms for this distribution. The project's CC0 dedication resolves none of these.
 2. **Copyleft source gaps:**
    - **pebble:** its exact source isn't public (its commit isn't in `canonical/pebble` or on the Go proxy). The options: remove it (which means not shipping Ubuntu's base layer unchanged), ship it and accept the gap, or ask Canonical to publish the commit.
-   - **hadolint:** the exact Haskell dependency set of the release build has to be established before its source image can be built.
-   - **Unknown licenses:** the Rust crates in uv, nushell, and Codex, hadolint's Haskell packages, and whatever Claude Code bundles may add copyleft roots.
+   - **Unknown licenses:** the Rust crates in uv, nushell, and Codex, and whatever Claude Code bundles may add copyleft roots.
 3. **License gaps** reported by `collect-legal.sh`, which doesn't fail on them yet:
    - Ten bundled npm/pnpm modules ship only a `license` field, no license text.
    - jq's `COPYING` doesn't cover its bundled oniguruma.
    - Thirteen apt packages have copyright files that aren't machine-readable, so they're recorded as `NOASSERTION`. All mention GPL or LGPL, so their source is published regardless.
-   - hadolint's and golangci-lint's `-only` recording is pending review.
-   - Transitive notices aren't collected yet for Rust binaries (uv, git-cliff, nushell, ripgrep, Codex) or Haskell (hadolint).
+   - golangci-lint's `-only` recording is pending review.
+   - Transitive notices aren't collected yet for Rust binaries (uv, git-cliff, nushell, ripgrep, Codex).
