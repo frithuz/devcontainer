@@ -15,11 +15,11 @@
 
 The Dockerfile has four kinds of stages. The comments in the file cover the details of each step.
 
-**Source stages** declare each upstream image once, as a plain `image:tag@sha256:digest`. Dependabot's `docker` ecosystem can parse only that form, so build args never appear in a reference. Digests must be **multi-arch index digests**. A per-platform digest would make an arm64 build pull an amd64 binary. The one exception is nushell, which is pinned by version tag only: it deletes its old images from GHCR when it tags a new one, so a digest pin stops resolving. Its legal provenance records that tag instead of a digest.
+**Source stages** declare each upstream image once, as a plain `image:tag@sha256:digest`. Dependabot's `docker` ecosystem can parse only that form, so build args never appear in a reference. Digests must be **multi-arch index digests**. A per-platform digest would make an arm64 build pull an amd64 binary.
 
 The base is one of them: the `debian` stage pins [Docker Hardened Images](https://docs.docker.com/dhi/)' Debian 13 base, the `-dev` variant (it runs as root and ships apt), mirrored to `frithuz/dhi-debian-base` because `dhi.io` needs a login to pull. The final stage and the stages that compile for it start from it, so they link against the same libraries.
 
-**Builder stages** hold anything fetched or built by script that doesn't belong in a user's home: `gh`, `jv`, `task`, `dnslookup`, git, and the apt signing key. That keeps `gnupg`, compilers, and other fetch and build tooling out of the final image. Most start from `builder`, the `go` stage with nu added, because every `RUN` script is written in nu (AGENTS.md). The `git` stage starts from `debian` instead ([git](#git)). The `config` stage validates `scripts/*.yaml` against their schemas and converts them to JSON. The scripts read only that output, so a malformed data file fails the build before anything uses it.
+**Builder stages** hold anything fetched or built by script that doesn't belong in a user's home: `gh`, `jv`, `task`, `dnslookup`, git, nushell, and the apt signing key. That keeps `gnupg`, compilers, and other fetch and build tooling out of the final image. Most start from `builder`, the `go` stage with nu added, because every `RUN` script is written in nu (AGENTS.md). The `git` stage starts from `debian` instead ([git](#git)), and the `nushell` stage, which compiles the nu the others use, from `rust` ([nushell](#nushell)). The `config` stage validates `scripts/*.yaml` against their schemas and converts them to JSON. The scripts read only that output, so a malformed data file fails the build before anything uses it.
 
 **The `files` stage** lays out, under `/out`, every file the image copies in: the toolchains and standalone tools, git's `/usr/local` tree, the pnpm hard links, the `/usr/local/bin` symlinks, the apt signing key, `rootfs/`, and the notices `/legal` starts from. Hard links survive because they're copied within one `COPY`.
 
@@ -66,6 +66,18 @@ git is compiled from source in the `git` stage (`scripts/build/git.nu`), so the 
 **Client only.** The daemon, `http-backend`, `git-shell`, `imap-send`, `instaweb`, and the scripts that would only report a missing Perl or Python are removed after install. A release that stops shipping one fails the build, so the list stays accurate. `git subtree` is installed from `contrib/`. There are no man pages or shell completion: use `git <command> -h`.
 
 To bump: `VERSION` for git; `ZLIB_NG_VERSION`, `ZLIB_NG_COMMIT`, and `ZLIB_NG_SHA256` together for zlib-ng; `SIGNER` only if git's maintainer changes signing keys. The smoke tests check git's version against `VERSION` and zlib-ng's against `ZLIB_NG_VERSION`. Changing `git.nu` changes git's [source image](legal.md#compiled-components), which carries the script.
+
+## nushell
+
+nu is compiled in the `nushell` stage (`scripts/build-nushell.sh`) from its crates.io release, rather than copied from nushell's image, so the image controls its size and features. Every other stage runs its scripts with this nu, so the build script is bash, the one exception to the nu rule. The stage starts from `rust`, which is Debian 13 like the base, so nu links against the same glibc. Its only other libraries are libgcc_s and libm.
+
+**Verified before use.** The `.crate` archive is pinned by SHA-256 (`SHA256`), which `ADD --checksum` checks before the build sees it. crates.io archives are immutable. cargo builds with `--locked`, so every dependency must match its checksum in the release's `Cargo.lock`. The script fails if nu reports a version other than `VERSION` or lacks any of `FEATURES`.
+
+**Sized for shipping.** Fat LTO with one codegen unit and no symbol table, on top of nushell's own release profile (`opt-level = "s"`). That makes nu about 35 MB, down from 79 MB with nushell's profile alone. The build runs outside the source tree, because rustup reads the `rust-toolchain.toml` in the working directory, and nushell's pins an older toolchain than the `rust` stage's.
+
+**Features:** nushell's defaults without `trash-support`, since a container has no desktop trash: `mcp` (`nu --mcp`, which the agents' MCP config uses), `network` (`http`, which the build scripts use), `rustls-tls` (TLS without OpenSSL, trusting the system CA store), `lsp`, `dap`, `plugin`, and `sqlite`. `system-clipboard` stays off, since there's no display.
+
+`source.Dockerfile` gets the same nu through a bake named context (`nushell = "target:nushell"`), built for the build platform. In CI, the jobs that plan or build source images first build that target from publish's cache of the image build (`image-linux-amd64`), so nu isn't compiled again. To bump: `VERSION` and `SHA256` together, the `.crate`'s checksum as crates.io's API reports it (`https://crates.io/api/v1/crates/nu/<version>`). The smoke tests check nu's version against `VERSION`.
 
 ## Filesystem
 

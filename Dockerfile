@@ -18,13 +18,26 @@ FROM orhunp/git-cliff:2.14.2@sha256:1e696a381a1b0366bb6ccbb6bd4e50e73473fda88eab
 # variant: it runs as root and ships apt. The image and the stages that compile for it start here.
 FROM frithuz/dhi-debian-base:trixie-dev@sha256:cc4e05ff415ee2d83918f2af45c737983209924ef7362c53f00cfcdaa1c94326 AS debian
 FROM ghcr.io/betterleaks/betterleaks:v1.9.0@sha256:e3b95b0db6c2735db17165c009b0ad6d9cef34fb4578659232b98f69d7346cac AS betterleaks
-# An explicit exception to digest pinning: nushell deletes its old images from GHCR when it
-# tags a new one, so a pinned digest stops resolving. The version tag can move under us.
-FROM ghcr.io/nushell/nushell:0.116.1-bookworm AS nushell
+
+# nushell, compiled from its crates.io release archive, pinned by SHA-256 (crates.io archives are
+# immutable). Built on the rust stage, Debian 13 like the base, so it links against the same
+# glibc. Every other stage runs its scripts with this nu, so the build script is bash. FEATURES
+# are nushell's cargo features: its defaults without trash-support (no desktop trash in a
+# container). The scripts need network (`http`) and rustls-tls, its TLS without OpenSSL, and the
+# agents' MCP config needs mcp (`nu --mcp`). Bumped by hand: VERSION and SHA256 together (the
+# .crate's digest, as crates.io's API reports it).
+FROM rust AS nushell
+ARG VERSION=0.116.1
+ARG SHA256=62e21f2d6a14430ae2701a4e6f11be42d40a11204c204bef32a8b9879f79e767
+ARG FEATURES=mcp,network,rustls-tls,dap,lsp,plugin,sqlite
+ADD --checksum=sha256:${SHA256} https://static.crates.io/crates/nu/nu-${VERSION}.crate /mnt/nu.crate
+RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=bind,source=scripts/build-nushell.sh,target=/mnt/src/scripts/build-nushell.sh \
+    bash /mnt/src/scripts/build-nushell.sh /mnt/nu.crate
 
 # Builder stages run their scripts in nu (AGENTS.md), so they start from go with nu added.
 FROM go AS builder
-COPY --link --from=nushell /usr/bin/nu /usr/local/bin/nu
+COPY --link --from=nushell /out/usr/local/bin/nu /usr/local/bin/nu
 
 # GitHub CLI: no official image. Installs the latest release, verified against its
 # published checksums; REFRESH makes scheduled builds pick up new releases.
@@ -53,7 +66,7 @@ ARG ZLIB_NG_VERSION=2.3.3
 ARG ZLIB_NG_COMMIT=12731092979c6d07f42da27da673a9f6c7b13586
 ARG ZLIB_NG_SHA256=a0d2a5d122c84b56a793a1553a9c3327fb2eb7469bf7a86b79e3c7be5d92e8d6
 ARG TARGETARCH
-COPY --link --from=nushell /usr/bin/nu /usr/local/bin/nu
+COPY --link --from=nushell /out/usr/local/bin/nu /usr/local/bin/nu
 COPY --link --from=rust /usr/local/rustup /usr/local/rustup
 COPY --link --from=rust /usr/local/cargo /usr/local/cargo
 ENV RUSTUP_HOME=/usr/local/rustup
@@ -142,10 +155,10 @@ COPY --link --chown=0:0 --chmod=0755 --from=dnslookup /opt/dnslookup/dnslookup /
 COPY --link --chown=0:0 --chmod=0755 --from=gomplate /gomplate /out/usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=git-cliff /usr/local/bin/git-cliff /out/usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=betterleaks /usr/bin/betterleaks /out/usr/local/bin/
-COPY --link --chown=0:0 --chmod=0755 --from=nushell /usr/bin/nu /out/usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=gh /opt/gh/gh /out/usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=gh-stack /opt/gh-stack/gh-stack /out/usr/local/bin/
 COPY --link --from=git /out/ /out/
+COPY --link --from=nushell /out/ /out/
 COPY --link --from=apt-keys /keys/ /out/etc/apt/keyrings/
 COPY --link rootfs/ /out/
 COPY --link LICENSE /out/legal/LICENSE
@@ -157,7 +170,6 @@ COPY --link --from=jv /opt/jv/LICENSE /out/legal/attribution/jv/
 COPY --link --from=task /opt/task/LICENSE /out/legal/attribution/task/
 COPY --link --from=dnslookup /opt/dnslookup/LICENSE /out/legal/attribution/dnslookup/
 COPY --link --from=gh-stack /opt/gh-stack/LICENSE /out/legal/attribution/gh-stack/
-COPY --link --from=nushell /usr/bin/LICENSE /out/legal/attribution/nushell/
 RUN --mount=type=bind,source=scripts/build/run.nu,target=/mnt/src/scripts/build/run.nu \
     --mount=type=bind,source=scripts/build/files.nu,target=/mnt/src/scripts/build/files.nu \
     nu /mnt/src/scripts/build/run.nu /mnt/src/scripts/build/files.nu

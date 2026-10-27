@@ -181,9 +181,14 @@ components:
 
   - name: nushell
     stage: nushell
-    license: MIT
+    install: source-build
+    # The Rust standard library is compiled in (Apache-2.0 OR MIT, notices in rust/).
+    license: MIT AND (Apache-2.0 OR MIT)
     version: nu --version
-    notices: [/legal/attribution/nushell/LICENSE]
+    notices:
+      - /legal/attribution/nushell/LICENSE
+      - /legal/attribution/nushell/rust/COPYRIGHT-library.html
+      - /legal/attribution/nushell/rust/licenses/*
     paths: [/usr/local/bin/nu]
     purl: pkg:cargo/nu@{version}
 

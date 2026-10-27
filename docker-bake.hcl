@@ -132,6 +132,15 @@ target "apt-keys" {
   platforms  = platforms(true)
 }
 
+# nu, compiled in the Dockerfile's nushell stage, for the source images' scripts. A single
+# platform, the build platform's, since the source images' stages all run there.
+target "nushell" {
+  context    = "."
+  dockerfile = "Dockerfile"
+  target     = "nushell"
+  platforms  = platforms(true)
+}
+
 # The scripts' data files (scripts/*.yaml), validated against scripts/schemas/ and converted to
 # JSON in out/config/. The image and source-plan build it themselves; this target is for checking
 # the files on their own: docker buildx bake config
@@ -149,7 +158,7 @@ target "source-plan" {
   context         = "."
   dockerfile      = "source.Dockerfile"
   target          = "plan"
-  contexts        = { manifests = MANIFESTS, config = "target:config" }
+  contexts        = { manifests = MANIFESTS, config = "target:config", nushell = "target:nushell" }
   no-cache-filter = ["plan-run"]
   args = {
     SOURCE_RECIPE_REPOSITORY = SOURCE_RECIPE_REPOSITORY
@@ -168,7 +177,7 @@ target "source" {
   dockerfile = "source.Dockerfile"
   target     = "source"
   platforms  = ["linux/amd64", "linux/arm64"]
-  contexts   = { apt-keys = "target:apt-keys" }
+  contexts   = { apt-keys = "target:apt-keys", nushell = "target:nushell" }
   args       = { SOURCE_DATE_EPOCH = "0" }
   attest     = ["type=provenance,disabled=true", "type=sbom,disabled=true"]
 }

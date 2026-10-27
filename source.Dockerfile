@@ -5,8 +5,8 @@
 #   source-plan   runs scripts/plan-sources.sh on the manifests in MANIFESTS (default
 #                 out/preflight) and exports out/sources/ (plan.tsv, plans/, sources.hcl).
 #   sources       the generated group: docker buildx bake -f docker-bake.hcl -f out/sources/sources.hcl sources
-# The bake targets provide the named contexts: apt-keys and config (the Dockerfile's stages),
-# manifests, and root-plan (one plans/<tag>/ directory).
+# The bake targets provide the named contexts: apt-keys, config, and nushell (the Dockerfile's
+# stages), manifests, and root-plan (one plans/<tag>/ directory).
 
 # The fetch stage for a plan's kind: apt, git, or bundle.
 ARG KIND=git
@@ -17,14 +17,11 @@ FROM --platform=$BUILDPLATFORM golang:1.27-trixie@sha256:fbb7ae40b62ff8afe31662d
 FROM --platform=$BUILDPLATFORM frithuz/dhi-debian-base:trixie-dev@sha256:cc4e05ff415ee2d83918f2af45c737983209924ef7362c53f00cfcdaa1c94326 AS debian
 FROM --platform=$BUILDPLATFORM ghcr.io/jqlang/jq:1.8.2@sha256:b9c68867e5766576263a222e91db3de422d802069c7af70440e667a95344e486 AS jq
 FROM --platform=$BUILDPLATFORM ghcr.io/oras-project/oras:v1.3.6@sha256:9cfb578be975b762fd898b9d004243d8003aeb807a3e15b2ed212cdd1326c9eb AS oras
-# An explicit exception to digest pinning: nushell deletes its old images from GHCR when it
-# tags a new one, so a pinned digest stops resolving. The version tag can move under us.
-FROM --platform=$BUILDPLATFORM ghcr.io/nushell/nushell:0.116.1-bookworm AS nushell
 
 FROM go AS tools
 COPY --link --from=jq /jq /usr/local/bin/jq
 COPY --link --from=oras /bin/oras /usr/local/bin/oras
-COPY --link --from=nushell /usr/bin/nu /usr/local/bin/nu
+COPY --link --from=nushell /out/usr/local/bin/nu /usr/local/bin/nu
 
 # Plan: resolve every root program's exact inputs. Upstream state changes without any build
 # input changing, so the bake target never caches this step.
@@ -49,7 +46,7 @@ FROM debian AS fetch-apt
 # Every apt source is HTTPS (scripts/source-apt.yaml too); the base image's sources use plain
 # HTTP. apt lists live in a cache mount (the deb-src fetches below keep theirs in subdirectories
 # of it).
-COPY --link --from=nushell /usr/bin/nu /usr/local/bin/nu
+COPY --link --from=nushell /out/usr/local/bin/nu /usr/local/bin/nu
 RUN --mount=type=cache,id=source-apt-lists,target=/var/lib/apt/lists,sharing=locked \
     --mount=type=bind,source=scripts/build/run.nu,target=/mnt/src/scripts/build/run.nu \
     --mount=type=bind,source=scripts/build/apt-bootstrap.nu,target=/mnt/src/scripts/build/apt-bootstrap.nu \

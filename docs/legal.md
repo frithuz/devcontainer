@@ -82,13 +82,15 @@ Roots come from each platform's `manifest.tsv`. apt packages need no configurati
 
 ### Compiled components
 
-A component compiled in the Dockerfile (`install: source-build`, so far only git) owes the source it was compiled from and the script that controlled the build. Its stage records both in `/legal/attribution/<name>/SOURCE`, and `collect-legal.sh` copies them into its manifest row:
+A component compiled in the Dockerfile (`install: source-build`: git and nushell) records the source it was compiled from and the script that controlled the build, which a copyleft one owes. Its stage records both in `/legal/attribution/<name>/SOURCE`, and `collect-legal.sh` copies them into its manifest row:
 
 - **The archive**, by URL and SHA-256: git's signed release tarball.
 - **The build script**, by repository path and SHA-256 (`build-script:`): `scripts/build/git.nu`. Planning checks the checkout's copy against that digest and fails if it differs, so source is always planned from the image's own commit. The script goes into the source image under `build/`, and its digest is part of the key: the source image changes only when the script or a version does, not on every commit.
 - **Libraries compiled in** (`embedded:`), each with a row of its own marked `embedded-in:<component>`: zlib-ng, under the Zlib license. A permissive license owes no source by itself, but a library compiled into a GPL binary is part of that binary's Corresponding Source, so the planner adds the archive of every library embedded in a covered copyleft component. Codex's bundled libraries aren't affected: Codex isn't copyleft.
 
 git's source image holds the git tarball, zlib-ng's archive, `git.nu`, and git's `COPYING` and `LGPL-2.1` from the release's tag. The Rust standard library is also compiled into git. It's Apache-2.0 OR MIT, so it owes no source, and its notices ship in `/legal/attribution/git/rust/`.
+
+nushell is MIT, so it has no source image. Its `SOURCE` still records the crates.io archive, `scripts/build-nushell.sh`, the toolchain, and the cargo features it was built with, and the Rust standard library's notices ship in `/legal/attribution/nushell/rust/`.
 
 ### Building source images
 

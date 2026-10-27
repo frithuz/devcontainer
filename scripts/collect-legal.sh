@@ -134,7 +134,7 @@ fetch() {
 }
 
 # Upstream stage references, read from the Dockerfile so digests live in one place. A tag
-# marks an upstream image, not a stage name; nushell's is the one without a digest.
+# marks an upstream image, not a stage name.
 declare -A stage_ref
 while read -r ref name; do
 	stage_ref[$name]=$ref
