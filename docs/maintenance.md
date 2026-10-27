@@ -11,7 +11,7 @@ Dependabot runs weekly on two ecosystems: `docker`, for every pinned `FROM` in `
 
 ## Updates Dependabot can't handle
 
-- **The base mirror.** The `debian` stage pins `frithuz/dhi-debian-base:trixie-dev`, a mirror of `dhi.io/debian-base`, which needs a login to pull. Dependabot proposes a new digest only after the mirror is re-synced from `dhi.io`, so Docker's fixes to the base reach the image as fast as the mirror follows them. Its tag names no version, so Dependabot only ever proposes digests; moving to a new Debian release is a deliberate tag change. A new base digest also rebuilds git and reruns its test suite.
+- **The base's Debian release.** The `debian` stage pins `dhi.io/debian-base:trixie-debian13-dev`. Dependabot reads `dhi.io` with `garbee`'s `DOCKERHUB_TOKEN` from its own secrets ([registry and signing](#registry-and-signing)) and proposes new digests for that tag, so Docker's fixes to the base arrive like any other digest bump. Moving to a new Debian release is a deliberate tag change. A new base digest also rebuilds git and reruns its test suite.
 - **apt packages** (base and Docker Engine) and **`gh`** aren't pinned. The weekly build's refresh argument reinstalls them ([architecture.md](architecture.md#dockerfile-structure)). Other builds may reuse cached layers, so a push build can be up to a week behind on these.
 - **`jv`, `task`, and `dnslookup`** are pinned as Go module versions in their builder stages and bumped by hand.
 - **git and zlib-ng** are pinned in the `git` stage and bumped by hand: `VERSION` for git, and `ZLIB_NG_VERSION`, `ZLIB_NG_COMMIT`, and `ZLIB_NG_SHA256` together for zlib-ng ([architecture.md](architecture.md#git)). Both test suites run on every bump.
@@ -35,6 +35,8 @@ Both workflows build through [`docker/github-builder`](https://github.com/docker
 - **sources-plan:** runs `scripts/build-sources.sh --plan-only` on both platforms' manifests, so a copyleft component whose exact source can't be resolved fails the PR instead of the publish. Source images already in GHCR with the same key show as reused in the summary.
 
 The GitHub Actions `container:` check needs an image in a registry, so it runs in `publish.yml` against the pushed digest.
+
+**Fork PRs skip image and sources-plan.** The image job pulls the base from `dhi.io` with `DOCKERHUB_TOKEN`, which GitHub doesn't give a fork's PR. A maintainer runs them by pushing the PR's commits to a branch in this repository. Dependabot's PRs run them, with Dependabot's copy of the token.
 
 ### Preflight checks (`test/smoke.sh`)
 
@@ -74,7 +76,7 @@ There are no versioned releases:
 | `:latest` | Every scheduled build | Most recent scheduled build |
 | `:YYYYMMDD` | Every scheduled build | Immutable snapshot, dated by the original run's creation, so reruns keep the date |
 
-**No secrets are stored in GitHub.** GHCR uses `GITHUB_TOKEN`, and Quay uses OIDC robot federation.
+**One secret is stored in GitHub: `DOCKERHUB_TOKEN`.** GHCR uses `GITHUB_TOKEN`, and Quay uses OIDC robot federation.
 
 ### Workflow
 
@@ -117,6 +119,7 @@ Recovery of an interrupted publication is described in [integrations/ghcr.md](in
 
 - **GHCR** is a public package linked to this repository, written with `GITHUB_TOKEN`. Grant the Admin Actions role only once retention deletion exists ([integrations/ghcr.md](integrations/ghcr.md)).
 - **Quay** has one robot, `frithuz+promote`, with Write on `devcontainer`, `claude-kit`, and `codex-kit` only, logging in exclusively through federation pinned to the `quay` environment, which only `main` can deploy to ([integrations/quayio.md](integrations/quayio.md)). Create each repository as public before its first promote. A push that creates a repository creates it private.
+- **dhi.io**, where the base is pulled from, is read with `garbee`'s read-only Docker personal access token, `DOCKERHUB_TOKEN`. It's stored twice, as a repository Actions secret and as a Dependabot secret, because Dependabot's runs read only Dependabot's secrets. It's the one exception to the 1Password policy: `bake.yml` needs the login too, and can't receive credentials loaded in a job ([integrations/1password.md](integrations/1password.md#policy)). Docker Hub's OIDC connections would remove it, but need a Docker Team or Business plan, which `frithuz` doesn't have. Rotate it by replacing both copies.
 - **Other credentials**, if ever needed, come from 1Password Workload Identity, never GitHub secrets ([integrations/1password.md](integrations/1password.md)).
 - **Attestations and signing:** `bake.yml` attaches an SBOM and SLSA provenance and signs keylessly with cosign on GHCR. `promote` copies the signatures to Quay with the image. The signing identity is `bake.yml` itself, so verification works the same against either registry.
 
@@ -161,6 +164,8 @@ Alternatively, run `sh tools/repo-init.sh` directly without Task. Setup checks
 prerequisites and sets repository-local `core.hooksPath` to `.githooks`; it is
 safe to repeat and does not install tools or change global Git configuration.
 It warns before replacing a different hook directory for this checkout.
+
+Building the image locally pulls the base from `dhi.io`, which needs a Docker login: `docker login dhi.io` with your Docker ID and a personal access token.
 
 The [commit-msg hook](../.githooks/commit-msg), its tests, and setup are copied
 from [frithuz/mdchk](https://github.com/frithuz/mdchk/tree/3cacdd9f70cfba8de46baddd4e35382f081e5adc/.githooks).

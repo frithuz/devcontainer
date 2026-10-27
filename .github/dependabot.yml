@@ -2,9 +2,18 @@
 # directory is scanned, which covers Dockerfile and source.Dockerfile. The sandbox kits pin this
 # image and are updated by kits.yml instead.
 version: 2
+# The base, dhi.io/debian-base, needs a login to read. DOCKERHUB_TOKEN is a Dependabot secret.
+registries:
+  dhi:
+    type: docker-registry
+    url: dhi.io
+    username: garbee
+    password: ${{secrets.DOCKERHUB_TOKEN}}
 updates:
   - package-ecosystem: docker
     directory: /
+    registries:
+      - dhi
     schedule:
       interval: weekly
     cooldown:

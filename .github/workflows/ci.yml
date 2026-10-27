@@ -18,8 +18,11 @@ jobs:
   # runs the smoke tests inside the build (the preflight target) and the DinD checks in a
   # privileged container with no host socket. The image build reads publish's cache for that
   # platform, and writes none, so PRs never evict it. preflight reuses its layers from the builder.
+  # Pulling the base from dhi.io needs DOCKERHUB_TOKEN, which a fork's PR can't read, so fork PRs
+  # skip the image checks (docs/maintenance.md#ci-ciyml-on-every-pr).
   image:
     name: Image checks (${{ matrix.arch }})
+    if: github.event.pull_request.head.repo.full_name == github.repository
     strategy:
       fail-fast: false
       matrix:
@@ -42,6 +45,17 @@ jobs:
 
       - name: Set up Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      # The base is pulled from dhi.io. Dependabot's PRs read DOCKERHUB_TOKEN from Dependabot's
+      # secrets, everything else from the repository's. It's a repository secret rather than an
+      # environment's because publish.yml's bake.yml jobs need it too, and a job calling a reusable
+      # workflow can't use an environment (docs/maintenance.md#registry-and-signing).
+      - name: Log in to dhi.io
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: dhi.io
+          username: garbee
+          password: ${{ secrets.DOCKERHUB_TOKEN }} # zizmor: ignore[secrets-outside-env]
 
       # publish.yml's bake.yml caches the image target under image-linux-<arch>.
       - name: Build the image
@@ -123,8 +137,8 @@ jobs:
   sources-plan:
     name: Plan the source images
     needs: image
-    # Needs only the manifests, which image uploads before its tests.
-    if: ${{ !cancelled() }}
+    # Needs only the manifests, which image uploads before its tests. Skipped with image on forks.
+    if: ${{ !cancelled() && needs.image.result != 'skipped' }}
     runs-on: ubuntu-26.04
     permissions:
       contents: read

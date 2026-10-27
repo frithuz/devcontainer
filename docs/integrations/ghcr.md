@@ -26,8 +26,8 @@ Do this for each package: `devcontainer`, `claude-kit`, and `codex-kit`.
 
 | Job | `permissions` | Login |
 | --- | --- | --- |
-| `build` (`bake.yml`) | `contents: read`, `packages: write`, `id-token: write` (signing) | `registry-auths` with `github.actor` and `GITHUB_TOKEN` |
-| `sources` | `contents: read`, `packages: write` | `oras` and `docker` login with `GITHUB_TOKEN` |
+| `build` (`bake.yml`) | `contents: read`, `packages: write`, `id-token: write` (signing) | `registry-auths` with `github.actor` and `GITHUB_TOKEN`, and `dhi.io` with `DOCKERHUB_TOKEN` for the base |
+| `sources` | `contents: read`, `packages: write` | `oras` and `docker` login with `GITHUB_TOKEN`, and `docker` login to `dhi.io` with `DOCKERHUB_TOKEN` |
 | `tag-ghcr` | `contents: read`, `packages: write` | `oras` login with `GITHUB_TOKEN` |
 | `verify` | `contents: read`, `packages: read` | none (public) |
 | `promote` (environment `quay`) | `contents: read`, `packages: read`, `id-token: write` (Quay federation) | `oras` login with `GITHUB_TOKEN` |

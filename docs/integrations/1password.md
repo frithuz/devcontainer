@@ -4,7 +4,7 @@
 
 ## Policy
 
-Credentials for workflows are never stored as GitHub secrets. In order of preference:
+Credentials for workflows are never stored as GitHub secrets, with one exception: `DOCKERHUB_TOKEN`, which pulls the base from `dhi.io` and must reach `bake.yml` ([maintenance.md](../maintenance.md#registry-and-signing)). In order of preference:
 
 1. **The service's own OIDC federation**, e.g. Quay robot federation or cloud workload identity. Nothing is stored anywhere.
 2. **GitHub's automatic `GITHUB_TOKEN`**, for GitHub-hosted services such as GHCR.
@@ -84,4 +84,4 @@ some-job:
 
 - Run the workflow on `main`: the load step succeeds and the audit log shows the access.
 - Run the same workflow from another branch, or with the workflow restriction not matching: the load step must fail.
-- Check that `OP_INTEGRATION_KEY` is the only organization secret, and that this repository has no repository secrets.
+- Check that `OP_INTEGRATION_KEY` is the only organization secret, and that this repository's only repository secret is `DOCKERHUB_TOKEN`.

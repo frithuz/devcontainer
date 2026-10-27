@@ -73,7 +73,7 @@ jobs:
           persist-credentials: false
 
       # The image stage starts FROM debian, the stage pinning the base. A Docker Hub short name is
-      # written out in full: frithuz/dhi-debian-base is docker.io/frithuz/dhi-debian-base.
+      # written out in full: debian is docker.io/library/debian.
       - name: Read the base stage's FROM
         id: base
         run: |
@@ -167,6 +167,8 @@ jobs:
     with:
       target: preflight
       output: local
+      # Logs in to pull the base from dhi.io. By default bake.yml logs in only to push an image.
+      registry-login: "true"
       artifact-upload: true
       artifact-name: preflight
       sign: "false"
@@ -179,6 +181,11 @@ jobs:
         BASE_NAME=${{ needs.base.outputs.name }}
         BASE_DIGEST=${{ needs.base.outputs.digest }}
         REFRESH=${{ (github.event_name == 'schedule' || inputs.refresh) && github.run_id || '' }}
+    secrets:
+      registry-auths: |
+        - registry: dhi.io
+          username: garbee
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
   inventory:
     name: Compare the inventory
@@ -270,7 +277,11 @@ jobs:
         org.opencontainers.image.base.name=${{ needs.base.outputs.name }}
         org.opencontainers.image.base.digest=${{ needs.base.outputs.digest }}
     secrets:
+      # dhi.io for the base, GHCR for the push.
       registry-auths: |
+        - registry: dhi.io
+          username: garbee
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
         - registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
@@ -323,6 +334,15 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      # The apt source images' fetch stage starts from the base. DOCKERHUB_TOKEN is a repository
+      # secret, shared with the bake.yml jobs, which can't use an environment.
+      - name: Log in to dhi.io
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: dhi.io
+          username: garbee
+          password: ${{ secrets.DOCKERHUB_TOKEN }} # zizmor: ignore[secrets-outside-env]
 
       - name: Set the repository
         run: echo "REPOSITORY=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/devcontainer" >>"$GITHUB_ENV"
