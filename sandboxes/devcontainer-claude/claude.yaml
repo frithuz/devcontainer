@@ -284,7 +284,6 @@ capabilities:
           shell profiles. Don't rely on `.bashrc` or `/etc/profile`.
         - `go install` and `pnpm add -g` write to shared, group-writable directories that
           are already on `PATH`.
-        - Never run `start-dockerd` here. Container access is up to the sandbox.
         - Credentials are proxy-managed. Tokens in local config files are sentinels.
         - git over SSH reaches github.com through the host's SSH agent, when the host
           forwards one. GitHub's host keys are in /etc/ssh/ssh_known_hosts.

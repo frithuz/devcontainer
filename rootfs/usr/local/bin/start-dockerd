@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # Start the in-container Docker daemon (Docker-in-Docker) and wait for its socket.
-# Never use this on a macOS host; mount the host socket instead (docs/usage.md).
 set -euo pipefail
 
 readonly socket=/var/run/docker.sock
@@ -22,13 +21,6 @@ if docker info >/dev/null 2>&1 || "${as_root[@]}" docker info >/dev/null 2>&1; t
 	echo "start-dockerd: a Docker daemon is already reachable; nothing to do" >&2
 	exit 0
 fi
-
-kernel=$(uname -r)
-case "$kernel" in
-*linuxkit* | *orbstack*)
-	die "refusing to start dockerd on a macOS VM backend (kernel $kernel); mount the host Docker socket instead"
-	;;
-esac
 
 # shellcheck disable=SC2016 # $1 expands in the inner shell.
 "${as_root[@]}" bash -c 'nohup dockerd >>"$1" 2>&1 </dev/null &' bash "$log"

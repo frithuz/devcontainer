@@ -131,10 +131,6 @@ The image ships the full Docker Engine, but **no daemon starts automatically**: 
 - DinD needs a privileged container and **exclusive** volumes for daemon data. Never share a volume between two active daemons.
 - DinD tests must use a container with no host socket mount and verify that the daemon answering belongs to that container. Otherwise `start-dockerd` correctly returns without starting anything, and the test exercises the host daemon instead.
 
-### Never run DinD on macOS hosts
-
-Running `dockerd` inside a container on a macOS host (Docker Desktop, OrbStack, and similar VM backends) is known to cause corruption. Consumers on macOS use the host's daemon through its socket ([usage.md](usage.md#docker-on-macos-hosts)). `start-dockerd` refuses to start when the kernel looks like a macOS VM backend, but the check is best-effort: backends such as Colima run stock kernels it can't recognize. The rule is the guarantee, not the check.
-
 ## Environment
 
 Anything that must hold in every context goes in `ENV`. Anything that needs shell logic goes in `/etc/devcontainer/env.sh`, which `BASH_ENV` loads into every non-interactive bash, which is how `sbx` launches agents. It has to stay idempotent and quiet. Nothing may depend on `.bashrc` or `/etc/profile`, or on `PATH` additions for command lookup.

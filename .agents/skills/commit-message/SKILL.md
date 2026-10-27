@@ -102,11 +102,11 @@ every other source image.
 ```
 
 ```text
-rootfs/start-dockerd: refuse to start on macOS VM backends
+rootfs/start-dockerd: wait for the daemon to answer, not its socket
 
-Running dockerd inside the container on a macOS host corrupts the
-image store. Detect the Docker Desktop and OrbStack VM kernels and exit
-with an explanation pointing at the host-socket setup in docs/usage.md.
+The socket appears before dockerd finishes initializing, so commands
+run right after start-dockerd could fail with a connection error. Poll
+docker info until it succeeds, and fail with the log path on timeout.
 
 Fixes: #42
 ```

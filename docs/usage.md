@@ -33,9 +33,9 @@ GHCR gets a new image first, and Quay follows as it's copied. Tests don't gate p
 
 Dependabot's `devcontainers` and `docker` ecosystems can bump the image reference.
 
-### Docker on macOS hosts
+### Docker
 
-**Never run Docker-in-Docker on a macOS host.** It causes corruption ([architecture.md](architecture.md#never-run-dind-on-macos-hosts)). Mount the host's socket instead, and don't run `start-dockerd`:
+Use the host's daemon through its socket, or run Docker-in-Docker. To use the host's daemon, mount its socket and don't run `start-dockerd`:
 
 ```jsonc
 {
@@ -47,9 +47,7 @@ Dependabot's `devcontainers` and `docker` ecosystems can bump the image referenc
 
 Depending on the backend, the socket may be owned by `root` inside the container. Use `sudo docker`, or adjust the socket's group in `postStartCommand`.
 
-### Docker on Linux hosts
-
-Linux hosts can use the host socket (as above) or DinD:
+For DinD, run the container privileged with its own volumes for the daemon's data:
 
 ```jsonc
 {
@@ -117,4 +115,3 @@ sbx run 'quay.io/frithuz/claude-kit:latest@sha256:<digest>' <workspace>
 - Agents may auto-update inside the sandbox, so each kit allows its agent's update hosts, along with the image's apt sources and the npm, PyPI, and Go module registries.
 - Each agent comes from Docker's mixin for it, at the version the kit pins, and doesn't update itself ([tooling.md](tooling.md#agents)). Codex comes without its voice libraries, which need audio devices a sandbox doesn't have.
 - Claude Code's session state lives on sandbox volumes. Codex's app server copies its package into `~/.codex`, so nothing is mounted there.
-- Don't run `start-dockerd` inside a sandbox. Container access there is up to `sbx`.

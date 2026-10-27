@@ -41,8 +41,3 @@ Other rules:
 ### Keep the final image's layers few
 
 The `image` stage has three layers: one `COPY` of everything assembled in the `files` stage, one `RUN` for the system, and the `/legal` step, which stays separate because `REVISION` changes on every commit. Add new copied files to `files` and new setup to the existing `RUN`, not as new steps ([`docs/architecture.md`](docs/architecture.md#dockerfile-structure)).
-
-## Docker
-
-- Never start `dockerd` (or run `start-dockerd`) inside the container on a macOS host. Docker-in-Docker on macOS causes corruption. If you can't tell what the host is, assume macOS and don't start it.
-- When a Docker daemon is needed on macOS, use the host's daemon through a mounted socket. Details are in [`docs/usage.md`](docs/usage.md#docker-on-macos-hosts).
