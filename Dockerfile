@@ -187,7 +187,8 @@ LABEL org.opencontainers.image.title="devcontainer" \
       org.opencontainers.image.licenses="CC0-1.0" \
       org.opencontainers.image.vendor="frithuz" \
       devcontainer.metadata='[{"remoteUser":"agent"}]'
-USER agent
+# No USER: the image runs as root, as GitHub Actions expects. Each context that wants agent selects
+# it: the kits set USER agent, and devcontainers use the remoteUser above.
 WORKDIR /home/agent/workspace
 CMD ["/bin/bash"]
 
@@ -197,9 +198,6 @@ CMD ["/bin/bash"]
 # publish.yml only needs the manifest. Only the files the tests read are mounted, so other changes
 # keep the result cached.
 FROM image AS preflight-run
-# Root keeps the image's ENV, which sudo would reset; the script drops to agent itself. Never
-# published, and the default stage below is back to agent.
-USER root
 RUN --mount=type=bind,source=test,target=/mnt/src/test \
     --mount=type=bind,source=Dockerfile,target=/mnt/src/Dockerfile \
     --mount=type=bind,source=scripts/legal-components.yaml,target=/mnt/src/scripts/legal-components.yaml \

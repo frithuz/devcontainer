@@ -2,7 +2,7 @@
 # Docker-in-Docker checks (docs/architecture.md#docker). Runs inside the image as agent, in a
 # privileged container with no host socket and its own volumes for the daemon's data:
 #
-#   docker run --rm --privileged \
+#   docker run --rm --privileged --user agent \
 #     --mount type=volume,target=/var/lib/docker --mount type=volume,target=/var/lib/containerd \
 #     --mount type=bind,source="$PWD/test",target=/mnt/test,readonly \
 #     devcontainer:local bash /mnt/test/runtime.sh

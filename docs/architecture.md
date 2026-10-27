@@ -80,7 +80,7 @@ pnpm's config file is per-user, and GitHub Actions sets `HOME=/github/home`, so 
 
 ## Users
 
-Docker Sandboxes dictates the user model, and the other contexts adapt to it. The non-root user is **`agent`**, UID/GID 1000, home `/home/agent`, with passwordless `sudo` and membership in `docker` and `staff`. The stock `ubuntu` user (also UID 1000) is renamed rather than kept alongside, and its supplementary groups (`adm`, `sudo`, ...) are dropped. The default `USER` is `agent`. CI overrides it to root ([usage.md](usage.md#github-actions)).
+Docker Sandboxes dictates the user model, and the other contexts adapt to it. The non-root user is **`agent`**, UID/GID 1000, home `/home/agent`, with passwordless `sudo` and membership in `docker` and `staff`. The stock `ubuntu` user (also UID 1000) is renamed rather than kept alongside, and its supplementary groups (`adm`, `sudo`, ...) are dropped. The image sets no `USER`, so it runs as root, which is what GitHub Actions expects ([usage.md](usage.md#github-actions)). Contexts that run as `agent` select it themselves: each kit's Dockerfile sets `USER agent`, and devcontainers use the `remoteUser` in the image's metadata.
 
 `sudo` is [sudo-rs](https://github.com/trifectatechfoundation/sudo-rs), Ubuntu's default.
 
@@ -121,7 +121,7 @@ No credentials, tokens, or user config are ever baked into the image. Auth alway
 
 [Use your own Linux image](https://docs.docker.com/ai/sandboxes/customize/author/base-images/#use-your-own-linux-image) requires:
 
-- [x] `agent` user, UID 1000, home `/home/agent`, in `/etc/passwd`, `USER agent`
+- [x] `agent` user, UID 1000, home `/home/agent`, in `/etc/passwd`, `USER agent` (set in each kit's Dockerfile, as in Docker's own workload example)
 - [x] `curl`, `git`, CA certificates
 - [x] Executable `/bin/sh` and `/bin/bash`
 - [x] `ENTRYPOINT` or `CMD` set (the image uses `CMD ["/bin/bash"]`, and each kit sets its agent as `ENTRYPOINT`)

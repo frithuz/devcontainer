@@ -75,13 +75,12 @@ jobs:
         shell: bash
     container:
       image: ghcr.io/<owner>/devcontainer:<YYYYMMDD>@sha256:<digest>
-      options: --user root
     steps:
       - uses: actions/checkout@<sha>
       - run: golangci-lint run
 ```
 
-- **`--user root` is required.** GitHub mounts the workspace and runner tooling with ownership a non-root user can't write to. If git then reports "dubious ownership", add `git config --global --add safe.directory "$GITHUB_WORKSPACE"`. The image doesn't set this globally, so local devcontainers keep the protection.
+- Steps run as root, the image's default user, as [GitHub requires](https://docs.github.com/en/actions/reference/workflows-and-actions/dockerfile-support#user): it mounts the workspace and runner tooling with ownership a non-root user can't write to. Don't pass `--user agent`. If git reports "dubious ownership", add `git config --global --add safe.directory "$GITHUB_WORKSPACE"`. The image doesn't set this globally, so local devcontainers keep the protection.
 - **Set `shell: bash`.** Container jobs otherwise default to `sh`, which doesn't load `BASH_ENV`.
 - Steps keep the image's `ENV`, `PATH` included, so tools you `go install` resolve from `$GOPATH/bin`. Actions only sets `HOME=/github/home`, which pnpm's configuration doesn't depend on.
 - JavaScript actions run on the runner's own Node. The image's Node is for your steps.

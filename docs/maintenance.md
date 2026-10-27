@@ -50,7 +50,7 @@ To run them locally:
 
 ```sh
 NATIVE=1 docker buildx bake preflight        # out/preflight/smoke.txt and smoke-status
-docker run --rm --user root --network none \
+docker run --rm --network none \
   --mount type=bind,source="$PWD",target=/mnt/src,readonly \
   devcontainer:local bash /mnt/src/test/smoke.sh
 ```

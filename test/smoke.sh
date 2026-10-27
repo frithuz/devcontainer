@@ -9,7 +9,7 @@
 #
 # The preflight stage runs it in the build. Against any image, from the repository root:
 #
-#   docker run --rm --user root --network none \
+#   docker run --rm --network none \
 #     --mount type=bind,source="$PWD",target=/mnt/src,readonly \
 #     devcontainer:local bash /mnt/src/test/smoke.sh
 #
@@ -303,7 +303,7 @@ if (($# == 2)); then
 fi
 
 ((EUID == 0)) || {
-	echo "smoke: run as root (docker run --user root); it runs each part as agent too" >&2
+	echo "smoke: run as root (the image's default user); it runs each part as agent too" >&2
 	exit 2
 }
 for file in "$dockerfile" "$components"; do

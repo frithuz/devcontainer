@@ -111,7 +111,7 @@ jobs:
       - name: Run the DinD checks
         if: ${{ !cancelled() && steps.image.outcome == 'success' }}
         run: |
-          docker run --rm --privileged \
+          docker run --rm --privileged --user agent \
             --mount type=volume,target=/var/lib/docker \
             --mount type=volume,target=/var/lib/containerd \
             --mount "type=bind,source=$GITHUB_WORKSPACE/test,target=/mnt/test,readonly" \
