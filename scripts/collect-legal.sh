@@ -389,13 +389,13 @@ row python:expat "$expat_version" "$arch" MIT "$attribution/expat/COPYING" "embe
 sbom library expat "$expat_version" "pkg:generic/expat@$expat_version" MIT - "https://github.com/libexpat/libexpat/tree/R_${expat_version//./_}" - - \
 	"cpe:2.3:a:libexpat_project:libexpat:$expat_version:*:*:*:*:*:*:*"
 
-# --- npm packages bundled with npm and pnpm -----------------------------------------------
+# --- npm packages bundled with pnpm -------------------------------------------------------
 # The deprecated object and array forms ({"type": "Apache 2.0"}, as qrcode-terminal uses) become
 # an expression of their types, with spaces made into SPDX-style hyphens.
 # shellcheck disable=SC2016 # jq program, not shell.
 package_fields='[.name, .version, (.license // .licenses // "NOASSERTION" |
 	if type == "string" then . else [.] | flatten | map(if type == "object" then .type else . end | gsub(" "; "-")) | join(" OR ") end)] | join(" ")'
-for parent in npm:/usr/local/lib/node_modules/npm/node_modules pnpm:/opt/pnpm/dist/node_modules; do
+for parent in pnpm:/opt/pnpm/dist/node_modules; do
 	owner=${parent%%:*}
 	root=${parent#*:}
 	while IFS= read -r manifest; do

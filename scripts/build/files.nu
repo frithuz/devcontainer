@@ -9,8 +9,6 @@ cd /out/usr/local/bin
 for bin in (ls /out/usr/local/go/bin | get name | path basename) {
   ^ln -s $"/usr/local/go/bin/($bin)" $bin
 }
-^ln -s ../lib/node_modules/npm/bin/npm-cli.js npm
-^ln -s ../lib/node_modules/npm/bin/npx-cli.js npx
 for bin in [pnpm pn pnpx pnx] {
   ^ln -s $"/opt/pnpm/($bin)" $bin
 }

@@ -112,7 +112,7 @@ lookup() {
 			continue
 		fi
 		version=$(version_in "$out")
-		# Other components copied from the same stage (npm from node) have their own versions.
+		# Other components copied from the same stage (pip from python) have their own versions.
 		if [[ $name != "$stage" ]]; then
 			pass "$name ${version:-(no version)}"
 			continue
@@ -166,7 +166,7 @@ lookup() {
 		'gofmt -l /usr/local/go/src/errors'
 		'python --version'
 		'pip --version'
-		'npx --version'
+		'pnpx --version'
 		'uvx --version'
 		'pn --version'
 	)

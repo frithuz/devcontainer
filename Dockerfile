@@ -129,7 +129,6 @@ FROM builder AS files
 COPY --link --from=go /usr/local/go /out/usr/local/go
 COPY --link --from=python /usr/local/ /out/usr/local/
 COPY --link --from=node /usr/local/bin/node /out/usr/local/bin/node
-COPY --link --from=node /usr/local/lib/node_modules/npm /out/usr/local/lib/node_modules/npm
 COPY --link --chown=0:0 --from=pnpm /opt/pnpm /out/opt/pnpm
 COPY --link --chown=0:0 --chmod=0755 --from=uv /uv /uvx /out/usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=oras /bin/oras /out/usr/local/bin/

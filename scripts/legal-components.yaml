@@ -25,13 +25,6 @@ components:
       tag: v{version}
       files: [LICENSE]
 
-  - name: npm
-    stage: node
-    license: Artistic-2.0
-    version: npm --version
-    notices: [/usr/local/lib/node_modules/npm/LICENSE]
-    paths: [/usr/local/lib/node_modules/npm]
-
   - name: python
     stage: python
     license: PSF-2.0
