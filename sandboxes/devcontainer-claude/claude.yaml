@@ -129,6 +129,50 @@ capabilities:
       unrestricted: false
       authenticate: [git@github.com]
 
+  # SSH commit signing, ported from Docker's git-ssh-sign kit (docker/sbx-kits-contrib,
+  # git-ssh-sign/git-ssh-sign.yaml at 44a891f). One optional group, so a host without an SSH
+  # agent skips all of it: signing configured with nothing to sign with would fail every commit
+  # in a repository with a remote. The agent signs only git's namespace. The image's git is
+  # past 2.36, so the upstream hook's version probe and its cleanup of older kit versions are
+  # left out.
+  - group:
+      name: SSH commit signing
+      optional: true
+      capabilities:
+        - type: com.docker.sandbox/ssh-agent@1
+          description: Sign git commits and tags with the host's SSH key
+          config:
+            phase: runtime
+            unrestricted: false
+            sign: [git]
+
+        # The key command matches the agent's keys against the committer's GitHub signing keys.
+        - type: com.docker.sandbox/network-policy@1
+          config:
+            runtime:
+              allow:
+                - api.github.com:443
+
+        # The signing machinery is machine-wide. user.signingKey stays unset, or git never runs
+        # the key command, which resolves the key from the agent when git signs. Signing itself
+        # is on only in repositories with a remote, so test fixtures that `git init` don't need
+        # the agent.
+        - type: com.docker.sandbox/lifecycle@1
+          config:
+            install:
+              - command: |
+                  set -e
+                  git config --system gpg.format ssh
+                  git config --system gpg.ssh.defaultKeyCommand /usr/local/libexec/git-ssh-sign/ssh-signing-key-command
+                  git config --system gpg.ssh.allowedSignersFile /home/agent/.config/git/allowed_signers
+                  git config --system --unset-all user.signingKey || true
+                  mkdir -p /etc/git
+                  printf '[commit]\n\tgpgSign = true\n[tag]\n\tgpgSign = true\n' > /etc/git/signing-enabled.inc
+                  chmod 0644 /etc/git/signing-enabled.inc
+                  git config --system 'includeIf.hasconfig:remote.*.url:**.path' /etc/git/signing-enabled.inc
+                user: "0"
+                description: Configure SSH commit signing, scoped to repositories with a remote
+
   - type: com.docker.sandbox/lifecycle@1
     config:
       install:
@@ -245,6 +289,10 @@ capabilities:
         - Credentials are proxy-managed. Tokens in local config files are sentinels.
         - git over SSH reaches github.com through the host's SSH agent, when the host
           forwards one. GitHub's host keys are in /etc/ssh/ssh_known_hosts.
+        - In a repository with a remote, git signs commits and tags with the host's SSH key,
+          when the host forwards an SSH agent. When signing fails, the `[git-ssh-sign]` lines
+          name the cause; ignore git's `user.signingKey` error after them. `git -c
+          commit.gpgsign=false commit` skips signing once.
 
   - type: com.docker.sandbox/agent-context@2
     optional: true
