@@ -68,6 +68,19 @@ RUN --mount=type=bind,source=scripts/build/run.nu,target=/mnt/src/scripts/build/
     --mount=type=bind,source=scripts/build/go-install.nu,target=/mnt/src/scripts/build/go-install.nu \
     nu /mnt/src/scripts/build/run.nu /mnt/src/scripts/build/go-install.nu
 
+# gh-stack, the GitHub CLI extension for stacked pull requests: its releases publish no checksums,
+# so it's built from the pinned module like the tools above. The linker flag is the one its release
+# builds set; without it, it reports its version as "dev". setup.nu installs it as agent's gh
+# extension.
+FROM builder AS gh-stack
+ARG MODULE=github.com/github/gh-stack@v0.3.0
+ARG PACKAGE=.
+ARG OUT=/opt/gh-stack
+ARG LDFLAGS="-X github.com/github/gh-stack/cmd.Version={version}"
+RUN --mount=type=bind,source=scripts/build/run.nu,target=/mnt/src/scripts/build/run.nu \
+    --mount=type=bind,source=scripts/build/go-install.nu,target=/mnt/src/scripts/build/go-install.nu \
+    nu /mnt/src/scripts/build/run.nu /mnt/src/scripts/build/go-install.nu
+
 # The scripts' data files (scripts/*.yaml): each validated against scripts/schemas/<name>.schema.json,
 # checked for duplicate names, and converted to <name>.json. The scripts read only this output,
 # never the YAML. `docker buildx bake config` runs it on its own and exports out/config/.
@@ -104,6 +117,7 @@ COPY --link --chown=0:0 --chmod=0755 --from=git-cliff /usr/local/bin/git-cliff /
 COPY --link --chown=0:0 --chmod=0755 --from=betterleaks /usr/bin/betterleaks /out/usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=nushell /usr/bin/nu /out/usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=gh /opt/gh/gh /out/usr/local/bin/
+COPY --link --chown=0:0 --chmod=0755 --from=gh-stack /opt/gh-stack/gh-stack /out/usr/local/bin/
 COPY --link --from=apt-keys /keys/ /out/etc/apt/keyrings/
 COPY --link rootfs/ /out/
 COPY --link LICENSE /out/legal/LICENSE
@@ -114,6 +128,7 @@ COPY --link --from=jq /COPYING /out/legal/attribution/jq/
 COPY --link --from=jv /opt/jv/LICENSE /out/legal/attribution/jv/
 COPY --link --from=task /opt/task/LICENSE /out/legal/attribution/task/
 COPY --link --from=dnslookup /opt/dnslookup/LICENSE /out/legal/attribution/dnslookup/
+COPY --link --from=gh-stack /opt/gh-stack/LICENSE /out/legal/attribution/gh-stack/
 COPY --link --from=nushell /usr/bin/LICENSE /out/legal/attribution/nushell/
 RUN --mount=type=bind,source=scripts/build/run.nu,target=/mnt/src/scripts/build/run.nu \
     --mount=type=bind,source=scripts/build/files.nu,target=/mnt/src/scripts/build/files.nu \

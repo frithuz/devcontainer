@@ -115,3 +115,20 @@ rm -rf /home/agent/.codex/tmp
 rm -rf /tmp/cc-socks /tmp/node-compile-cache
 # Chained links, so the agents resolve for root too and survive self-updates.
 ln -s /home/agent/.local/bin/claude /home/agent/.local/bin/codex /usr/local/bin/
+
+# gh-stack as agent's gh extension, laid out as `gh extension install github/gh-stack` would: a
+# directory with the binary and a manifest that makes it a binary extension. The binary is a link
+# to the root-owned /usr/local/bin/gh-stack, so the manifest pins it: `gh extension upgrade`
+# leaves it alone instead of failing to overwrite it.
+let gh_stack_version = go version -m /usr/local/bin/gh-stack | lines
+  | parse --regex '^\s+mod\s+github\.com/github/gh-stack\s+(?<version>v\S+)' | get version | first
+let gh_stack = '/home/agent/.local/share/gh/extensions/gh-stack'
+setpriv ...$as_agent mkdir -p $gh_stack
+setpriv ...$as_agent ln -s /usr/local/bin/gh-stack $"($gh_stack)/gh-stack"
+$"owner: github
+name: gh-stack
+host: github.com
+tag: ($gh_stack_version)
+ispinned: true
+path: ($gh_stack)/gh-stack
+" | setpriv ...$as_agent tee $"($gh_stack)/manifest.yml" | ignore

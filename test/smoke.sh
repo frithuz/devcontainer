@@ -275,6 +275,11 @@ environment() {
 	done
 
 	if [[ $user == agent ]]; then
+		# setup.nu's layout of `gh extension install github/gh-stack`, pinned to the image's binary.
+		expect "gh-stack is agent's gh extension" /usr/local/bin/gh-stack \
+			"$(readlink "$HOME/.local/share/gh/extensions/gh-stack/gh-stack")"
+		check "gh-stack's manifest is pinned" grep -qx 'ispinned: true' "$HOME/.local/share/gh/extensions/gh-stack/manifest.yml"
+		check "gh stack runs" gh stack --version
 		expect "passwordless sudo" 0 "$(sudo -n id -u 2>&1)"
 		expect "sudo keeps PATH" "/opt/smoke:$PATH" "$(PATH=/opt/smoke:$PATH sudo -n printenv PATH 2>&1)"
 		expect "sudo keeps proxy variables" $'http://proxy.invalid:3128\nlocalhost' \

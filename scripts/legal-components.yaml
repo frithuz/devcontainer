@@ -126,6 +126,14 @@ components:
     notices: [/legal/attribution/dnslookup/LICENSE]
     paths: [/usr/local/bin/dnslookup]
 
+  - name: gh-stack
+    stage: gh-stack
+    install: go-install
+    license: MIT
+    version: gh-stack --version
+    notices: [/legal/attribution/gh-stack/LICENSE]
+    paths: [/usr/local/bin/gh-stack]
+
   - name: gomplate
     stage: gomplate
     license: MIT
