@@ -126,7 +126,8 @@ COPY --from=config-run /config/ /
 # standalone tools, the apt signing keys, image files (rootfs/: the BASH_ENV script and
 # start-dockerd), and the notices /legal starts from. The image takes it as its first layer.
 FROM builder AS files
-COPY --link --from=go /usr/local/go /out/usr/local/go
+# Without Go's own tests (test/, testdata/, *_test.go), which only `go test std` needs.
+COPY --link --exclude=test --exclude=**/testdata --exclude=**/*_test.go --from=go /usr/local/go /out/usr/local/go
 COPY --link --from=python /usr/local/ /out/usr/local/
 COPY --link --from=node /usr/local/bin/node /out/usr/local/bin/node
 COPY --link --chown=0:0 --from=pnpm /opt/pnpm /out/opt/pnpm
