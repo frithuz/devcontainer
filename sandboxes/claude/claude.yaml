@@ -24,7 +24,7 @@ args:
 
 # The version the image installed. The agent may update itself inside the sandbox.
 # scripts/update-kits.sh rewrites this line and the dockerfile's FROM together.
-provides: ["claude@2.1.310"]
+provides: ["claude@2.1.311"]
 
 capabilities:
   - type: com.docker.sandbox/sbx@1
