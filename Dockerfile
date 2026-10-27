@@ -152,25 +152,27 @@ RUN --mount=type=cache,id=apt-lists-$TARGETARCH,target=/var/lib/apt/lists,sharin
 # directory it creates; pnpm's configuration applies to every user and HOME (see "pnpm
 # configuration"). Claude Code's Bash tool runs only bash or zsh, so it's pinned to bash rather
 # than left to detect agent's nu login shell. Codex falls back to bash on its own.
-ENV LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 LANGUAGE=en_US:en \
-    GOPATH=/go \
-    GOTOOLCHAIN=local \
-    BASH_ENV=/etc/devcontainer/env.sh \
-    PNPM_HOME=/usr/local/share/pnpm \
-    PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/go/bin \
-    CLAUDE_CODE_SHELL=/bin/bash
-ENV pnpm_config_global_bin_dir=/usr/local/bin \
-    pnpm_config_global_dir=/usr/local/share/pnpm/global \
-    pnpm_config_store_dir=/usr/local/share/pnpm/store \
-    pnpm_config_fetch_retries=6 \
-    pnpm_config_fetch_retry_factor=2 \
-    pnpm_config_fetch_retry_mintimeout=3750 \
-    pnpm_config_fetch_retry_maxtimeout=120000 \
-    pnpm_config_strict_ssl=true \
-    pnpm_config_prefer_offline=true \
-    pnpm_config_prefer_frozen_lockfile=true \
-    pnpm_config_verify_store_integrity=true \
-    pnpm_config_update_notifier=false
+ENV LANG=en_US.UTF-8
+ENV LC_ALL=en_US.UTF-8
+ENV LANGUAGE=en_US:en
+ENV GOPATH=/go
+ENV GOTOOLCHAIN=local
+ENV BASH_ENV=/etc/devcontainer/env.sh
+ENV PNPM_HOME=/usr/local/share/pnpm
+ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/go/bin
+ENV CLAUDE_CODE_SHELL=/bin/bash
+ENV pnpm_config_global_bin_dir=/usr/local/bin
+ENV pnpm_config_global_dir=/usr/local/share/pnpm/global
+ENV pnpm_config_store_dir=/usr/local/share/pnpm/store
+ENV pnpm_config_fetch_retries=6
+ENV pnpm_config_fetch_retry_factor=2
+ENV pnpm_config_fetch_retry_mintimeout=3750
+ENV pnpm_config_fetch_retry_maxtimeout=120000
+ENV pnpm_config_strict_ssl=true
+ENV pnpm_config_prefer_offline=true
+ENV pnpm_config_prefer_frozen_lockfile=true
+ENV pnpm_config_verify_store_integrity=true
+ENV pnpm_config_update_notifier=false
 
 # 3. /legal: the notices copied in step 1, then the generated manifest.tsv (see docs/legal.md).
 # Its own step, because REVISION changes on every commit.
