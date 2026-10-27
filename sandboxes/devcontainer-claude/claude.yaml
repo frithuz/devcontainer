@@ -33,6 +33,10 @@ capabilities:
   # package registries.
   - type: com.docker.sandbox/network-policy@1
     config:
+      # GitHub's SSH host keys, fetched by an install hook below.
+      install:
+        allow:
+          - api.github.com:443
       runtime:
         allow:
           - api.anthropic.com:443
@@ -51,6 +55,8 @@ capabilities:
           - files.pythonhosted.org:443
           - proxy.golang.org:443
           - sum.golang.org:443
+          # git over SSH, with the ssh-agent capability below.
+          - github.com:22
 
   # Both apiKey and oauth: the host's binding picks the mode. No proxyManaged, because
   # Claude Code reads its mode from the settings.json seed below.
@@ -111,6 +117,17 @@ capabilities:
   - type: com.docker.sandbox/volume@1
     description: Bash state snapshots
     config: {path: /home/agent/.claude/shell-snapshots, size: 512m}
+
+  # The host's SSH agent, for git over SSH to GitHub only: logins as git@github.com, and no
+  # signatures. Optional, so a host without an agent, or with forwarding off, still gets a
+  # sandbox. The host keys the runtime checks the login against come from outside the sandbox.
+  - type: com.docker.sandbox/ssh-agent@1
+    optional: true
+    description: Use the host's SSH keys for git over SSH to GitHub
+    config:
+      phase: runtime
+      unrestricted: false
+      authenticate: [git@github.com]
 
   - type: com.docker.sandbox/lifecycle@1
     config:
@@ -178,6 +195,19 @@ capabilities:
           user: agent
           env: [MCP_GATEWAY_URL, MCP_SENTINEL_TOKEN_NAME]
           description: Register the sandbox MCP gateway
+        # GitHub's SSH host keys, as the sbx/github-ssh mixin installs them
+        # (docker/sbx-kits-contrib), but system-wide and replaced on each install rather than
+        # appended to ~/.ssh/known_hosts, so the agent's own file stays untouched. A failed
+        # fetch doesn't stop the sandbox: ssh then asks to verify github.com.
+        - command: |
+            if keys=$(curl -fsS --retry 3 https://api.github.com/meta | jq -er '.ssh_keys[] | "github.com " + .'); then
+              printf '%s\n' "$keys" > /etc/ssh/ssh_known_hosts
+              chmod 644 /etc/ssh/ssh_known_hosts
+            else
+              echo "Couldn't fetch GitHub's SSH host keys; ssh will ask to verify github.com" >&2
+            fi
+          user: "0"
+          description: Install GitHub's SSH host keys from api.github.com/meta
       startup:
         # Block volumes mount root-owned, and the agent can't chown them itself.
         - command: [sh, -c, "chown -R agent:agent /home/agent/.claude/projects /home/agent/.claude/sessions /home/agent/.claude/todos /home/agent/.claude/shell-snapshots 2>/dev/null || true"]
@@ -213,6 +243,8 @@ capabilities:
           are already on `PATH`.
         - Never run `start-dockerd` here. Container access is up to the sandbox.
         - Credentials are proxy-managed. Tokens in local config files are sentinels.
+        - git over SSH reaches github.com through the host's SSH agent, when the host
+          forwards one. GitHub's host keys are in /etc/ssh/ssh_known_hosts.
 
   - type: com.docker.sandbox/agent-context@2
     optional: true

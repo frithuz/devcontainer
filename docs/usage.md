@@ -112,6 +112,7 @@ sbx run 'quay.io/frithuz/claude-kit:latest@sha256:<digest>' <workspace>
 
 - Pass `--kit-arg model=<id>` or `--kit-arg reasoningEffort=<level>` to set the agent's defaults. Both are empty by default, which keeps the CLI's own default.
 - No credentials are in the image. The sandbox's credential proxy injects them at runtime, as an API key or OAuth, whichever the host has bound.
+- git over SSH to GitHub uses the host's SSH agent. Load your key with `ssh-add` and keep `sbx`'s `ssh.agentForwardingEnabled` on, the default. Each kit asks for the agent only to log in as `git@github.com`, so it can't sign or log in anywhere else. Without an agent, the sandbox still starts, without SSH. As Docker's `sbx/github-ssh` mixin does, the kits install GitHub's SSH host keys when the sandbox is created, in `/etc/ssh/ssh_known_hosts`.
 - Agents may auto-update inside the sandbox, so each kit allows its agent's update hosts, along with the image's apt sources and the npm, PyPI, and Go module registries.
 - Claude Code's session state lives on sandbox volumes. Codex keeps its binaries in `~/.codex`, so nothing is mounted there.
 - Don't run `start-dockerd` inside a sandbox. Container access there is up to `sbx`.
