@@ -53,11 +53,11 @@ To inspect the attestation locally, export an OCI layout: `docker buildx bake im
 
 The image conveys GPL (v2 and v3), LGPL, and MPL-2.0 components: git (GPLv2, compiled here), MPL-2.0 Go modules in several tools and in Docker's binaries, and most of the Debian base and its packages, including Bash and coreutils. Being unmodified or installed with apt doesn't remove the redistribution obligations ([GNU FAQ](https://www.gnu.org/licenses/gpl-faq.en.html#UnchangedJustBinary)).
 
-**Policy: publish the complete source of every copyleft component in the same registry repository as the image, before the image's tags are published.** One mechanism satisfies every license:
+**Policy: publish the complete source of every GPL and LGPL component in the same registry repository as the image, before the image's tags are published.** One mechanism satisfies every license that requires it:
 
 - **GPLv2 and LGPL-2.x** accept equivalent access to the source "from the same place" as the binary. There's no provision for a third-party server, so the source has to live with the image.
 - **GPLv3 and LGPLv3** (§6(d)) accept Corresponding Source offered through the same place, with clear directions next to the object code. That's `/legal/SOURCE.md`.
-- **MPL-2.0** is file-level: it owes only the covered files' source.
+- **MPL-2.0** is file-level: it owes only the covered files' source. Every MPL-2.0 module in the image is compiled into a binary upstream built: betterleaks, yq, and Task's release binaries, and Docker's packages. Redistributing those unchanged typically owes nothing more, as long as upstream complied ([MPL FAQ Q7](https://www.mozilla.org/en-US/MPL/2.0/FAQ/)), so they get no source images. `manifest.tsv` still records each module's exact version and Go proxy archive. A binary compiled here would owe its MPL modules' source from us (Q8), so `collect-legal.sh` fails the build on a copyleft module in a `go install` component, and a Go tool with one is downloaded as upstream's release instead ([tooling.md](tooling.md#install-methods)).
 
 Publishing the source avoids written offers and their three-year commitments. Source stays available as long as its image does.
 
@@ -71,10 +71,10 @@ Source is published as one **source image per root program per exact version**. 
 - **Immutable.** An absent `source-*` tag is pushed. An existing tag with the expected digest is reused, and anything else fails without overwriting.
 - **Recipe changes rebuild everything.** The key includes `scripts/build-source-image.sh`'s digest and last commit, so changing the script changes every key. So does bumping `annotations_version` in `scripts/plan-sources.sh`, which is how changed annotations (such as each source image's description) reach the images already published. The fetch environment isn't in the key. If it ever changed the output, the immutability check would catch it as a conflict.
 
-Roots come from each platform's `manifest.tsv`. apt packages need no configuration: `scripts/source-apt.yaml` maps their repositories to source repositories. Only non-apt roots, gaps, and elections are listed in `scripts/source-roots.yaml`. Every copyleft component has to be covered by one of these, or planning fails. Go modules' licenses aren't in the manifest, so the Go programs that owe source are listed by hand. Quirks:
+Roots come from each platform's `manifest.tsv`. apt packages need no configuration: `scripts/source-apt.yaml` maps their repositories to source repositories. Only non-apt roots, gaps, and elections are listed in `scripts/source-roots.yaml`. Every copyleft component has to be covered by one of these, or planning fails. Go modules' licenses aren't in the manifest, so a Go program that owes source is listed by hand. None does today. Quirks:
 
-- **Docker's apt repository publishes no source packages**, so moby, buildx, containerd, and runc are fetched from upstream git at the exact commit their binaries record. moby records an abbreviated commit, and betterleaks records none, so those are trusted by tag.
-- **Go roots** are vendored, and every module the binaries report has to appear in `vendor/modules.txt` at the same version.
+- **Docker's apt repository publishes no source packages**, so a copyleft package from it fails planning. Its packages aren't copyleft themselves, and the MPL-2.0 modules in their binaries are upstream's to publish.
+- **Go roots** (`kind: git`) are fetched from upstream git at the exact commit their binaries record and vendored, and every module the binaries report has to appear in `vendor/modules.txt` at the same version.
 - **apt packages come from three repositories**: Docker's hardened rebuilds (`dhi.io`, which publishes `deb-src` for its `+dhi` versions), Debian's archive, and Debian's security archive. Only `trixie` is mapped for the archive: `trixie-updates` publishes only `Sources.xz`, which the planner can't read, and today holds only `tzdata`, which comes from `dhi.io`. `trixie-security` has the same limitation, and no installed package comes from it today. A package from either fails planning rather than going uncovered.
 - **git** is a `bundle` too ([compiled components](#compiled-components)).
 - **Gaps** are reported on every run but don't fail it, so they stay visible until they're resolved. There are none today.
@@ -138,12 +138,12 @@ The image doesn't carry Claude Code. The Claude kit adds it, unmodified, from Do
 ## Enforcement
 
 - Missing inventory entries, notices, or fetched license files fail the build. `/legal/LICENSE` must match the root `LICENSE`.
-- Every copyleft component maps to a source image in the same repository, on both architectures, before public tags are applied. Source collection errors fail the `sources` job. Runtime test results are independent.
+- Every GPL and LGPL component maps to a source image in the same repository, on both architectures, before public tags are applied. Source collection errors fail the `sources` job. Runtime test results are independent.
 - Adding a component means adding its attribution in the same PR.
 
 ## Open questions
 
-1. **Distribution compliance review.** Before the first public release, confirm that source images in the image's own repository, linked by a source index, count as "the same place" under GPLv2/LGPL-2.x and as §6(d) directions under GPLv3. Also confirm coverage for the actual license versions and the recorded elections, complete transitive notices, and the Claude Code terms for this distribution. The project's CC0 dedication resolves none of these.
+1. **Distribution compliance review.** Before the first public release, confirm that source images in the image's own repository, linked by a source index, count as "the same place" under GPLv2/LGPL-2.x and as §6(d) directions under GPLv3, and that upstream's published source covers the MPL-2.0 modules in the binaries it built. Also confirm coverage for the actual license versions and the recorded elections, complete transitive notices, and the Claude Code terms for this distribution. The project's CC0 dedication resolves none of these.
 2. **Copyleft source gaps:**
    - **Unknown licenses:** the Rust crates in uv and nushell, and in the kits' Codex, and whatever Claude Code bundles may add copyleft roots.
 3. **License gaps** reported by `collect-legal.sh`, which doesn't fail on them yet:

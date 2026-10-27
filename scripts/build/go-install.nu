@@ -1,5 +1,5 @@
 # Builds a pinned Go command, static and stripped, and copies the verified module's LICENSE
-# beside it (Dockerfile's jv, task, dnslookup, and gh-stack stages). From the stage's ARGs:
+# beside it (Dockerfile's jv, dnslookup, and gh-stack stages). From the stage's ARGs:
 # MODULE is <module path>@<version>, PACKAGE the command's directory in the module ('.' for its
 # root), OUT the destination, and LDFLAGS (optional) the linker flags, where {version} stands for
 # the module's version.

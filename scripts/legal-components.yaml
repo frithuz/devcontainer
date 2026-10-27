@@ -3,7 +3,8 @@
 # Components copied from pinned upstream images or built from pinned Go modules, for
 # scripts/collect-legal.sh. Adding a COPY'd tool to the Dockerfile requires an entry here. Pinned
 # digests are read from the Dockerfile's FROM lines by stage name, so they live in one place; a
-# go-install component's module and version come from the binary's build info. The "base" stage lists files
+# go-install component's module and version come from the binary's build info, and a release
+# component's archive from the SOURCE its stage writes. The "base" stage lists files
 # Ubuntu's base image ships outside any apt package. In upstream and purl, {version} is the
 # installed version, as printed by the version command.
 components:
@@ -105,7 +106,7 @@ components:
 
   - name: task
     stage: task
-    install: go-install
+    install: release
     license: MIT
     version: task --version
     notices: [/legal/attribution/task/LICENSE]

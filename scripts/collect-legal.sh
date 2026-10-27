@@ -202,6 +202,8 @@ while IFS=$'\t' read -r -u 3 status pkg name version pkg_arch src src_version; d
 done 3< <(dpkg-query -W -f '${db:Status-Abbrev}\t${binary:Package}\t${Package}\t${Version}\t${Architecture}\t${source:Package}\t${source:Version}\n')
 
 # --- Tools copied from pinned images, or built from Go modules or source ------------------
+# Binaries built here with go install, by name, for the copyleft module check below.
+declare -A compiled_bins
 # One line per component on fd 3 (lists space-separated, absent fields "-"), so the version
 # commands can't consume it.
 while IFS=$'\t' read -r -u 3 comp stage install license version_cmd notice_globs paths upstream purl; do
@@ -213,6 +215,9 @@ while IFS=$'\t' read -r -u 3 comp stage install license version_cmd notice_globs
 		[[ -n ${mod_path:-} ]] || error "$comp: ${paths%% *} has no Go module build info"
 		provenance="go-install:${mod_path:-}@${mod_ver:-} ${mod_sum:-} stage:$stage"
 		distribution=-
+		for bin_path in $paths; do
+			compiled_bins[$(basename "$bin_path")]=$comp
+		done
 	elif [[ $install == source-build ]]; then
 		# Compiled in its own stage, which records the archive it built in its SOURCE file.
 		awk -v s="$stage" 'toupper($1) == "FROM" && toupper($3) == "AS" && $4 == s { found = 1 } END { exit !found }' "$dockerfile" ||
@@ -224,6 +229,16 @@ while IFS=$'\t' read -r -u 3 comp stage install license version_cmd notice_globs
 		[[ -n ${build_script:-} && ${build_sha:-} == sha256:* ]] || error "$comp: $attribution/$comp/SOURCE records no build script"
 		provenance="source:${src_url:-} sha256:${src_sha:-} build-script:${build_script:-} ${build_sha:-} stage:$stage"
 		distribution=-
+	elif [[ $install == release ]]; then
+		# Unpacked from upstream's release archive in its own stage, which records the archive in
+		# its SOURCE file.
+		awk -v s="$stage" 'toupper($1) == "FROM" && toupper($3) == "AS" && $4 == s { found = 1 } END { exit !found }' "$dockerfile" ||
+			error "$comp: no stage '$stage' in the Dockerfile"
+		read -r rel_url rel_sha < <(awk '$1 == "release:" { u = $2 } $1 == "sha256:" { h = $2 } END { print u, h }' \
+			"$attribution/$comp/SOURCE" 2>/dev/null) || true
+		[[ -n ${rel_url:-} && -n ${rel_sha:-} ]] || error "$comp: $attribution/$comp/SOURCE records no release archive"
+		provenance="release:${rel_url:-} sha256:${rel_sha:-} stage:$stage"
+		distribution=${rel_url:-}
 	else
 		ref=${stage_ref[$stage]:-}
 		[[ -n $ref ]] || error "$comp: no upstream stage '$stage' in the Dockerfile"
@@ -451,6 +466,14 @@ for key in "${go_wanted[@]}"; do
 	fi
 	for file in "${files[@]}"; do
 		install -D -m 0644 "$file" "$dest/${file#"$base"/}"
+	done
+	# A binary upstream built carries upstream's obligation to publish its copyleft modules'
+	# source; one built here carries ours, and no source root covers a go-install component
+	# (docs/legal.md#copyleft-components).
+	for bin in ${mod_bins[$key]//,/ }; do
+		if [[ -n ${compiled_bins[$bin]:-} ]] && grep -qE 'Mozilla Public License|GNU (Lesser |Library |Affero )?General Public License' "${files[@]}"; then
+			error "$key, compiled into ${compiled_bins[$bin]} by go install, is under a copyleft license: install upstream's binary instead, or add a root to scripts/source-roots.yaml"
+		fi
 	done
 	# Reviewed additions, beside the upstream files, at the top where Syft reads them.
 	# An entry applies to the versions that have any of its reviewed files: a version without

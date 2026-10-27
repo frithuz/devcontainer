@@ -4,75 +4,17 @@
 # apt packages need no entry: every copyleft or non-machine-readable apt package in manifest.tsv
 # is a root of its own, fetched from the repository listed in scripts/source-apt.yaml.
 # Every copyleft component that isn't an apt package or a Go module must be covered by a root,
-# a gap, or an election. Go modules' licenses aren't in manifest.tsv, so the Go programs that
-# owe source are listed here by hand. In tags, {version} is the installed version.
+# a gap, or an election. Go modules' licenses aren't in manifest.tsv, so a Go program that owes
+# source is listed here by hand. None does today: the image's Go programs are upstream's
+# binaries, whose MPL-2.0 modules owe source from upstream, and scripts/collect-legal.sh fails on
+# a copyleft module in a binary built here (docs/legal.md#copyleft-components). In tags,
+# {version} is the installed version.
 
 roots:
   # git: the exact commit of a Go program's tag, with its dependencies vendored. {version} is
   # the main module's version; every Go module compiled into the binaries must be vendored.
-  - name: yq
-    kind: git
-    repository: https://github.com/mikefarah/yq
-    tag: "{version}"
-    module: github.com/mikefarah/yq/v4
-    binaries: [yq]
-    vendoring: go-vendor
-    note: MPL-2.0 modules (hashicorp/hcl)
-
-  - name: task
-    kind: git
-    repository: https://github.com/go-task/task
-    tag: "{version}"
-    module: github.com/go-task/task/v3
-    binaries: [task]
-    vendoring: go-vendor
-    note: MPL-2.0 modules (hashicorp/go-getter)
-
-  - name: betterleaks
-    kind: git
-    repository: https://github.com/betterleaks/betterleaks
-    tag: "{version}"
-    module: github.com/betterleaks/betterleaks
-    binaries: [betterleaks]
-    vendoring: go-vendor
-    note: MPL-2.0 modules
-
-  - name: moby
-    kind: git
-    repository: https://github.com/moby/moby
-    tag: docker-{version}
-    module: github.com/moby/moby/v2
-    binaries: [dockerd, docker-proxy]
-    vendoring: vendored
-    note: MPL-2.0 modules; Docker's apt repository publishes no source
-
-  - name: buildx
-    kind: git
-    repository: https://github.com/docker/buildx
-    tag: "{version}"
-    module: github.com/docker/buildx
-    binaries: [docker-buildx]
-    vendoring: vendored
-    note: MPL-2.0 modules; Docker's apt repository publishes no source
-
-  - name: containerd
-    kind: git
-    repository: https://github.com/containerd/containerd
-    tag: "{version}"
-    module: github.com/containerd/containerd/v2
-    binaries: [containerd, containerd-shim-runc-v2, ctr]
-    vendoring: vendored
-    note: MPL-2.0 modules; Docker's apt repository publishes no source
-
-  - name: runc
-    kind: git
-    repository: https://github.com/opencontainers/runc
-    tag: "{version}"
-    module: github.com/opencontainers/runc
-    binaries: [runc]
-    vendoring: vendored
-    note: MPL-2.0 modules; Docker's apt repository publishes no source
-
+  # Its fields are in schemas/source-roots.schema.json.
+  #
   # bundle: git subpaths at the exact commit of the tag, plus the archives of the covered
   # copyleft components whose manifest source is "source:<url> sha256:<hex>". {version} is the
   # first component's version.

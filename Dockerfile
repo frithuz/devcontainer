@@ -88,14 +88,18 @@ RUN --mount=type=bind,source=scripts/build/run.nu,target=/mnt/src/scripts/build/
     --mount=type=bind,source=scripts/build/go-install.nu,target=/mnt/src/scripts/build/go-install.nu \
     nu /mnt/src/scripts/build/run.nu /mnt/src/scripts/build/go-install.nu
 
-# Task has no upstream image either. Build the pinned module with its verified license.
+# Task has no upstream image either. Its release archive, pinned by SHA-256 per architecture, rather
+# than a build here: a binary upstream built carries upstream's MPL-2.0 source obligation for the
+# modules compiled into it, where one compiled here would carry ours (docs/legal.md). Bumped by
+# hand: VERSION and both SHA256_ values together, from the release's task_checksums.txt.
 FROM builder AS task
-ARG MODULE=github.com/go-task/task/v3@v3.54.0
-ARG PACKAGE=cmd/task
-ARG OUT=/opt/task
+ARG VERSION=3.54.0
+ARG SHA256_AMD64=680859dbb4d881a9c72d4d9a8f510825450849af8567deacd7302c01124416fb
+ARG SHA256_ARM64=d7189d439d4a6058e39e1b2acd7c8b27acd4856691b408f23b242e4294e1df5b
+ARG TARGETARCH
 RUN --mount=type=bind,source=scripts/build/run.nu,target=/mnt/src/scripts/build/run.nu \
-    --mount=type=bind,source=scripts/build/go-install.nu,target=/mnt/src/scripts/build/go-install.nu \
-    nu /mnt/src/scripts/build/run.nu /mnt/src/scripts/build/go-install.nu
+    --mount=type=bind,source=scripts/build/task.nu,target=/mnt/src/scripts/build/task.nu \
+    nu /mnt/src/scripts/build/run.nu /mnt/src/scripts/build/task.nu
 
 # dnslookup, the DNS client (in place of dig, which is MPL-2.0): no upstream image either. Without
 # the linker flag it reports its version as "master".
@@ -165,7 +169,7 @@ COPY --link --from=go /usr/local/go/LICENSE /usr/local/go/PATENTS /out/legal/att
 COPY --link --from=python /usr/local/lib/python3.15/LICENSE.txt /out/legal/attribution/python/
 COPY --link --from=jq /COPYING /out/legal/attribution/jq/
 COPY --link --from=jv /opt/jv/LICENSE /out/legal/attribution/jv/
-COPY --link --from=task /opt/task/LICENSE /out/legal/attribution/task/
+COPY --link --from=task /opt/task/LICENSE /opt/task/SOURCE /out/legal/attribution/task/
 COPY --link --from=dnslookup /opt/dnslookup/LICENSE /out/legal/attribution/dnslookup/
 COPY --link --from=gh-stack /opt/gh-stack/LICENSE /out/legal/attribution/gh-stack/
 RUN --mount=type=bind,source=scripts/build/run.nu,target=/mnt/src/scripts/build/run.nu \

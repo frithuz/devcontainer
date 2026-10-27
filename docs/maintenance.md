@@ -13,7 +13,8 @@ Dependabot runs weekly on two ecosystems: `docker`, for every pinned `FROM` in `
 
 - **The base's Debian release.** The `debian` stage pins `dhi.io/debian-base:trixie-debian13-dev`. Dependabot reads `dhi.io` with `garbee`'s `DOCKERHUB_TOKEN` from its own secrets ([registry and signing](#registry-and-signing)) and proposes new digests for that tag, so Docker's fixes to the base arrive like any other digest bump. Moving to a new Debian release is a deliberate tag change. A new base digest also rebuilds git and reruns its test suite.
 - **apt packages** (base and Docker Engine) and **`gh`** aren't pinned. The weekly build's refresh argument reinstalls them ([architecture.md](architecture.md#dockerfile-structure)). Other builds may reuse cached layers, so a push build can be up to a week behind on these.
-- **`jv`, `task`, and `dnslookup`** are pinned as Go module versions in their builder stages and bumped by hand.
+- **`jv` and `dnslookup`** are pinned as Go module versions in their builder stages and bumped by hand.
+- **`task`** is pinned in its stage and bumped by hand: `VERSION`, `SHA256_AMD64`, and `SHA256_ARM64` together, from the release's `task_checksums.txt`.
 - **git and zlib-ng** are pinned in the `git` stage and bumped by hand: `VERSION` for git, and `ZLIB_NG_VERSION`, `ZLIB_NG_COMMIT`, and `ZLIB_NG_SHA256` together for zlib-ng ([architecture.md](architecture.md#git)). Both test suites run on every bump.
 - **`lint.yml`'s container** pins a published image by tag and digest, bumped by hand. Dependabot doesn't update workflow `container:` images, and `kits.yml` can't do it either: `GITHUB_TOKEN` can't push changes to workflow files. Use GHCR's `build-<run id>` tag of Quay's current `latest`.
 - **License files** are fetched from the installed version's upstream tag on every build, so there's nothing to track. When a tool is bumped, review its `SOURCE` checksums for a license change ([legal.md](legal.md#how-files-get-there)).
@@ -47,7 +48,7 @@ The smoke tests run in the PR build, on both architectures, as both `agent` and 
 
 The `preflight` stage runs the script as root, and the script runs each part once as root and once as `agent`. It records the report and exit status in `smoke.txt` and `smoke-status` instead of failing the build, so a refresh's inventory never depends on the tests. Only `test/`, the `Dockerfile`, and `scripts/legal-components.yaml` are mounted, so other changes leave the result cached.
 
-- **Pinned tools** are the components in `scripts/legal-components.yaml`. A component named after its stage must report the version that stage pins: the first version number in its `FROM` tag (`golang:1.27-trixie` pins 1.27, and 1.27.3 matches), or the module version in a `go install` stage. Image tools must resolve from `/usr/local/bin`.
+- **Pinned tools** are the components in `scripts/legal-components.yaml`. A component named after its stage must report the version that stage pins: the first version number in its `FROM` tag (`golang:1.27-trixie` pins 1.27, and 1.27.3 matches), or the first version in its stage's `ARG` lines (a `go install` stage's module version, or `task`'s `VERSION`). Image tools must resolve from `/usr/local/bin`.
 - **Other commands** (apt packages, aliases, `gh`, and the agents) are listed in `test/smoke.sh`. A new command that isn't a component goes there.
 
 To run them locally:

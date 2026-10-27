@@ -21,7 +21,7 @@ RUN --mount=type=bind,source=scripts/build/run.nu,target=/mnt/src/scripts/build/
 
 - **The runner prints each script into the build log** between a header carrying its sha256 and a footer, then runs it. The log shows exactly what ran, the image's history records only the command, and the script never reaches a layer. It takes several scripts and runs them in order, stopping at the first that fails.
 - **Mount only the files the step uses**, never all of `scripts/`. BuildKit hashes each mounted file into the step's cache key, so a broad mount reruns the step whenever any script changes.
-- **Pass values through `ARG`s**, read as `$env.NAME` (`$env.NAME? | default ''` when unset). A pinned module version stays on an `ARG` line in its stage, where the smoke tests read it (the jv, task, and dnslookup stages).
+- **Pass values through `ARG`s**, read as `$env.NAME` (`$env.NAME? | default ''` when unset). A pinned module version stays on an `ARG` line in its stage, where the smoke tests read it (the jv and dnslookup stages).
 - **nu has to be in the stage.** Copy it from the `nushell` stage, which compiles it (`COPY --link --from=nushell /out/usr/local/bin/nu /usr/local/bin/nu`), or start from the `builder` stage, which already has it. Never install it another way. The `nushell` stage itself is the exception to these rules: it builds nu, so its build script is bash (`scripts/build-nushell.sh`). The sandbox kits' `legal.nu` runs without the runner, because a kit's build context is its own directory.
 
 Writing the scripts:

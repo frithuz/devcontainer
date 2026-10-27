@@ -7,8 +7,8 @@ provenance. The source image for a component
 compiled for this image also holds the script that built it and the archives of the libraries
 compiled into it.
 
-The complete source of every copyleft component is published in the same registry repository as
-this image, as source images: one per root program and exact version (on GHCR also tagged
+The complete source of every GPL and LGPL component is published in the same registry repository
+as this image, as source images: one per root program and exact version (on GHCR also tagged
 `source-*`). Each published image, and each of its platform manifests, has a source index attached
 (an OCI referrer of artifact type `application/vnd.frithuz.devcontainer.source.v1`) that lists its
 source images by digest. The first entry, the `source record`, maps each component to its source
@@ -30,6 +30,11 @@ or its GHCR mirror, and against the sandbox kits built on it, `quay.io/frithuz/c
 `quay.io/frithuz/codex-kit`, which carry the same source: the agents they add bring no copyleft
 code. Each source image's `/source/SOURCE.json` records where its source came from and how it was
 verified.
+
+The MPL-2.0 Go modules are compiled into binaries their upstream projects built and publish with
+their source (betterleaks, yq, Task, and Docker's packages), and are unmodified. `manifest.tsv`
+lists each module (`go-module:` rows) with its exact version and its archive on the Go module
+proxy, `https://proxy.golang.org`.
 
 An image built locally from this repository has no attached source index; the provenance in
 `manifest.tsv` identifies the exact upstream sources.

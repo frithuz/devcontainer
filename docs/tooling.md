@@ -7,7 +7,7 @@ The [`Dockerfile`](../Dockerfile) is the inventory: its source stages list every
 Each tool gets one of three methods, in order of preference:
 
 1. **COPY** from a pinned upstream image. Dependabot updates the pin, and the binary is exactly what upstream shipped.
-2. **Compiled** in its own stage at a pinned version, bumped by hand: `go install` for Go tools without an image, git from its signed release tarball, and nushell from its crates.io release.
+2. **Built or downloaded** in its own stage at a pinned version, bumped by hand: `go install` for Go tools without an image, git from its signed release tarball, and nushell from its crates.io release. A Go tool whose modules include copyleft code (Task's MPL-2.0 ones) is downloaded instead, as upstream's release archive pinned by SHA-256 per architecture, so upstream's binary carries the source obligation ([legal.md](legal.md#copyleft-components)).
 3. **Script**: apt, or a release download verified against its published checksums. These aren't pinned. The weekly build refreshes them, and Dependabot can't track them ([maintenance.md](maintenance.md#updates-dependabot-cant-handle)).
 
 A tool falls back to a script only when there's no usable image: no upstream image (`gh`), or a binary that shouldn't be copied from an image (setuid `sudo-rs`, Docker Engine with its daemon plumbing).
