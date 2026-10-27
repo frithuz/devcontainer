@@ -310,18 +310,6 @@ jobs:
       - name: Set up Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
-      # nu for the source images' scripts (the nushell bake target), from publish's cache of the
-      # image build, so it isn't compiled again. It stays in this builder's cache, where
-      # build-sources.sh's bake reuses it. The runner is amd64.
-      - name: Build nu from the image's cache
-        uses: docker/bake-action@59cb1203cd42bcefd40a1b6d73b589e48c86040e # v7.5.0
-        with:
-          source: .
-          targets: nushell
-          set: |
-            nushell.cache-from=type=gha,scope=image-linux-amd64
-            nushell.output=type=cacheonly
-
       - name: Set up ORAS
         uses: oras-project/setup-oras@005458ad77f1c8facd38a094e4af2e69e5607ff4 # v2.0.2
         with:

@@ -9,33 +9,34 @@ skills. Run `task repo:init` in a new checkout to activate the repository hooks.
 
 ## Dockerfiles
 
-### Run multi-line `RUN` steps as mounted nu scripts
+### Run multi-line `RUN` steps as mounted bash scripts
 
-A `RUN` step that needs more than one command runs a nu script kept as a file, never inline. Don't chain commands with `&& \`, and don't use heredocs. Put the script in `scripts/build/<step>.nu` (or `test/` when only the preflight stage uses it), bind-mount it and the runner at their repository paths under `/mnt/src`, and run it through `scripts/build/run.nu`:
+A `RUN` step that needs more than one command runs a bash script kept as a file, never inline. Don't chain commands with `&& \`, and don't use heredocs. Keeping the script in its own file means it can be reviewed in isolation. Put the script in `scripts/build/<step>.sh` (or `test/` when only the preflight stage uses it), bind-mount it and the runner at their repository paths under `/mnt/src`, and run it through `scripts/build/run.sh`:
 
 ```dockerfile
-RUN --mount=type=bind,source=scripts/build/run.nu,target=/mnt/src/scripts/build/run.nu \
-    --mount=type=bind,source=scripts/build/setup.nu,target=/mnt/src/scripts/build/setup.nu \
-    nu /mnt/src/scripts/build/run.nu /mnt/src/scripts/build/setup.nu
+RUN --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/run.sh \
+    --mount=type=bind,source=scripts/build/setup.sh,target=/mnt/src/scripts/build/setup.sh \
+    bash /mnt/src/scripts/build/run.sh /mnt/src/scripts/build/setup.sh
 ```
 
 - **The runner prints each script into the build log** between a header carrying its sha256 and a footer, then runs it. The log shows exactly what ran, the image's history records only the command, and the script never reaches a layer. It takes several scripts and runs them in order, stopping at the first that fails.
 - **Mount only the files the step uses**, never all of `scripts/`. BuildKit hashes each mounted file into the step's cache key, so a broad mount reruns the step whenever any script changes.
-- **Pass values through `ARG`s**, read as `$env.NAME` (`$env.NAME? | default ''` when unset). A pinned module version stays on an `ARG` line in its stage, where the smoke tests read it (the jv and dnslookup stages).
-- **nu has to be in the stage.** Copy it from the `nushell` stage, which compiles it (`COPY --link --from=nushell /out/usr/local/bin/nu /usr/local/bin/nu`), or start from the `builder` stage, which already has it. Never install it another way. The `nushell` stage itself is the exception to these rules: it builds nu, so its build script is bash (`scripts/build-nushell.sh`). The sandbox kits' `legal.nu` runs without the runner, because a kit's build context is its own directory.
+- **Pass values through `ARG`s**, read as environment variables (`${NAME:-}` when it may be unset). A pinned module version stays on an `ARG` line in its stage, where the smoke tests read it (the jv and dnslookup stages).
+- The sandbox kits' `legal.sh` runs without the runner, because a kit's build context is its own directory.
 
 Writing the scripts:
 
-- **No error preamble.** nu stops the script when an external command exits non-zero, anywhere in a pipeline, so there's no `set -e` or `pipefail` to add. When a failure is expected, wrap the command in `complete` (`let result = cmd o+e>| complete`) and check `$result.exit_code`.
-- **Prefix an external command with `^` when nu has a builtin of the same name** (`ls`, `cp`, `mkdir`, `rm`, ...) and you need the external one's flags or output. `false` and `true` are boolean literals in nu: call `^false` to run the command.
-- **Never `open` and `save` the same file in one pipeline.** nu streams, so `save --force` truncates the file while `open` is still reading it, the way `cat f > f` does. Bind the new contents with `let` first, then save them.
-- **Use nu for the logic**: reading files (`open`), downloads (`http get`, not curl; it fails on HTTP errors and trusts the system's CA store), filtering (`where`), string building (`$"..."`), and errors (`error make`). Call external tools (apt-get, dpkg, usermod) for what nu can't do. Use raw strings (`r#'...'#`) for file contents without interpolation.
+- **Start with `#!/usr/bin/env bash` and `set -euo pipefail`.** When a failure is expected, handle it explicitly (`if ! cmd; then`, or `cmd || status=$?`).
+- **Download with `curl -fsSL --retry 3`**: it fails on HTTP errors, retries transient ones, and trusts the system's CA store. Check what it fetched against a pinned checksum or signature before using it.
+- **Don't pipe into `grep -q`** under `pipefail`: grep exits at the first match and the writer can die of SIGPIPE, failing the pipeline. Capture the output in a variable first and match that.
+- Report errors on stderr and `exit 1`. Use heredocs inside the script for file contents; quote the delimiter (`<<'EOF'`) when there's nothing to interpolate.
+- Format with `shfmt` (tabs), as the lint workflow does, and keep `shellcheck` clean.
 
 Other rules:
 
 - Single-command `RUN` steps that fit on one line stay as plain `RUN`.
 - Shell scripts kept as files (`scripts/*.sh`, `test/*.sh`) are bash, and a `RUN` step calls them with `bash`.
-- nu parses a whole script before running any of it, so a syntax error fails the step before it changes anything. `nu-check <file>` parses one without running it.
+- `bash -n <file>` parses a script without running it.
 - Keep `# syntax=docker/dockerfile:1` as the first line of every Dockerfile.
 
 ### Keep the final image's layers few

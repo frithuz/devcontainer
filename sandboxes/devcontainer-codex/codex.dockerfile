@@ -9,16 +9,16 @@ ARG MIXIN=docker.io/docker/sbx-kit-codex-mixin:0.164.0@sha256:398870e35ac16de575
 FROM ${MIXIN} AS mixin
 FROM ${IMAGE} AS base
 
-# The mixin ships no notices. legal.nu adds Codex's and its bundled ripgrep's, and appends their
+# The mixin ships no notices. legal.sh adds Codex's and its bundled ripgrep's, and appends their
 # rows to the image's manifest. It runs on the build platform, reading the target's package and
 # manifest as files, so building the kit still runs nothing on the target platform. A kit's build
-# context is its own directory, so the script runs without scripts/build/run.nu.
+# context is its own directory, so the script runs without scripts/build/run.sh.
 FROM --platform=$BUILDPLATFORM ${IMAGE} AS legal
 ARG MIXIN
 ARG TARGETARCH
 COPY --from=mixin /opt/codex/codex-package.json /opt/codex/bin/codex /mnt/codex/
 COPY --from=base /legal/manifest.tsv /mnt/manifest.tsv
-RUN --mount=type=bind,source=legal.nu,target=/mnt/legal.nu nu /mnt/legal.nu
+RUN --mount=type=bind,source=legal.sh,target=/mnt/legal.sh bash /mnt/legal.sh
 
 FROM base
 # sbx starts the image's Docker engine, in a privileged container, only when the image

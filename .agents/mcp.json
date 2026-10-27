@@ -1,9 +1,0 @@
-{
-  "mcpServers": {
-    "nushell": {
-      "type": "stdio",
-      "command": "nu",
-      "args": ["--mcp"]
-    }
-  }
-}

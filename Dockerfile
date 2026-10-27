@@ -18,26 +18,6 @@ FROM orhunp/git-cliff:2.14.2@sha256:1e696a381a1b0366bb6ccbb6bd4e50e73473fda88eab
 FROM dhi.io/debian-base:trixie-debian13-dev@sha256:cc4e05ff415ee2d83918f2af45c737983209924ef7362c53f00cfcdaa1c94326 AS debian
 FROM ghcr.io/betterleaks/betterleaks:v1.9.0@sha256:e3b95b0db6c2735db17165c009b0ad6d9cef34fb4578659232b98f69d7346cac AS betterleaks
 
-# nushell, compiled from its crates.io release archive, pinned by SHA-256 (crates.io archives are
-# immutable). Built on the rust stage, Debian 13 like the base, so it links against the same
-# glibc. Every other stage runs its scripts with this nu, so the build script is bash. FEATURES
-# are nushell's cargo features: its defaults without trash-support (no desktop trash in a
-# container). The scripts need network (`http`) and rustls-tls, its TLS without OpenSSL, and the
-# agents' MCP config needs mcp (`nu --mcp`). Bumped by hand: VERSION and SHA256 together (the
-# .crate's digest, as crates.io's API reports it).
-FROM rust AS nushell
-ARG VERSION=0.116.1
-ARG SHA256=62e21f2d6a14430ae2701a4e6f11be42d40a11204c204bef32a8b9879f79e767
-ARG FEATURES=mcp,network,rustls-tls,dap,lsp,plugin,sqlite
-ADD --checksum=sha256:${SHA256} https://static.crates.io/crates/nu/nu-${VERSION}.crate /mnt/nu.crate
-RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
-    --mount=type=bind,source=scripts/build-nushell.sh,target=/mnt/src/scripts/build-nushell.sh \
-    bash /mnt/src/scripts/build-nushell.sh /mnt/nu.crate
-
-# Builder stages run their scripts in nu (AGENTS.md), so they start from go with nu added.
-FROM go AS builder
-COPY --link --from=nushell /out/usr/local/bin/nu /usr/local/bin/nu
-
 # GitHub CLI: no official image. Installs the latest release, verified against its
 # published checksums; REFRESH makes scheduled builds pick up new releases.
 FROM go AS gh
@@ -47,10 +27,10 @@ RUN --mount=type=bind,source=scripts/install-gh.sh,target=/tmp/install-gh.sh bas
 
 # apt signing key for Docker's repository, checked against its published fingerprint before the
 # final stage trusts it.
-FROM builder AS apt-keys
-RUN --mount=type=bind,source=scripts/build/run.nu,target=/mnt/src/scripts/build/run.nu \
-    --mount=type=bind,source=scripts/build/apt-keys.nu,target=/mnt/src/scripts/build/apt-keys.nu \
-    nu /mnt/src/scripts/build/run.nu /mnt/src/scripts/build/apt-keys.nu
+FROM go AS apt-keys
+RUN --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/run.sh \
+    --mount=type=bind,source=scripts/build/apt-keys.sh,target=/mnt/src/scripts/build/apt-keys.sh \
+    bash /mnt/src/scripts/build/run.sh /mnt/src/scripts/build/apt-keys.sh
 
 # git, compiled from its release tarball after checking the tarball's signature against the
 # maintainer's pinned key (SIGNER), with zlib-ng compiled in for faster compression. zlib-ng
@@ -65,75 +45,76 @@ ARG ZLIB_NG_VERSION=2.3.3
 ARG ZLIB_NG_COMMIT=12731092979c6d07f42da27da673a9f6c7b13586
 ARG ZLIB_NG_SHA256=a0d2a5d122c84b56a793a1553a9c3327fb2eb7469bf7a86b79e3c7be5d92e8d6
 ARG TARGETARCH
-COPY --link --from=nushell /out/usr/local/bin/nu /usr/local/bin/nu
 COPY --link --from=rust /usr/local/rustup /usr/local/rustup
 COPY --link --from=rust /usr/local/cargo /usr/local/cargo
 ENV RUSTUP_HOME=/usr/local/rustup
 ENV CARGO_HOME=/usr/local/cargo
 ENV PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 RUN --mount=type=cache,id=apt-lists-$TARGETARCH,target=/var/lib/apt/lists,sharing=locked \
-    --mount=type=bind,source=scripts/build/run.nu,target=/mnt/src/scripts/build/run.nu \
-    --mount=type=bind,source=scripts/build/apt-bootstrap.nu,target=/mnt/src/scripts/build/apt-bootstrap.nu \
-    --mount=type=bind,source=scripts/build/git.nu,target=/mnt/src/scripts/build/git.nu \
-    nu /mnt/src/scripts/build/run.nu /mnt/src/scripts/build/apt-bootstrap.nu /mnt/src/scripts/build/git.nu
+    --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/run.sh \
+    --mount=type=bind,source=scripts/build/apt-bootstrap.sh,target=/mnt/src/scripts/build/apt-bootstrap.sh \
+    --mount=type=bind,source=scripts/build/git.sh,target=/mnt/src/scripts/build/git.sh \
+    bash /mnt/src/scripts/build/run.sh /mnt/src/scripts/build/apt-bootstrap.sh /mnt/src/scripts/build/git.sh
 
 # jv, a JSON Schema validator: for the data files below, and shipped in the image. No upstream
 # image publishes it, so it's built at a pinned version (bumped by hand); Go verifies the module
 # against the checksum database. Static, with the LICENSE from the verified module.
-FROM builder AS jv
+FROM go AS jv
 ARG MODULE=github.com/santhosh-tekuri/jsonschema/cmd/jv@v0.7.0
 ARG PACKAGE=.
 ARG OUT=/opt/jv
-RUN --mount=type=bind,source=scripts/build/run.nu,target=/mnt/src/scripts/build/run.nu \
-    --mount=type=bind,source=scripts/build/go-install.nu,target=/mnt/src/scripts/build/go-install.nu \
-    nu /mnt/src/scripts/build/run.nu /mnt/src/scripts/build/go-install.nu
+RUN --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/run.sh \
+    --mount=type=bind,source=scripts/build/go-install.sh,target=/mnt/src/scripts/build/go-install.sh \
+    bash /mnt/src/scripts/build/run.sh /mnt/src/scripts/build/go-install.sh
 
 # Task has no upstream image either. Its release archive, pinned by SHA-256 per architecture, rather
 # than a build here: a binary upstream built carries upstream's MPL-2.0 source obligation for the
 # modules compiled into it, where one compiled here would carry ours (docs/legal.md). Bumped by
 # hand: VERSION and both SHA256_ values together, from the release's task_checksums.txt.
-FROM builder AS task
+FROM go AS task
 ARG VERSION=3.54.0
 ARG SHA256_AMD64=680859dbb4d881a9c72d4d9a8f510825450849af8567deacd7302c01124416fb
 ARG SHA256_ARM64=d7189d439d4a6058e39e1b2acd7c8b27acd4856691b408f23b242e4294e1df5b
 ARG TARGETARCH
-RUN --mount=type=bind,source=scripts/build/run.nu,target=/mnt/src/scripts/build/run.nu \
-    --mount=type=bind,source=scripts/build/task.nu,target=/mnt/src/scripts/build/task.nu \
-    nu /mnt/src/scripts/build/run.nu /mnt/src/scripts/build/task.nu
+RUN --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/run.sh \
+    --mount=type=bind,source=scripts/build/task.sh,target=/mnt/src/scripts/build/task.sh \
+    bash /mnt/src/scripts/build/run.sh /mnt/src/scripts/build/task.sh
 
 # dnslookup, the DNS client (in place of dig, which is MPL-2.0): no upstream image either. Without
 # the linker flag it reports its version as "master".
-FROM builder AS dnslookup
+FROM go AS dnslookup
 ARG MODULE=github.com/ameshkov/dnslookup@v1.12.0
 ARG PACKAGE=.
 ARG OUT=/opt/dnslookup
 ARG LDFLAGS="-X main.VersionString={version}"
-RUN --mount=type=bind,source=scripts/build/run.nu,target=/mnt/src/scripts/build/run.nu \
-    --mount=type=bind,source=scripts/build/go-install.nu,target=/mnt/src/scripts/build/go-install.nu \
-    nu /mnt/src/scripts/build/run.nu /mnt/src/scripts/build/go-install.nu
+RUN --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/run.sh \
+    --mount=type=bind,source=scripts/build/go-install.sh,target=/mnt/src/scripts/build/go-install.sh \
+    bash /mnt/src/scripts/build/run.sh /mnt/src/scripts/build/go-install.sh
 
 # gh-stack, the GitHub CLI extension for stacked pull requests: its releases publish no checksums,
 # so it's built from the pinned module like the tools above. The linker flag is the one its release
-# builds set; without it, it reports its version as "dev". setup.nu installs it as agent's gh
+# builds set; without it, it reports its version as "dev". setup.sh installs it as agent's gh
 # extension.
-FROM builder AS gh-stack
+FROM go AS gh-stack
 ARG MODULE=github.com/github/gh-stack@v0.3.0
 ARG PACKAGE=.
 ARG OUT=/opt/gh-stack
 ARG LDFLAGS="-X github.com/github/gh-stack/cmd.Version={version}"
-RUN --mount=type=bind,source=scripts/build/run.nu,target=/mnt/src/scripts/build/run.nu \
-    --mount=type=bind,source=scripts/build/go-install.nu,target=/mnt/src/scripts/build/go-install.nu \
-    nu /mnt/src/scripts/build/run.nu /mnt/src/scripts/build/go-install.nu
+RUN --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/run.sh \
+    --mount=type=bind,source=scripts/build/go-install.sh,target=/mnt/src/scripts/build/go-install.sh \
+    bash /mnt/src/scripts/build/run.sh /mnt/src/scripts/build/go-install.sh
 
 # The scripts' data files (scripts/*.yaml): each validated against scripts/schemas/<name>.schema.json,
 # checked for duplicate names, and converted to <name>.json. The scripts read only this output,
 # never the YAML. `docker buildx bake config` runs it on its own and exports out/config/.
-FROM builder AS config-run
+FROM go AS config-run
 COPY --link --from=jv /opt/jv/jv /usr/local/bin/jv
+COPY --link --from=yq /usr/bin/yq /usr/local/bin/yq
+COPY --link --from=jq /jq /usr/local/bin/jq
 RUN --mount=type=bind,source=scripts,target=/mnt/scripts \
-    --mount=type=bind,source=scripts/build/run.nu,target=/mnt/src/scripts/build/run.nu \
-    --mount=type=bind,source=scripts/build/config.nu,target=/mnt/src/scripts/build/config.nu \
-    nu /mnt/src/scripts/build/run.nu /mnt/src/scripts/build/config.nu
+    --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/run.sh \
+    --mount=type=bind,source=scripts/build/config.sh,target=/mnt/src/scripts/build/config.sh \
+    bash /mnt/src/scripts/build/run.sh /mnt/src/scripts/build/config.sh
 
 FROM scratch AS config
 COPY --from=config-run /config/ /
@@ -141,7 +122,7 @@ COPY --from=config-run /config/ /
 # Every file the image copies in, laid out under /out as it lands in the image: toolchains and
 # standalone tools, the apt signing keys, image files (rootfs/: the BASH_ENV script and
 # start-dockerd), and the notices /legal starts from. The image takes it as its first layer.
-FROM builder AS files
+FROM go AS files
 # Without Go's own tests (test/, testdata/, *_test.go), which only `go test std` needs.
 COPY --link --exclude=test --exclude=**/testdata --exclude=**/*_test.go --from=go /usr/local/go /out/usr/local/go
 COPY --link --from=python /usr/local/ /out/usr/local/
@@ -160,7 +141,6 @@ COPY --link --chown=0:0 --chmod=0755 --from=betterleaks /usr/bin/betterleaks /ou
 COPY --link --chown=0:0 --chmod=0755 --from=gh /opt/gh/gh /out/usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=gh-stack /opt/gh-stack/gh-stack /out/usr/local/bin/
 COPY --link --from=git /out/ /out/
-COPY --link --from=nushell /out/ /out/
 COPY --link --from=apt-keys /keys/ /out/etc/apt/keyrings/
 COPY --link rootfs/ /out/
 COPY --link LICENSE /out/legal/LICENSE
@@ -172,9 +152,9 @@ COPY --link --from=jv /opt/jv/LICENSE /out/legal/attribution/jv/
 COPY --link --from=task /opt/task/LICENSE /opt/task/SOURCE /out/legal/attribution/task/
 COPY --link --from=dnslookup /opt/dnslookup/LICENSE /out/legal/attribution/dnslookup/
 COPY --link --from=gh-stack /opt/gh-stack/LICENSE /out/legal/attribution/gh-stack/
-RUN --mount=type=bind,source=scripts/build/run.nu,target=/mnt/src/scripts/build/run.nu \
-    --mount=type=bind,source=scripts/build/files.nu,target=/mnt/src/scripts/build/files.nu \
-    nu /mnt/src/scripts/build/run.nu /mnt/src/scripts/build/files.nu
+RUN --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/run.sh \
+    --mount=type=bind,source=scripts/build/files.sh,target=/mnt/src/scripts/build/files.sh \
+    bash /mnt/src/scripts/build/run.sh /mnt/src/scripts/build/files.sh
 
 # Final image: three layers, every copied file, then the system, then /legal
 # (docs/architecture.md#dockerfile-structure).
@@ -187,7 +167,7 @@ ARG TARGETARCH
 # The COPY doesn't consume it and stays cached.
 ARG REFRESH
 
-# 1. Every copied file, first, so the setup below can use the toolchains and nu.
+# 1. Every copied file, first, so the setup below can use the toolchains.
 COPY --link --from=files /out/ /
 
 # 2. The system, in one step.
@@ -196,11 +176,11 @@ COPY --link --from=files /out/ /
 # changed since the last build.
 # The base image's apt sources use plain HTTP; every apt source is HTTPS instead.
 RUN --mount=type=cache,id=apt-lists-$TARGETARCH,target=/var/lib/apt/lists,sharing=locked \
-    --mount=type=bind,source=scripts/build/run.nu,target=/mnt/src/scripts/build/run.nu \
-    --mount=type=bind,source=scripts/build/apt-bootstrap.nu,target=/mnt/src/scripts/build/apt-bootstrap.nu \
-    --mount=type=bind,source=scripts/build/setup.nu,target=/mnt/src/scripts/build/setup.nu \
-    nu /mnt/src/scripts/build/run.nu /mnt/src/scripts/build/apt-bootstrap.nu \
-    /mnt/src/scripts/build/setup.nu
+    --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/run.sh \
+    --mount=type=bind,source=scripts/build/apt-bootstrap.sh,target=/mnt/src/scripts/build/apt-bootstrap.sh \
+    --mount=type=bind,source=scripts/build/setup.sh,target=/mnt/src/scripts/build/setup.sh \
+    bash /mnt/src/scripts/build/run.sh /mnt/src/scripts/build/apt-bootstrap.sh \
+    /mnt/src/scripts/build/setup.sh
 
 # Defaults for every context. The locale exists only after the step above. PNPM_HOME matches the
 # directory it creates; pnpm's configuration applies to every user and HOME (see "pnpm
@@ -232,9 +212,9 @@ ARG REVISION
 RUN --mount=type=bind,target=/mnt/legal-src --mount=type=bind,from=gh,source=/opt/gh,target=/mnt/gh-legal \
     --mount=type=bind,from=config,target=/mnt/config \
     --mount=type=cache,id=legal-go-mod,target=/var/cache/legal-go-mod,sharing=locked \
-    --mount=type=bind,source=scripts/build/run.nu,target=/mnt/src/scripts/build/run.nu \
-    --mount=type=bind,source=scripts/build/legal.nu,target=/mnt/src/scripts/build/legal.nu \
-    nu /mnt/src/scripts/build/run.nu /mnt/src/scripts/build/legal.nu
+    --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/run.sh \
+    --mount=type=bind,source=scripts/build/legal.sh,target=/mnt/src/scripts/build/legal.sh \
+    bash /mnt/src/scripts/build/run.sh /mnt/src/scripts/build/legal.sh
 
 LABEL org.opencontainers.image.title="devcontainer" \
       org.opencontainers.image.description="Debian 13 (Docker Hardened Images) image with one pinned toolset for devcontainers, GitHub Actions CI, and agent sandboxes. Copyleft source is attached as OCI referrers; see /legal/SOURCE.md." \
@@ -255,8 +235,8 @@ FROM image AS preflight-run
 RUN --mount=type=bind,source=test,target=/mnt/src/test \
     --mount=type=bind,source=Dockerfile,target=/mnt/src/Dockerfile \
     --mount=type=bind,source=scripts/legal-components.yaml,target=/mnt/src/scripts/legal-components.yaml \
-    --mount=type=bind,source=scripts/build/run.nu,target=/mnt/src/scripts/build/run.nu \
-    nu /mnt/src/scripts/build/run.nu /mnt/src/test/preflight.nu
+    --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/run.sh \
+    bash /mnt/src/scripts/build/run.sh /mnt/src/test/preflight.sh
 
 FROM scratch AS preflight
 COPY --from=preflight-run /tmp/out/ /

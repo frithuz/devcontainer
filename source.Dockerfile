@@ -5,8 +5,8 @@
 #   source-plan   runs scripts/plan-sources.sh on the manifests in MANIFESTS (default
 #                 out/preflight) and exports out/sources/ (plan.tsv, plans/, sources.hcl).
 #   sources       the generated group: docker buildx bake -f docker-bake.hcl -f out/sources/sources.hcl sources
-# The bake targets provide the named contexts: apt-keys, config, and nushell (the Dockerfile's
-# stages), manifests, and root-plan (one plans/<tag>/ directory).
+# The bake targets provide the named contexts: apt-keys and config (the Dockerfile's stages),
+# manifests, and root-plan (one plans/<tag>/ directory).
 
 # The fetch stage for a plan's kind: apt, git, or bundle.
 ARG KIND=git
@@ -21,7 +21,6 @@ FROM --platform=$BUILDPLATFORM ghcr.io/oras-project/oras:v1.3.6@sha256:9cfb578be
 FROM go AS tools
 COPY --link --from=jq /jq /usr/local/bin/jq
 COPY --link --from=oras /bin/oras /usr/local/bin/oras
-COPY --link --from=nushell /out/usr/local/bin/nu /usr/local/bin/nu
 
 # Plan: resolve every root program's exact inputs. Upstream state changes without any build
 # input changing, so the bake target never caches this step.
@@ -34,9 +33,9 @@ ARG REPOSITORY_URL
 # config is a named context from docker-bake.hcl (the Dockerfile's config stage).
 RUN --mount=type=bind,source=scripts,target=/mnt/scripts --mount=type=bind,from=manifests,target=/mnt/manifests \
     --mount=type=bind,from=config,target=/mnt/config \
-    --mount=type=bind,source=scripts/build/run.nu,target=/mnt/src/scripts/build/run.nu \
-    --mount=type=bind,source=scripts/build/plan.nu,target=/mnt/src/scripts/build/plan.nu \
-    nu /mnt/src/scripts/build/run.nu /mnt/src/scripts/build/plan.nu
+    --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/run.sh \
+    --mount=type=bind,source=scripts/build/plan.sh,target=/mnt/src/scripts/build/plan.sh \
+    bash /mnt/src/scripts/build/run.sh /mnt/src/scripts/build/plan.sh
 
 FROM scratch AS plan
 COPY --from=plan-run /out/ /
@@ -46,11 +45,10 @@ FROM debian AS fetch-apt
 # Every apt source is HTTPS (scripts/source-apt.yaml too); the base image's sources use plain
 # HTTP. apt lists live in a cache mount (the deb-src fetches below keep theirs in subdirectories
 # of it).
-COPY --link --from=nushell /out/usr/local/bin/nu /usr/local/bin/nu
 RUN --mount=type=cache,id=source-apt-lists,target=/var/lib/apt/lists,sharing=locked \
-    --mount=type=bind,source=scripts/build/run.nu,target=/mnt/src/scripts/build/run.nu \
-    --mount=type=bind,source=scripts/build/apt-bootstrap.nu,target=/mnt/src/scripts/build/apt-bootstrap.nu \
-    nu /mnt/src/scripts/build/run.nu /mnt/src/scripts/build/apt-bootstrap.nu
+    --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/run.sh \
+    --mount=type=bind,source=scripts/build/apt-bootstrap.sh,target=/mnt/src/scripts/build/apt-bootstrap.sh \
+    bash /mnt/src/scripts/build/run.sh /mnt/src/scripts/build/apt-bootstrap.sh
 
 COPY --link --from=jq /jq /usr/local/bin/jq
 # apt-keys is a named context from docker-bake.hcl (the Dockerfile's apt-keys stage).

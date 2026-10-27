@@ -275,12 +275,8 @@ environment() {
 
 	# The sandbox contract (docs/architecture.md#docker-sandboxes-contract).
 	expect "agent's passwd entry" agent:1000:1000:/home/agent "$(getent passwd agent | cut -d: -f1,3,4,6)"
-	# nu is agent's login shell; the kits' agent CLIs run their commands in bash (docs/architecture.md#login-shell).
-	expect "agent's login shell" /usr/local/bin/nu "$(getent passwd agent | cut -d: -f7)"
+	expect "agent's login shell" /bin/bash "$(getent passwd agent | cut -d: -f7)"
 	expect "root's login shell" /bin/bash "$(getent passwd root | cut -d: -f7)"
-	check "nu is listed in /etc/shells" grep -qx /usr/local/bin/nu /etc/shells
-	check "nu runs a command" nu -c 'exit 0'
-	check "nu is built with MCP support (nu --mcp)" nu -c 'if "mcp" not-in (version | get features) { exit 1 }'
 	expect "agent's groups" "agent docker staff" "$(id -nG agent | tr ' ' '\n' | sort | xargs)"
 	check "no ubuntu user" bash -c '! getent passwd ubuntu'
 	check "/bin/sh and /bin/bash are executable" test -x /bin/sh -a -x /bin/bash
@@ -288,7 +284,7 @@ environment() {
 	expect "the workspace belongs to agent" agent "$(stat -c %U /home/agent/workspace)"
 
 	if [[ $user == agent ]]; then
-		# setup.nu's layout of `gh extension install github/gh-stack`, pinned to the image's binary.
+		# setup.sh's layout of `gh extension install github/gh-stack`, pinned to the image's binary.
 		expect "gh-stack is agent's gh extension" /usr/local/bin/gh-stack \
 			"$(readlink "$HOME/.local/share/gh/extensions/gh-stack/gh-stack")"
 		check "gh-stack's manifest is pinned" grep -qx 'ispinned: true' "$HOME/.local/share/gh/extensions/gh-stack/manifest.yml"

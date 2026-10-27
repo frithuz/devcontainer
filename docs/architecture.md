@@ -5,9 +5,9 @@
 - `Dockerfile`, `docker-bake.hcl`: the image and its Bake targets, shared by CI and local builds.
 - `rootfs/`: files copied into the image as-is (the `BASH_ENV` script and `start-dockerd`).
 - `legal/`, `scripts/`: the committed `/legal` documents, the scripts that collect notices and plan source images, and their schema-validated YAML data.
-- `scripts/build/`: the nu scripts the Dockerfiles' `RUN` steps mount and run, through `run.nu`, which prints each one and its sha256 into the build log first.
+- `scripts/build/`: the bash scripts the Dockerfiles' `RUN` steps mount and run, through `run.sh`, which prints each one and its sha256 into the build log first.
 - `source.Dockerfile`: builds [source images](legal.md#source-images).
-- `test/`: `smoke.sh`, the smoke tests the `preflight` stage runs through `preflight.nu`, and `runtime.sh`, the DinD checks, run by `ci.yml` against a built image.
+- `test/`: `smoke.sh`, the smoke tests the `preflight` stage runs through `preflight.sh`, and `runtime.sh`, the DinD checks, run by `ci.yml` against a built image.
 - `.github/workflows/`: `lint.yml` (the workflow and repository linters), `ci.yml` (DinD checks and source planning on PRs), `publish.yml`, partly implemented ([maintenance.md](maintenance.md#publishing-publishyml)), `kits.yml`, which keeps the sandbox kits pinned to the latest image ([maintenance.md](maintenance.md#sandbox-kits)), and `publish-kits.yml`, which publishes them ([maintenance.md](maintenance.md#publishing-the-kits)).
 - `sandboxes/`: Docker Sandboxes kits, one `devcontainer-<agent>` directory per agent ([usage.md](usage.md#agent-sandboxes-sbx)).
 
@@ -19,13 +19,13 @@ The Dockerfile has four kinds of stages. The comments in the file cover the deta
 
 The base is one of them: the `debian` stage pins [Docker Hardened Images](https://docs.docker.com/dhi/)' Debian 13 base, the `-dev` variant (it runs as root and ships apt), pulled from `dhi.io`, which needs a Docker login. The final stage and the stages that compile for it start from it, so they link against the same libraries.
 
-**Builder stages** hold anything fetched or built by script that doesn't belong in a user's home: `gh`, `jv`, `task`, `dnslookup`, git, nushell, and the apt signing key. That keeps `gnupg`, compilers, and other fetch and build tooling out of the final image. Most start from `builder`, the `go` stage with nu added, because every `RUN` script is written in nu (AGENTS.md). The `git` stage starts from `debian` instead ([git](#git)), and the `nushell` stage, which compiles the nu the others use, from `rust` ([nushell](#nushell)). The `config` stage validates `scripts/*.yaml` against their schemas and converts them to JSON. The scripts read only that output, so a malformed data file fails the build before anything uses it.
+**Builder stages** hold anything fetched or built by script that doesn't belong in a user's home: `gh`, `jv`, `task`, `dnslookup`, git, and the apt signing key. That keeps `gnupg`, compilers, and other fetch and build tooling out of the final image. Most start from `go`; the `git` stage starts from `debian` instead ([git](#git)). The `config` stage validates `scripts/*.yaml` against their schemas and converts them to JSON. The scripts read only that output, so a malformed data file fails the build before anything uses it.
 
 **The `files` stage** lays out, under `/out`, every file the image copies in: the toolchains and standalone tools, git's `/usr/local` tree, the pnpm hard links, the `/usr/local/bin` symlinks, the apt signing key, `rootfs/`, and the notices `/legal` starts from. Hard links survive because they're copied within one `COPY`.
 
 **The final stage (`image`)** has as few layers as possible, three:
 
-1. `COPY --link --from=files /out/ /`, first, so the setup step can use the toolchains and nu. It doesn't consume `REFRESH`.
+1. `COPY --link --from=files /out/ /`, first, so the setup step can use the toolchains. It doesn't consume `REFRESH`.
 2. One `RUN` for the system: apt (base packages and Docker Engine), the locale, the shared directories, and the `agent` user.
 3. The `/legal` step. It reads `REVISION`, which changes on every commit, so it stays separate. Merged into step 2, every build would reinstall everything.
 
@@ -33,7 +33,7 @@ The `ENV` instructions sit between steps 2 and 3. They add no layers, and after 
 
 The trade-off is cache reuse. Bumping any copied tool, or changing any file `files` copies, invalidates step 2, so apt and the agent installs run again. The stage declares `REFRESH` before step 2, so the weekly build, which changes it, re-runs it too. That's what refreshes the apt packages and the agent installs. Otherwise an unchanged step stays cached indefinitely, and rebuilding the pinned base digest doesn't refresh it. Keep `REFRESH` out of the copied tools' source stages. `COPY --link` can't follow a destination symlink from an earlier layer, so nothing under `/out` may land on one in the base image (`/bin`, `/lib`, and `/sbin` are symlinks in the base).
 
-apt is used only for what can't be copied: base OS packages and Docker Engine. Packages come from Docker's hardened rebuilds (`dhi.io`, `+dhi` versions) where Docker has one, and otherwise from Debian's archive. Every apt source is HTTPS: the base ships plain-HTTP Debian and DHI sources, which `apt-bootstrap.nu` rewrites, and its own CA certificates. The apt lists live in a cache mount, so they never reach a layer.
+apt is used only for what can't be copied: base OS packages and Docker Engine. Packages come from Docker's hardened rebuilds (`dhi.io`, `+dhi` versions) where Docker has one, and otherwise from Debian's archive. Every apt source is HTTPS: the base ships plain-HTTP Debian and DHI sources, which `apt-bootstrap.sh` rewrites, and its own CA certificates. The apt lists live in a cache mount, so they never reach a layer.
 
 **The `preflight` stage** builds on `image` for PR CI and local checks, and is never published. It runs the smoke tests and exports their report, and each platform's `/legal/manifest.tsv`, which source planning starts from. Publishing builds `image` once and tests that exact digest. It never relies on preflight or cache reuse for the image's identity ([maintenance.md](maintenance.md#workflow)). A refresh builds preflight first, only to decide whether the inventory changed ([maintenance.md](maintenance.md#material-changes)).
 
@@ -47,7 +47,7 @@ Copied binaries have to run on the base's glibc (Debian 13's):
 
 ## git
 
-git is compiled from source in the `git` stage (`scripts/build/git.nu`), so the image runs a current release built for how it's used, not the distribution's. The stage starts from `debian`, the base the image runs on, so git links against exactly the libraries the image installs. It installs under `/usr/local` with its built-in commands as symlinks rather than hard links, so the `files` stage copies it as one tree.
+git is compiled from source in the `git` stage (`scripts/build/git.sh`), so the image runs a current release built for how it's used, not the distribution's. The stage starts from `debian`, the base the image runs on, so git links against exactly the libraries the image installs. It installs under `/usr/local` with its built-in commands as symlinks rather than hard links, so the `files` stage copies it as one tree.
 
 **Verified before use.** The release tarball's signature must verify against the maintainer's key, pinned by fingerprint (`SIGNER`). The keyserver's answer must be that key alone, and gpg's `VALIDSIG` must name it as the signing key's primary: a good signature by any other key fails. zlib-ng publishes no signatures (lightweight tags, unsigned commits), so its archive is pinned by commit and SHA-256 instead, and its header must report the pinned version.
 
@@ -61,23 +61,11 @@ git is compiled from source in the `git` stage (`scripts/build/git.nu`), so the 
 - PCRE2 for `git grep -P`; HTTPS through the image's libcurl.
 - No Perl, Python, Tcl/Tk, translations, or expat: no `send-email`, `svn`, `p4`, `gitk`, `git-gui`, or WebDAV `http-push`.
 
-**Tested before install.** git's test suite runs through `prove`, then `git subtree`'s, and zlib-ng's runs before git is built. A failure fails the stage. The stage is cached, so the tests only run again when its inputs change: the versions, `git.nu`, or the base digest.
+**Tested before install.** git's test suite runs through `prove`, then `git subtree`'s, and zlib-ng's runs before git is built. A failure fails the stage. The stage is cached, so the tests only run again when its inputs change: the versions, `git.sh`, or the base digest.
 
 **Client only.** The daemon, `http-backend`, `git-shell`, `imap-send`, `instaweb`, and the scripts that would only report a missing Perl or Python are removed after install. A release that stops shipping one fails the build, so the list stays accurate. `git subtree` is installed from `contrib/`. There are no man pages or shell completion: use `git <command> -h`.
 
-To bump: `VERSION` for git; `ZLIB_NG_VERSION`, `ZLIB_NG_COMMIT`, and `ZLIB_NG_SHA256` together for zlib-ng; `SIGNER` only if git's maintainer changes signing keys. The smoke tests check git's version against `VERSION` and zlib-ng's against `ZLIB_NG_VERSION`. Changing `git.nu` changes git's [source image](legal.md#compiled-components), which carries the script.
-
-## nushell
-
-nu is compiled in the `nushell` stage (`scripts/build-nushell.sh`) from its crates.io release, rather than copied from nushell's image, so the image controls its size and features. Every other stage runs its scripts with this nu, so the build script is bash, the one exception to the nu rule. The stage starts from `rust`, which is Debian 13 like the base, so nu links against the same glibc. Its only other libraries are libgcc_s and libm.
-
-**Verified before use.** The `.crate` archive is pinned by SHA-256 (`SHA256`), which `ADD --checksum` checks before the build sees it. crates.io archives are immutable. cargo builds with `--locked`, so every dependency must match its checksum in the release's `Cargo.lock`. The script fails if nu reports a version other than `VERSION` or lacks any of `FEATURES`.
-
-**Sized for shipping.** Fat LTO with one codegen unit and no symbol table, on top of nushell's own release profile (`opt-level = "s"`). That makes nu about 35 MB, down from 79 MB with nushell's profile alone. The build runs outside the source tree, because rustup reads the `rust-toolchain.toml` in the working directory, and nushell's pins an older toolchain than the `rust` stage's.
-
-**Features:** nushell's defaults without `trash-support`, since a container has no desktop trash: `mcp` (`nu --mcp`, which the agents' MCP config uses), `network` (`http`, which the build scripts use), `rustls-tls` (TLS without OpenSSL, trusting the system CA store), `lsp`, `dap`, `plugin`, and `sqlite`. `system-clipboard` stays off, since there's no display.
-
-`source.Dockerfile` gets the same nu through a bake named context (`nushell = "target:nushell"`), built for the build platform. In CI, the jobs that plan or build source images first build that target from publish's cache of the image build (`image-linux-amd64`), so nu isn't compiled again. To bump: `VERSION` and `SHA256` together, the `.crate`'s checksum as crates.io's API reports it (`https://crates.io/api/v1/crates/nu/<version>`). The smoke tests check nu's version against `VERSION`.
+To bump: `VERSION` for git; `ZLIB_NG_VERSION`, `ZLIB_NG_COMMIT`, and `ZLIB_NG_SHA256` together for zlib-ng; `SIGNER` only if git's maintainer changes signing keys. The smoke tests check git's version against `VERSION` and zlib-ng's against `ZLIB_NG_VERSION`. Changing `git.sh` changes git's [source image](legal.md#compiled-components), which carries the script.
 
 ## Filesystem
 
@@ -141,9 +129,7 @@ Anything that must hold in every context goes in `ENV`. Anything that needs shel
 
 ### Login shell
 
-`agent`'s login shell is nu (`/usr/local/bin/nu`, listed in `/etc/shells`), so an interactive login, such as an editor's terminal, opens in nu. root keeps bash, and the image's `CMD` stays `/bin/bash`. The `ENV` and `BASH_ENV` rules above don't change: nothing may depend on nu's config either.
-
-The kits' agent CLIs still run their commands in bash. Claude Code's Bash tool accepts only bash or zsh, so the Claude kit sets `CLAUDE_CODE_SHELL=/bin/bash` rather than leaving it to detection. Codex reads the login shell from `/etc/passwd`, doesn't recognize nu, and falls back to bash on Linux. Neither runs nu for its tool calls, so don't point either one at it.
+`agent`'s and root's login shell is bash, and the image's `CMD` is `/bin/bash`. The kits' agent CLIs run their commands in bash too: Claude Code's Bash tool accepts only bash or zsh, and the Claude kit sets `CLAUDE_CODE_SHELL=/bin/bash` rather than leaving it to detection.
 
 No credentials, tokens, or user config are ever baked into the image. Auth always comes from the consuming context at runtime.
 

@@ -8,17 +8,17 @@ ARG MIXIN=docker.io/docker/sbx-kit-claude-mixin:2.1.311@sha256:fac7aed5b057487c9
 FROM ${MIXIN} AS mixin
 FROM ${IMAGE} AS base
 
-# The mixin ships no notices. legal.nu verifies the binary against Anthropic's release manifest,
+# The mixin ships no notices. legal.sh verifies the binary against Anthropic's release manifest,
 # adds Anthropic's terms, and appends Claude Code's row to the image's manifest. It runs on the
 # build platform, reading the target's binary and manifest as files, so building the kit still
 # runs nothing on the target platform. A kit's build context is its own directory, so the script
-# runs without scripts/build/run.nu.
+# runs without scripts/build/run.sh.
 FROM --platform=$BUILDPLATFORM ${IMAGE} AS legal
 ARG MIXIN
 ARG TARGETARCH
 COPY --from=mixin /usr/local/bin/claude /mnt/claude
 COPY --from=base /legal/manifest.tsv /mnt/manifest.tsv
-RUN --mount=type=bind,source=legal.nu,target=/mnt/legal.nu nu /mnt/legal.nu
+RUN --mount=type=bind,source=legal.sh,target=/mnt/legal.sh bash /mnt/legal.sh
 
 FROM base
 # sbx starts the image's Docker engine, in a privileged container, only when the image
@@ -42,7 +42,7 @@ COPY --from=legal /out/ /
 USER agent
 # The binary is root-owned, so it can't update itself: a new version comes with a new mixin pin.
 # Claude Code's Bash tool runs only bash or zsh, so it's pinned to bash rather than left to
-# detect agent's nu login shell.
+# detection.
 ENV IS_SANDBOX=1 DISABLE_AUTOUPDATER=1 CLAUDE_CODE_SHELL=/bin/bash
 # sbx launches the entrypoint itself. Clear the image's CMD so bash isn't passed to the agent.
 ENTRYPOINT ["claude", "--dangerously-skip-permissions"]
