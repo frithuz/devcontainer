@@ -7,8 +7,7 @@
 #     --mount type=bind,source="$PWD/test",target=/mnt/test,readonly \
 #     devcontainer:local bash /mnt/test/runtime.sh
 #
-# Never run it on a macOS host (docs/usage.md#docker-on-macos-hosts). The first failure stops it,
-# because each check needs the ones before it.
+# The first failure stops it, because each check needs the ones before it.
 set -euo pipefail
 
 readonly socket=/var/run/docker.sock
@@ -47,7 +46,7 @@ echo "ok - start-dockerd started a daemon"
 # The daemon names itself after the host it runs on, which is this container.
 pgrep -x dockerd >/dev/null || die "no dockerd process in this container"
 name=$(docker info --format '{{.Name}}')
-[[ $name == "$(hostname)" ]] || die "the daemon answering is $name, not this container's ($(hostname))"
+[[ $name == "$HOSTNAME" ]] || die "the daemon answering is $name, not this container's ($HOSTNAME)"
 echo "ok - the daemon answering is this container's"
 
 # agent reaches it through the docker group, without sudo.
