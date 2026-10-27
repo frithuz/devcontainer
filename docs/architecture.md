@@ -17,31 +17,55 @@ The Dockerfile has four kinds of stages. The comments in the file cover the deta
 
 **Source stages** declare each upstream image once, as a plain `image:tag@sha256:digest`. Dependabot's `docker` ecosystem can parse only that form, so build args never appear in a reference. Digests must be **multi-arch index digests**. A per-platform digest would make an arm64 build pull an amd64 binary. The one exception is nushell, which is pinned by version tag only: it deletes its old images from GHCR when it tags a new one, so a digest pin stops resolving. Its legal provenance records that tag instead of a digest.
 
-**Builder stages** hold anything fetched or built by script that doesn't belong in a user's home: `gh`, `jv`, `task`, `dnslookup`, and the apt signing keys. That keeps `gnupg` and other fetch tooling out of the final image. Most start from `builder`, the `go` stage with nu added, because every `RUN` script is written in nu (AGENTS.md). The `config` stage validates `scripts/*.yaml` against their schemas and converts them to JSON. The scripts read only that output, so a malformed data file fails the build before anything uses it.
+The base is one of them: the `debian` stage pins [Docker Hardened Images](https://docs.docker.com/dhi/)' Debian 13 base, the `-dev` variant (it runs as root and ships apt), mirrored to `frithuz/dhi-debian-base` because `dhi.io` needs a login to pull. The final stage and the stages that compile for it start from it, so they link against the same libraries.
 
-**The `files` stage** lays out, under `/out`, every file the image copies in: the toolchains and standalone tools, the pnpm hard links, the `/usr/local/bin` symlinks, the apt signing keys, `rootfs/`, and the notices `/legal` starts from. Hard links survive because they're copied within one `COPY`.
+**Builder stages** hold anything fetched or built by script that doesn't belong in a user's home: `gh`, `jv`, `task`, `dnslookup`, git, and the apt signing key. That keeps `gnupg`, compilers, and other fetch and build tooling out of the final image. Most start from `builder`, the `go` stage with nu added, because every `RUN` script is written in nu (AGENTS.md). The `git` stage starts from `debian` instead ([git](#git)). The `config` stage validates `scripts/*.yaml` against their schemas and converts them to JSON. The scripts read only that output, so a malformed data file fails the build before anything uses it.
+
+**The `files` stage** lays out, under `/out`, every file the image copies in: the toolchains and standalone tools, git's `/usr/local` tree, the pnpm hard links, the `/usr/local/bin` symlinks, the apt signing key, `rootfs/`, and the notices `/legal` starts from. Hard links survive because they're copied within one `COPY`.
 
 **The final stage (`image`)** has as few layers as possible, three:
 
 1. `COPY --link --from=files /out/ /`, first, so the setup step can use the toolchains and nu. It doesn't consume `REFRESH`.
-2. One `RUN` for the system and the agents: apt (base packages, git, Docker Engine), the locale, the shared directories, the `agent` user, and the agent installers. They run as `agent` through `setpriv`, which Claude Code's installer accepts, unlike `sudo`.
+2. One `RUN` for the system and the agents: apt (base packages and Docker Engine), the locale, the shared directories, the `agent` user, and the agent installers. They run as `agent` through `setpriv`, which Claude Code's installer accepts, unlike `sudo`.
 3. The `/legal` step. It reads `REVISION`, which changes on every commit, so it stays separate. Merged into step 2, every build would reinstall everything.
 
 The `ENV` instructions sit between steps 2 and 3. They add no layers, and after step 2 the locale they select exists.
 
-The trade-off is cache reuse. Bumping any copied tool, or changing any file `files` copies, invalidates step 2, so apt and the agent installs run again. The stage declares `REFRESH` before step 2, so the weekly build, which changes it, re-runs it too. That's what refreshes the apt packages and the agent installs. Otherwise an unchanged step stays cached indefinitely, and rebuilding the pinned base digest doesn't refresh it. Keep `REFRESH` out of the copied tools' source stages. `COPY --link` can't follow a destination symlink from an earlier layer, so nothing under `/out` may land on one in the base image (`/bin`, `/lib`, and `/sbin` are symlinks in Ubuntu).
+The trade-off is cache reuse. Bumping any copied tool, or changing any file `files` copies, invalidates step 2, so apt and the agent installs run again. The stage declares `REFRESH` before step 2, so the weekly build, which changes it, re-runs it too. That's what refreshes the apt packages and the agent installs. Otherwise an unchanged step stays cached indefinitely, and rebuilding the pinned base digest doesn't refresh it. Keep `REFRESH` out of the copied tools' source stages. `COPY --link` can't follow a destination symlink from an earlier layer, so nothing under `/out` may land on one in the base image (`/bin`, `/lib`, and `/sbin` are symlinks in the base).
 
-apt is used only for what can't be copied: base OS packages, git, and Docker Engine. Every apt source is HTTPS. The base image ships plain-HTTP Ubuntu sources and no CA certificates, so the first `apt-get update` trusts the CA bundle from the pinned `go` stage. The apt lists live in a cache mount, so they never reach a layer.
+apt is used only for what can't be copied: base OS packages and Docker Engine. Packages come from Docker's hardened rebuilds (`dhi.io`, `+dhi` versions) where Docker has one, and otherwise from Debian's archive. Every apt source is HTTPS: the base ships plain-HTTP Debian and DHI sources, which `apt-bootstrap.nu` rewrites, and its own CA certificates. The apt lists live in a cache mount, so they never reach a layer.
 
 **The `preflight` stage** builds on `image` for PR CI and local checks, and is never published. It runs the smoke tests and exports their report, and each platform's `/legal/manifest.tsv`, which source planning starts from. Publishing builds `image` once and tests that exact digest. It never relies on preflight or cache reuse for the image's identity ([maintenance.md](maintenance.md#workflow)). A refresh builds preflight first, only to decide whether the inventory changed ([maintenance.md](maintenance.md#material-changes)).
 
 ## Binary compatibility
 
-Copied binaries have to run on Ubuntu's glibc:
+Copied binaries have to run on the base's glibc (Debian 13's):
 
 - Prefer statically linked binaries. Most of the Go tools and uv are.
-- Copy dynamically linked tools (Node, Python, git-cliff, pnpm) only from glibc (Debian-based) images whose glibc is no newer than Ubuntu's. Never copy them from Alpine/musl images.
-- **Python** needs the most care. The official image links CPython against Debian's shared libraries, so the final stage installs the Ubuntu packages with the same sonames. A missing library doesn't break `python3 --version`. It shows up only when the matching stdlib module is imported, which is why the smoke tests import each of them.
+- Copy dynamically linked tools (Node, Python, git-cliff, pnpm) only from glibc (Debian-based) images whose glibc is no newer than the base's. Never copy them from Alpine/musl images.
+- **Python** needs the most care. The official image links CPython against Debian's shared libraries, so the final stage installs the same packages. A missing library doesn't break `python3 --version`. It shows up only when the matching stdlib module is imported, which is why the smoke tests import each of them.
+
+## git
+
+git is compiled from source in the `git` stage (`scripts/build/git.nu`), so the image runs a current release built for how it's used, not the distribution's. The stage starts from `debian`, the base the image runs on, so git links against exactly the libraries the image installs. It installs under `/usr/local` with its built-in commands as symlinks rather than hard links, so the `files` stage copies it as one tree.
+
+**Verified before use.** The release tarball's signature must verify against the maintainer's key, pinned by fingerprint (`SIGNER`). The keyserver's answer must be that key alone, and gpg's `VALIDSIG` must name it as the signing key's primary: a good signature by any other key fails. zlib-ng publishes no signatures (lightweight tags, unsigned commits), so its archive is pinned by commit and SHA-256 instead, and its header must report the pinned version.
+
+**Compiled in.** [zlib-ng](https://github.com/zlib-ng/zlib-ng), statically, in place of zlib: faster compression for clone, fetch, gc, and reading objects. It picks its CPU-specific code at run time, so one build suits every host. git's Rust code is compiled with the toolchain copied from the pinned `rust` stage; it has no crate dependencies, so cargo runs offline.
+
+**Build options:**
+
+- Debian's hardening flags and link-time optimization, from `dpkg-buildflags`. The base drops dpkg's default vendor, and without one `dpkg-buildflags` prints nothing, so the script sets `DEB_VENDOR=Debian`, fails if the flags lack the stack protector or LTO, and checks the linked binary for full RELRO and a stack protector.
+- `sysconfdir=/etc`, so the system config stays `/etc/gitconfig`, where `git config --system` (the kits' commit signing) and other tools expect it.
+- OpenSSL's accelerated SHA-1 only where git doesn't need collision detection (checksums of files it writes itself); object IDs keep the collision-detecting SHA-1. OpenSSL also provides SHA-256.
+- PCRE2 for `git grep -P`; HTTPS through the image's libcurl.
+- No Perl, Python, Tcl/Tk, translations, or expat: no `send-email`, `svn`, `p4`, `gitk`, `git-gui`, or WebDAV `http-push`.
+
+**Tested before install.** git's test suite runs through `prove`, then `git subtree`'s, and zlib-ng's runs before git is built. A failure fails the stage. The stage is cached, so the tests only run again when its inputs change: the versions, `git.nu`, or the base digest.
+
+**Client only.** The daemon, `http-backend`, `git-shell`, `imap-send`, `instaweb`, and the scripts that would only report a missing Perl or Python are removed after install. A release that stops shipping one fails the build, so the list stays accurate. `git subtree` is installed from `contrib/`. There are no man pages or shell completion: use `git <command> -h`.
+
+To bump: `VERSION` for git; `ZLIB_NG_VERSION`, `ZLIB_NG_COMMIT`, and `ZLIB_NG_SHA256` together for zlib-ng; `SIGNER` only if git's maintainer changes signing keys. The smoke tests check git's version against `VERSION` and zlib-ng's against `ZLIB_NG_VERSION`. Changing `git.nu` changes git's [source image](legal.md#compiled-components), which carries the script.
 
 ## Filesystem
 
@@ -51,11 +75,11 @@ Docker daemon state (`/var/lib/docker`, `/var/lib/containerd`) must be a mounted
 
 ### Default PATH
 
-GitHub Actions container jobs ignore a `PATH` set with `ENV`. So **every image-provided command must resolve under Ubuntu's default `PATH`**. Standalone binaries go straight into `/usr/local/bin`, and everything else gets a symlink there.
+GitHub Actions container jobs ignore a `PATH` set with `ENV`. So **every image-provided command must resolve under the default `PATH`**. Standalone binaries go straight into `/usr/local/bin`, and everything else gets a symlink there.
 
 The agent links are deliberately **chained**: `/usr/local/bin/claude` → `~agent/.local/bin/claude` → the current version. The installers own the inner link and repoint it on each self-update, so the outer link never goes stale, and it resolves for root in CI too.
 
-Ubuntu's own `python3` isn't installed. `sudo-rs` depends on `python3:any` (for an apport hook), which would pull in Ubuntu's Python. A local metadata-only package, `devcontainer-python3-shim`, provides `python3` instead. Its `Provides` is unversioned, so a package that needs Ubuntu's real `python3` can still install it. `/usr/local/bin/python3` would still take precedence on the `PATH`.
+Debian's own `python3` isn't installed, and nothing the image installs depends on it. The copied CPython in `/usr/local/bin` is the image's `python3`. A package installed later that needs Debian's `python3` pulls it in alongside, and `/usr/local/bin/python3` still takes precedence on the `PATH`.
 
 `go install` output lands in `/go/bin`, outside the default `PATH`. That's acceptable, because those are the user's own installs, not image-provided commands.
 
@@ -80,15 +104,15 @@ pnpm's config file is per-user, and GitHub Actions sets `HOME=/github/home`, so 
 
 ## Users
 
-Docker Sandboxes dictates the user model, and the other contexts adapt to it. The non-root user is **`agent`**, UID/GID 1000, home `/home/agent`, with passwordless `sudo` and membership in `docker` and `staff`. The stock `ubuntu` user (also UID 1000) is renamed rather than kept alongside, and its supplementary groups (`adm`, `sudo`, ...) are dropped. The image sets no `USER`, so it runs as root, which is what GitHub Actions expects ([usage.md](usage.md#github-actions)). Contexts that run as `agent` select it themselves: each kit's Dockerfile sets `USER agent`, and devcontainers use the `remoteUser` in the image's metadata.
+Docker Sandboxes dictates the user model, and the other contexts adapt to it. The non-root user is **`agent`**, UID/GID 1000, home `/home/agent`, with passwordless `sudo` and membership in `docker` and `staff`. The base has no user at UID 1000, and keeps only the `root`, `nonroot`, `shadow`, and `nobody` accounts, so the build adds the `staff` group (Debian's GID 50) and creates `agent`. It also sets root's login shell to bash: the base's is `/bin/sh`. The image sets no `USER`, so it runs as root, which is what GitHub Actions expects ([usage.md](usage.md#github-actions)). Contexts that run as `agent` select it themselves: each kit's Dockerfile sets `USER agent`, and devcontainers use the `remoteUser` in the image's metadata.
 
-`sudo` is [sudo-rs](https://github.com/trifectatechfoundation/sudo-rs), Ubuntu's default.
+`sudo` is [sudo-rs](https://github.com/trifectatechfoundation/sudo-rs). Debian's package installs it only as `sudo-rs` and `visudo-rs`, so the build links `sudo` and `visudo` to its binaries. The original `sudo` package must never be installed alongside it.
 
 ### sudo configuration
 
 `sudo` keeps the caller's `PATH` and proxy variables. GitHub Actions rebuilds `PATH` at runtime, and a command run through `sudo` has to resolve the same tools as its caller.
 
-sudo-rs's `Defaults secure_path` in `/etc/sudoers` overrides `PATH` regardless of `env_keep`, and a drop-in can't unset it, so the build deletes that line. That gives up no real protection: `secure_path` stops a user's `PATH` from shadowing root's commands, but `agent` already has unrestricted root. The build also sets `/etc/sudoers` to `0440`, because the base image ships it as `0644` and sudo-rs's `visudo -c` rejects that. `visudo -c` runs at build time, so a syntax error fails the build instead of locking out `sudo`.
+Debian's sudo-rs ships no `/etc/sudoers`, so the build writes one: `env_reset`, `use_pty`, root's rule, and `@includedir /etc/sudoers.d`, where `agent`'s rule keeps `PATH` and the proxy variables. It deliberately has no `Defaults secure_path`, which overrides `PATH` regardless of `env_keep` and can't be unset from a drop-in. That gives up no real protection: `secure_path` stops a user's `PATH` from shadowing root's commands, but `agent` already has unrestricted root. Both files are `0440`, which sudo-rs's `visudo -c` requires. `visudo -c` runs at build time, so a syntax error fails the build instead of locking out `sudo`.
 
 ## Docker
 
@@ -133,4 +157,4 @@ The `com.docker.sandbox/sbx@1` capability is declared in each kit descriptor, no
 
 ## Image metadata
 
-The image carries OCI labels and a `devcontainer.metadata` label with the default `remoteUser: agent`, so a consumer's `devcontainer.json` can stay minimal. The Dockerfile sets the fixed ones (title, description, licenses, vendor). `docker-bake.hcl` adds the ones a build knows, when it's given them: source, revision, a documentation permalink to `docs/usage.md` at the building commit, and the base image's name and digest, which `publish.yml` reads from the image stage's `FROM` pin. The published image index carries the same values as annotations. `org.opencontainers.image.licenses` is `CC0-1.0`, for the project's own contribution only ([legal.md](legal.md#packaging-and-metadata)).
+The image carries OCI labels and a `devcontainer.metadata` label with the default `remoteUser: agent`, so a consumer's `devcontainer.json` can stay minimal. The Dockerfile sets the fixed ones (title, description, licenses, vendor). `docker-bake.hcl` adds the ones a build knows, when it's given them: source, revision, a documentation permalink to `docs/usage.md` at the building commit, and the base image's name and digest, which `publish.yml` reads from the `debian` stage's `FROM` pin. The published image index carries the same values as annotations. `org.opencontainers.image.licenses` is `CC0-1.0`, for the project's own contribution only ([legal.md](legal.md#packaging-and-metadata)).

@@ -199,6 +199,34 @@ lookup() {
 		fi
 	done
 
+	# git is compiled in its own stage: its helpers must find their libraries, the system config
+	# is /etc/gitconfig, and grep -P has PCRE.
+	check "git's helpers resolve their libraries" bash -c '
+		for helper in "$(git --exec-path)"/git-remote-http "$(git --exec-path)"/git-http-fetch; do
+			out=$(ldd "$helper") || exit 1
+			! grep "not found" <<<"$out" || exit 1
+		done'
+	# Named in the listing, or in the error when the file doesn't exist yet.
+	check "git's system config is /etc/gitconfig" bash -c \
+		'git config --system --list --show-origin 2>&1 | grep -q "/etc/gitconfig"'
+	check "git grep -P" bash -c '
+		repo=$(mktemp -d) && cd "$repo" && git init -q && echo needle >f && git add f &&
+			git grep -qP "ne{2}dle"; status=$?; rm -rf "$repo"; exit $status'
+	expect "git compresses with the pinned zlib-ng" \
+		"zlib-ng: $(awk -F= '$1 == "ARG ZLIB_NG_VERSION" { print $2; exit }' "$dockerfile")" \
+		"$(git version --build-options | grep -E '^zlib(-ng)?: ')"
+	check "git hashes with OpenSSL where collision detection isn't needed" bash -c \
+		'git version --build-options | grep -qx "non-collision-detecting-SHA-1: SHA1_OPENSSL_UNSAFE"'
+	check "git subtree" bash -c 'git subtree -h 2>&1 | grep -q "git subtree add"'
+	# Removed from the build: servers, imap-send, instaweb, http-push, and Perl/Python stubs.
+	for name in daemon http-backend http-push imap-send instaweb send-email svn p4; do
+		if [[ -e $(git --exec-path)/git-$name ]]; then
+			fail "git-$name is installed"
+		else
+			pass "git-$name isn't installed"
+		fi
+	done
+
 	# A missing shared library shows up only on import (docs/architecture.md#binary-compatibility).
 	check "python imports every lib-dynload module" python3 - <<'EOF'
 import importlib, pathlib, sysconfig

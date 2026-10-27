@@ -72,14 +72,14 @@ jobs:
           sparse-checkout-cone-mode: false
           persist-credentials: false
 
-      # A Docker Hub short name is written out in full: ubuntu:26.04 is
-      # docker.io/library/ubuntu:26.04.
-      - name: Read the image stage's FROM
+      # The image stage starts FROM debian, the stage pinning the base. A Docker Hub short name is
+      # written out in full: frithuz/dhi-debian-base is docker.io/frithuz/dhi-debian-base.
+      - name: Read the base stage's FROM
         id: base
         run: |
-          ref=$(awk '$1 == "FROM" && $3 == "AS" && $4 == "image" { print $2 }' Dockerfile)
+          ref=$(awk '$1 == "FROM" && $3 == "AS" && $4 == "debian" { print $2 }' Dockerfile)
           if [[ ! $ref =~ ^([^@]+)@(sha256:[0-9a-f]{64})$ ]]; then
-            echo "::error file=Dockerfile::The image stage's FROM isn't a single <name>@sha256:<digest> pin: ${ref:-none}"
+            echo "::error file=Dockerfile::The debian stage's FROM isn't a single <name>@sha256:<digest> pin: ${ref:-none}"
             exit 1
           fi
           name=${BASH_REMATCH[1]} digest=${BASH_REMATCH[2]}
@@ -264,7 +264,7 @@ jobs:
       # labels, and the rest the same as docker-bake.hcl's.
       set-meta-annotations: true
       meta-annotations: |
-        org.opencontainers.image.description=Ubuntu 26.04 LTS image with one pinned toolset for devcontainers, GitHub Actions CI, and agent sandboxes. Copyleft source is attached as OCI referrers; see /legal/SOURCE.md.
+        org.opencontainers.image.description=Debian 13 (Docker Hardened Images) image with one pinned toolset for devcontainers, GitHub Actions CI, and agent sandboxes. Copyleft source is attached as OCI referrers; see /legal/SOURCE.md.
         org.opencontainers.image.vendor=frithuz
         org.opencontainers.image.documentation=${{ github.server_url }}/${{ github.repository }}/blob/${{ github.sha }}/docs/usage.md
         org.opencontainers.image.base.name=${{ needs.base.outputs.name }}

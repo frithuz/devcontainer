@@ -25,13 +25,13 @@
           "pattern": "^[a-z0-9][a-z0-9.-]*$"
         },
         "stage": {
-          "description": "The Dockerfile stage it's copied from: a pinned FROM ... AS <stage> (install: image), the stage that builds it (install: go-install), or base for files the Ubuntu base image ships outside any apt package.",
+          "description": "The Dockerfile stage it's copied from: a pinned FROM ... AS <stage> (install: image), the stage that builds it (install: go-install or source-build), or base for files the base image ships outside any apt package.",
           "type": "string",
           "minLength": 1
         },
         "install": {
-          "description": "image (default): copied from a pinned upstream image, recorded with its digest. go-install: built with `go install <module>@<version>` in its stage, recorded with the module, version, and go.sum hash from the binary's build info.",
-          "enum": ["image", "go-install"],
+          "description": "image (default): copied from a pinned upstream image, recorded with its digest. go-install: built with `go install <module>@<version>` in its stage, recorded with the module, version, and go.sum hash from the binary's build info. source-build: compiled from a source archive in its stage, recorded with the archive URL and SHA-256 from /legal/attribution/<name>/SOURCE.",
+          "enum": ["image", "go-install", "source-build"],
           "default": "image"
         },
         "license": { "description": "SPDX license expression.", "type": "string", "minLength": 1 },

@@ -139,7 +139,8 @@ declare -A stage_ref
 while read -r ref name; do
 	stage_ref[$name]=$ref
 done < <(awk 'toupper($1) == "FROM" && $2 ~ /:/ && toupper($3) == "AS" { print $2, $4 }' "$dockerfile")
-base_ref=$(awk 'toupper($1) == "FROM" && $2 ~ /^ubuntu:/ { print $2; exit }' "$dockerfile")
+base_ref=${stage_ref[debian]:-}
+[[ -n $base_ref ]] || error "no debian stage in the Dockerfile"
 # Files the base image ships outside any package are listed under the "base" stage.
 stage_ref[base]=$base_ref
 
@@ -147,10 +148,10 @@ stage_ref[base]=$base_ref
 project_files=(/etc/devcontainer/env.sh /usr/local/bin/start-dockerd /etc/sudoers.d/agent
 	/legal/LICENSE /legal/README.md /legal/SOURCE.md)
 cmp -s "$legal/LICENSE" "$(dirname "$dockerfile")/LICENSE" || error "/legal/LICENSE differs from the repository LICENSE"
-row devcontainer "${REVISION:-unknown}" all CC0-1.0 "$legal/LICENSE" "project files: ${project_files[*]} packages: devcontainer-python3-shim"
+row devcontainer "${REVISION:-unknown}" all CC0-1.0 "$legal/LICENSE" "project files: ${project_files[*]}"
 sbom application devcontainer "${REVISION:-unknown}" "pkg:generic/devcontainer@${REVISION:-unknown}" CC0-1.0 - - - -
 
-# --- Ubuntu base and apt packages ---------------------------------------------------------
+# --- Debian base and apt packages ---------------------------------------------------------
 declare -A deb_uri
 while read -r uri file _ hash; do
 	deb_uri[$file]="${uri//\'/} $hash"
@@ -200,7 +201,7 @@ while IFS=$'\t' read -r -u 3 status pkg name version pkg_arch src src_version; d
 		"src:$src=${src_version:-$version} $provenance base:$base_ref"
 done 3< <(dpkg-query -W -f '${db:Status-Abbrev}\t${binary:Package}\t${Package}\t${Version}\t${Architecture}\t${source:Package}\t${source:Version}\n')
 
-# --- Tools copied from pinned images or built from pinned Go modules -----------------------
+# --- Tools copied from pinned images, or built from Go modules or source ------------------
 # One line per component on fd 3 (lists space-separated, absent fields "-"), so the version
 # commands can't consume it.
 while IFS=$'\t' read -r -u 3 comp stage install license version_cmd notice_globs paths upstream purl; do
@@ -211,6 +212,17 @@ while IFS=$'\t' read -r -u 3 comp stage install license version_cmd notice_globs
 		read -r mod_path mod_ver mod_sum < <(go version -m "${paths%% *}" | awk -F'\t' '$2 == "mod" { print $3, $4, $5; exit }') || true
 		[[ -n ${mod_path:-} ]] || error "$comp: ${paths%% *} has no Go module build info"
 		provenance="go-install:${mod_path:-}@${mod_ver:-} ${mod_sum:-} stage:$stage"
+		distribution=-
+	elif [[ $install == source-build ]]; then
+		# Compiled in its own stage, which records the archive it built in its SOURCE file.
+		awk -v s="$stage" 'toupper($1) == "FROM" && toupper($3) == "AS" && $4 == s { found = 1 } END { exit !found }' "$dockerfile" ||
+			error "$comp: no stage '$stage' in the Dockerfile"
+		# The build script that compiled it goes into its source image too.
+		read -r src_url src_sha build_script build_sha < <(awk '$1 == "source:" { u = $2 } $1 == "sha256:" { h = $2 }
+			$1 == "build-script:" { s = $2; d = $3 } END { print u, h, s, d }' "$attribution/$comp/SOURCE" 2>/dev/null) || true
+		[[ -n ${src_url:-} && -n ${src_sha:-} ]] || error "$comp: $attribution/$comp/SOURCE records no source archive"
+		[[ -n ${build_script:-} && ${build_sha:-} == sha256:* ]] || error "$comp: $attribution/$comp/SOURCE records no build script"
+		provenance="source:${src_url:-} sha256:${src_sha:-} build-script:${build_script:-} ${build_sha:-} stage:$stage"
 		distribution=-
 	else
 		ref=${stage_ref[$stage]:-}
@@ -230,6 +242,17 @@ while IFS=$'\t' read -r -u 3 comp stage install license version_cmd notice_globs
 	notices=$(notices_of "$notice_globs")
 	[[ -n $notices ]] || error "$comp: no notice files match $notice_globs"
 	row "$comp" "$version" "$arch" "$license" "$notices" "$provenance paths: $paths"
+	if [[ $install == source-build ]]; then
+		# Libraries compiled into it: "embedded: <name> <version> <license> <url> sha256:<hex>", with
+		# their notices in <name>/. Their archives are part of its source.
+		while read -r _ e_name e_version e_license e_url e_sha; do
+			e_notices=$(find "$attribution/$comp/$e_name" -type f 2>/dev/null | sort | paste -sd' ' -)
+			[[ -n $e_notices ]] || error "$comp: no notices for embedded $e_name in $attribution/$comp/$e_name"
+			row "$e_name" "$e_version" "$arch" "$e_license" "${e_notices:--}" "embedded-in:$comp source:$e_url $e_sha"
+			sbom library "$e_name" "$e_version" "pkg:generic/$e_name@$e_version" "$e_license" - \
+				"$e_url" - "${e_sha#sha256:}"
+		done < <(awk '$1 == "embedded:"' "$attribution/$comp/SOURCE")
+	fi
 	# shellcheck disable=SC2206 # paths is a space-separated list.
 	covered+=($paths)
 	if [[ $purl != - ]]; then
@@ -563,7 +586,7 @@ done
 
 # --- Executables nobody accounts for ------------------------------------------------------
 # Every ELF file must belong to an apt package or a listed component; the base image can ship
-# unpackaged binaries (Ubuntu's /usr/bin/pebble), which would otherwise go unrecorded.
+# unpackaged binaries (Ubuntu's shipped /usr/bin/pebble), which would otherwise go unrecorded.
 owned=$(mktemp)
 dpkg-query -W -f '${binary:Package}\n' | xargs dpkg-query -L 2>/dev/null |
 	sed -E 's#^/(bin|sbin|lib|lib32|lib64|libx32)/#/usr/\1/#' | sort -u >"$owned"

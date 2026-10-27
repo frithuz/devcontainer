@@ -1,9 +1,11 @@
 # Corresponding Source
 
 This image includes software under copyleft licenses (GPL, LGPL, and MPL-2.0), such as
-golangci-lint, the bubblewrap and GStreamer/GLib libraries bundled with Codex, MPL-2.0 Go modules,
-and Ubuntu packages including Bash and Git. `manifest.tsv` lists each component with its license
-and exact source provenance.
+golangci-lint, git (compiled from source for this image), the bubblewrap and GStreamer/GLib
+libraries bundled with Codex, MPL-2.0 Go modules, and Debian packages including Bash and
+coreutils. `manifest.tsv` lists each component with its license and exact source provenance. The
+source image for a component compiled for this image also holds the script that built it and the
+archives of the libraries compiled into it.
 
 The complete source of every copyleft component is published in the same registry repository as
 this image, as source images: one per root program and exact version (on GHCR also tagged

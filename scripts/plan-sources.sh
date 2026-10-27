@@ -5,7 +5,9 @@
 #   its repository's Sources index (scripts/source-apt.yaml), with the .dsc and archive digests;
 # - git: the commit of each root program's tag (scripts/source-roots.yaml), checked against the
 #   revision recorded in the binary, and the Go modules the binaries were built from;
-# - bundle: the commit of the bundle's tag and the digests of its copyleft archives.
+# - bundle: the commit of the bundle's tag and the digests of its copyleft archives (with those of
+#   permissive libraries compiled into a copyleft component) and the build scripts that compiled
+#   them.
 # Every copyleft component that isn't an apt package or a Go module must be covered by a root,
 # a documented gap, or a license election. Unresolved roots fail; gaps are reported.
 #
@@ -32,6 +34,9 @@ set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 readonly here
 readonly recipe_script=$here/build-source-image.sh
+# The repository checkout, for build scripts recorded by path (build-script: in manifest.tsv).
+repository_root=$(dirname "$here")
+readonly repository_root
 # Licenses that owe source. NOASSERTION (an apt copyright file that isn't machine-readable)
 # can't be ruled out, so it owes source too.
 readonly copyleft='GPL|MPL|EPL|CDDL|EUPL|NOASSERTION'
@@ -318,21 +323,65 @@ while IFS=$'\t' read -r root kind repo ref cover_list recipe_opt root_note; do
 			fi
 			covered=()
 			archives=()
+			files=()
+			declare -A bundle_license=() bundle_source=()
 			while IFS=$'\t' read -r comp license source; do
 				for pattern in "${tokens[@]}"; do
 					# shellcheck disable=SC2053 # covers entries are globs.
 					[[ $comp == $pattern ]] || continue
 					covered+=("$arch:$comp")
-					if [[ $license =~ $copyleft && $source =~ source:([^ ]+)\ sha256:([0-9a-f]{64}) ]]; then
-						archives+=("${BASH_REMATCH[1]} sha256:${BASH_REMATCH[2]}")
-					fi
+					bundle_license[$comp]=$license
+					bundle_source[$comp]=$source
 					break
 				done
 			done < <(awk -F'\t' -v OFS='\t' -v a="$arch" '$1 == a { print $2, $4, $5 }' "$rows")
-			parts=$(printf '%s\n' "${archives[@]}" | jq -cnR --arg repository "$repo" --arg commit "$commit" --arg subpaths "$subpaths" '
-				[inputs | select(. != "") | split(" ") | {type: "archive", url: .[0], digest: .[1]}]
+			for comp in "${!bundle_license[@]}"; do
+				license=${bundle_license[$comp]} source=${bundle_source[$comp]}
+				# A permissive library compiled into a covered copyleft component is part of that
+				# component's source.
+				owes=
+				if [[ $license =~ $copyleft ]]; then
+					owes=1
+				elif [[ $source =~ embedded-in:([^ ]+) && ${bundle_license[${BASH_REMATCH[1]}]:-} =~ $copyleft ]]; then
+					owes=1
+				fi
+				[[ -n $owes ]] || continue
+				if [[ $source =~ source:([^ ]+)\ sha256:([0-9a-f]{64}) ]]; then
+					archives+=("${BASH_REMATCH[1]} sha256:${BASH_REMATCH[2]}")
+				fi
+				# A component compiled in a Dockerfile stage records the script that built it.
+				if [[ $source =~ build-script:([^ ]+)\ sha256:([0-9a-f]{64}) ]]; then
+					files+=("${BASH_REMATCH[1]} sha256:${BASH_REMATCH[2]}")
+				fi
+			done
+			unset bundle_license bundle_source
+			# The checkout's copy goes into the plan directory, so it has to be the file the image
+			# was built with.
+			stale=
+			for file in "${files[@]}"; do
+				read -r path digest <<<"$file"
+				if [[ ! $path =~ ^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$ || $path == *..* ]]; then
+					error "$root $version: unexpected build script path $path"
+					stale=1
+				elif [[ ! -f $repository_root/$path ]]; then
+					error "$root $version: build script $path isn't in this checkout"
+					stale=1
+				elif [[ sha256:$(sha256sum "$repository_root/$path" | cut -d' ' -f1) != "$digest" ]]; then
+					error "$root $version: $path differs from the script that built it ($digest); plan from the image's commit"
+					stale=1
+				fi
+			done
+			[[ -z $stale ]] || continue
+			parts=$( (
+				printf 'archive %s\n' "${archives[@]}"
+				printf 'file %s\n' "${files[@]}"
+			) |
+				jq -cnR --arg repository "$repo" --arg commit "$commit" --arg subpaths "$subpaths" '
+				[inputs | select(test("^[a-z]+ .")) | split(" ")
+					| if .[0] == "archive" then {type: "archive", url: .[1], digest: .[2]}
+					else {type: "file", path: .[1], digest: .[2]} end]
 				+ [{type: "git", repository: $repository, commit: $commit, subpaths: ($subpaths | split(",") | sort)}]
-				| sort_by(.type, .url // .repository)')
+				| sort_by(.type, .url // .repository // .path)')
 			identity=$(jq -cn --arg root "$root" --arg version "$version" --argjson parts "$parts" --argjson recipe "$recipe" \
 				'{kind: "bundle", root: $root, version: $version, ref: {parts: $parts}, recipe: $recipe}')
 			fetch=$(jq -cn --argjson parts "$parts" '{kind: "bundle", parts: $parts}')
@@ -454,6 +503,10 @@ if ! $check; then
 		tag=$(jq -r .tag <<<"${plan[$key]}")
 		mkdir -p "$out/plans/$tag"
 		jq -S . <<<"${plan[$key]}" >"$out/plans/$tag/plan.json"
+		# Build scripts, checked against their digests above, for build-source-image.sh.
+		while IFS= read -r path; do
+			install -D -m 0644 "$repository_root/$path" "$out/plans/$tag/files/$path"
+		done < <(jq -r '.fetch.parts[]? | select(.type == "file") | .path' <<<"${plan[$key]}")
 		[[ ${status[$key]} == build ]] && targets+=("source-${key:7:16}")
 	done
 	# HCL strings: JSON escaping, plus HCL's template sequences.

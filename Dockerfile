@@ -5,6 +5,7 @@
 FROM golang:1.27-trixie@sha256:fbb7ae40b62ff8afe31662df570d39b4f5052ac32b90dae8e60d7657a20a74f4 AS go
 FROM node:26-trixie-slim@sha256:36793bcbb160a6a16cede1e62b93f84e26b78a972a8a4c0b879c1c12f22761ec AS node
 FROM python:3.15-slim-trixie@sha256:533b0b2f9b5d46fd097091cf826f27902f1d6c3bca714b6dc74551356aa97a51 AS python
+FROM rust:1.99-slim-trixie@sha256:1a939748a7cbab172de91a014e3804a97af1394a8c844faa67fce9401c4e40fb AS rust
 FROM ghcr.io/astral-sh/uv:0.13.5@sha256:32a7bb39b496babbd997b0a39a4d66c126bdaf5661b302bf6f06abda8deca6ff AS uv
 FROM ghcr.io/oras-project/oras:v1.3.6@sha256:9cfb578be975b762fd898b9d004243d8003aeb807a3e15b2ed212cdd1326c9eb AS oras
 FROM mvdan/shfmt:v3.14.1@sha256:8c06884a35683d8763fba6c0d9484d11a61a96da65f8d497d6f625825a6043f2 AS shfmt
@@ -14,6 +15,9 @@ FROM hairyhenderson/gomplate:v5.3.1@sha256:9c73c3cacc598cc9d926c67c5548901a4a4ee
 FROM golangci/golangci-lint:v2.15.0@sha256:fbfcfd12a6f8d7f1b97b3362ca80fc2a244d46863148c73cb88e7793af96c481 AS golangci-lint
 FROM ghcr.io/pnpm/pnpm:12.15.0@sha256:d6148daf3ad2af8fa4ecd1aa06db73da32b2e37f63088987eea2fb375ee7f320 AS pnpm
 FROM orhunp/git-cliff:2.14.2@sha256:1e696a381a1b0366bb6ccbb6bd4e50e73473fda88eab3a757b95e0d0d66c9531 AS git-cliff
+# Docker Hardened Images' Debian 13 base, mirrored to Docker Hub (dhi.io needs a login). The dev
+# variant: it runs as root and ships apt. The image and the stages that compile for it start here.
+FROM frithuz/dhi-debian-base:trixie-dev@sha256:cc4e05ff415ee2d83918f2af45c737983209924ef7362c53f00cfcdaa1c94326 AS debian
 FROM ghcr.io/betterleaks/betterleaks:v1.9.0@sha256:e3b95b0db6c2735db17165c009b0ad6d9cef34fb4578659232b98f69d7346cac AS betterleaks
 # An explicit exception to digest pinning: nushell deletes its old images from GHCR when it
 # tags a new one, so a pinned digest stops resolving. The version tag can move under us.
@@ -30,12 +34,37 @@ ARG TARGETARCH
 ARG REFRESH
 RUN --mount=type=bind,source=scripts/install-gh.sh,target=/tmp/install-gh.sh bash /tmp/install-gh.sh /opt/gh
 
-# apt signing keys for the git-core PPA and Docker's repository, checked against
-# their published fingerprints before the final stage trusts them.
+# apt signing key for Docker's repository, checked against its published fingerprint before the
+# final stage trusts it.
 FROM builder AS apt-keys
 RUN --mount=type=bind,source=scripts/build/run.nu,target=/mnt/src/scripts/build/run.nu \
     --mount=type=bind,source=scripts/build/apt-keys.nu,target=/mnt/src/scripts/build/apt-keys.nu \
     nu /mnt/src/scripts/build/run.nu /mnt/src/scripts/build/apt-keys.nu
+
+# git, compiled from its release tarball after checking the tarball's signature against the
+# maintainer's pinned key (SIGNER), with zlib-ng compiled in for faster compression. zlib-ng
+# releases aren't signed, so its archive is pinned by commit and SHA-256. Built on the image's own
+# base, so it links against the libraries the image installs, with the Rust toolchain from the
+# pinned rust stage for git's Rust code. Bumped by hand: VERSION, the three ZLIB_NG_ values
+# together, and SIGNER only if the signing key changes.
+FROM debian AS git
+ARG VERSION=2.56.0
+ARG SIGNER=96E07AF25771955980DAD10020D04E5A713660A7
+ARG ZLIB_NG_VERSION=2.3.3
+ARG ZLIB_NG_COMMIT=12731092979c6d07f42da27da673a9f6c7b13586
+ARG ZLIB_NG_SHA256=a0d2a5d122c84b56a793a1553a9c3327fb2eb7469bf7a86b79e3c7be5d92e8d6
+ARG TARGETARCH
+COPY --link --from=nushell /usr/bin/nu /usr/local/bin/nu
+COPY --link --from=rust /usr/local/rustup /usr/local/rustup
+COPY --link --from=rust /usr/local/cargo /usr/local/cargo
+ENV RUSTUP_HOME=/usr/local/rustup
+ENV CARGO_HOME=/usr/local/cargo
+ENV PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+RUN --mount=type=cache,id=apt-lists-$TARGETARCH,target=/var/lib/apt/lists,sharing=locked \
+    --mount=type=bind,source=scripts/build/run.nu,target=/mnt/src/scripts/build/run.nu \
+    --mount=type=bind,source=scripts/build/apt-bootstrap.nu,target=/mnt/src/scripts/build/apt-bootstrap.nu \
+    --mount=type=bind,source=scripts/build/git.nu,target=/mnt/src/scripts/build/git.nu \
+    nu /mnt/src/scripts/build/run.nu /mnt/src/scripts/build/apt-bootstrap.nu /mnt/src/scripts/build/git.nu
 
 # jv, a JSON Schema validator: for the data files below, and shipped in the image. No upstream
 # image publishes it, so it's built at a pinned version (bumped by hand); Go verifies the module
@@ -118,6 +147,7 @@ COPY --link --chown=0:0 --chmod=0755 --from=betterleaks /usr/bin/betterleaks /ou
 COPY --link --chown=0:0 --chmod=0755 --from=nushell /usr/bin/nu /out/usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=gh /opt/gh/gh /out/usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=gh-stack /opt/gh-stack/gh-stack /out/usr/local/bin/
+COPY --link --from=git /out/ /out/
 COPY --link --from=apt-keys /keys/ /out/etc/apt/keyrings/
 COPY --link rootfs/ /out/
 COPY --link LICENSE /out/legal/LICENSE
@@ -136,7 +166,7 @@ RUN --mount=type=bind,source=scripts/build/run.nu,target=/mnt/src/scripts/build/
 
 # Final image: three layers, every copied file, then the system and agents, then /legal
 # (docs/architecture.md#dockerfile-structure).
-FROM ubuntu:26.04@sha256:c098726dd9b9733f3e885f8de0ef375206a311b0a317eadc40d347b1115fb944 AS image
+FROM debian AS image
 
 # Selects the per-architecture apt lists cache: each architecture has its own lists.
 ARG TARGETARCH
@@ -149,21 +179,16 @@ ARG REFRESH
 COPY --link --from=files /out/ /
 
 # 2. The system and the agents, in one step.
-# Runtime packages, plus the shared libraries the copied Node and Python link against, after a
-# local package that stands in for Ubuntu's python3 (python3-shim.nu).
+# Runtime packages, plus the shared libraries the copied Node and Python link against.
 # apt lists live in a cache mount: never in a layer, and apt-get update only fetches what
 # changed since the last build.
-# The base image's Ubuntu sources use plain HTTP; every apt source is HTTPS instead. The base
-# image has no CA certificates, so the first update and ca-certificates itself trust the go
-# stage's bundle (a pinned image); everything after uses the installed store.
+# The base image's apt sources use plain HTTP; every apt source is HTTPS instead.
 RUN --mount=type=cache,id=apt-lists-$TARGETARCH,target=/var/lib/apt/lists,sharing=locked \
-    --mount=type=bind,from=go,source=/etc/ssl/certs/ca-certificates.crt,target=/tmp/bootstrap-ca.crt \
     --mount=type=bind,source=scripts/build/run.nu,target=/mnt/src/scripts/build/run.nu \
     --mount=type=bind,source=scripts/build/apt-bootstrap.nu,target=/mnt/src/scripts/build/apt-bootstrap.nu \
-    --mount=type=bind,source=scripts/build/python3-shim.nu,target=/mnt/src/scripts/build/python3-shim.nu \
     --mount=type=bind,source=scripts/build/setup.nu,target=/mnt/src/scripts/build/setup.nu \
     nu /mnt/src/scripts/build/run.nu /mnt/src/scripts/build/apt-bootstrap.nu \
-    /mnt/src/scripts/build/python3-shim.nu /mnt/src/scripts/build/setup.nu
+    /mnt/src/scripts/build/setup.nu
 
 # Defaults for every context. The locale exists only after the step above. PNPM_HOME matches the
 # directory it creates; pnpm's configuration applies to every user and HOME (see "pnpm
@@ -202,7 +227,7 @@ RUN --mount=type=bind,target=/mnt/legal-src --mount=type=bind,from=gh,source=/op
     nu /mnt/src/scripts/build/run.nu /mnt/src/scripts/build/legal.nu
 
 LABEL org.opencontainers.image.title="devcontainer" \
-      org.opencontainers.image.description="Ubuntu 26.04 LTS image with one pinned toolset for devcontainers, GitHub Actions CI, and agent sandboxes. Copyleft source is attached as OCI referrers; see /legal/SOURCE.md." \
+      org.opencontainers.image.description="Debian 13 (Docker Hardened Images) image with one pinned toolset for devcontainers, GitHub Actions CI, and agent sandboxes. Copyleft source is attached as OCI referrers; see /legal/SOURCE.md." \
       org.opencontainers.image.licenses="CC0-1.0" \
       org.opencontainers.image.vendor="frithuz" \
       devcontainer.metadata='[{"remoteUser":"agent"}]'

@@ -179,6 +179,24 @@ components:
       tag: v{version}
       files: [LICENSE]
 
+  - name: git
+    stage: git
+    install: source-build
+    # The Rust standard library is compiled in (Apache-2.0 OR MIT, notices in rust/).
+    license: GPL-2.0-only AND (Apache-2.0 OR MIT)
+    version: git --version
+    notices:
+      - /legal/attribution/git/COPYING
+      - /legal/attribution/git/LGPL-2.1
+      - /legal/attribution/git/rust/COPYRIGHT-library.html
+      - /legal/attribution/git/rust/licenses/*
+    paths:
+      - /usr/local/bin/git
+      - /usr/local/bin/scalar
+      - /usr/local/libexec/git-core
+      - /usr/local/share/git-core
+    purl: pkg:generic/git@{version}
+
   - name: nushell
     stage: nushell
     license: MIT
@@ -203,14 +221,3 @@ components:
       tag: v{version}
       files: [LICENSE]
     purl: pkg:npm/pnpm@{version}
-
-  - name: pebble
-    stage: base
-    license: GPL-3.0-only
-    version: pebble version --client
-    notices: [/legal/attribution/pebble/COPYING]
-    paths: [/usr/bin/pebble]
-    upstream:
-      repository: canonical/pebble
-      tag: v{version}
-      files: [COPYING]

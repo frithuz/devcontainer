@@ -20,7 +20,7 @@ The image label `org.opencontainers.image.licenses="CC0-1.0"` describes **only t
 
 ## Image notices
 
-Everything lives under `/legal` (layout in [`legal/README.md`](../legal/README.md)), generated at build by `scripts/collect-legal.sh`. `/legal/manifest.tsv` covers **every** redistributed component: the Ubuntu base, apt packages, copied binaries, release tarballs, installer downloads, and bundled dependencies, each with its license, notices, and exact source provenance. A version string alone can't establish which patches or dependencies went into a binary, so provenance is recorded as digests and checksums, not versions.
+Everything lives under `/legal` (layout in [`legal/README.md`](../legal/README.md)), generated at build by `scripts/collect-legal.sh`. `/legal/manifest.tsv` covers **every** redistributed component: the Debian base, apt packages, copied binaries, compiled components, release tarballs, installer downloads, and bundled dependencies, each with its license, notices, and exact source provenance. A version string alone can't establish which patches or dependencies went into a binary, so provenance is recorded as digests and checksums, not versions.
 
 apt packages keep their notices at `/usr/share/doc/<pkg>/copyright`, and the manifest references them in place. Never delete them to trim the image. Notices aren't source: apt packages with copyleft licenses also get source images.
 
@@ -29,16 +29,16 @@ apt packages keep their notices at `/usr/share/doc/<pkg>/copyright`, and the man
 From most to least preferred:
 
 1. **From the source image**, when the pinned upstream image ships the license. It matches the copied binary exactly.
-2. **From the install artifact**, such as the `gh` release tarball.
+2. **From the install artifact**, such as the `gh` release tarball, or the source a component was compiled from: git's `COPYING` and `LGPL-2.1` and zlib-ng's `LICENSE.md` come from the archives the `git` stage built, and the Rust standard library's notices from the toolchain that compiled it.
 3. **Fetched from upstream at the installed version's tag**, when neither of the above ships it. Most copied tools ship only a binary, and Docker's `.deb`s ship no `copyright` file. Each fetched file's URL and SHA-256 are recorded in its `SOURCE` file. Nothing under `/legal/attribution` is committed, so notices can't drift from the binary, and a relicense shows up as a changed checksum.
 
-Copied tools are described in `scripts/legal-components.yaml`. **Every ELF file in the image must belong to an apt package or a listed component, or the build fails.** That's how `/usr/bin/pebble` was found: Ubuntu's base image ships it outside any package.
+Copied and compiled tools are described in `scripts/legal-components.yaml`. **Every ELF file in the image must belong to an apt package or a listed component, or the build fails.** A base image can ship binaries outside any package: Ubuntu's, which this image used before, shipped `/usr/bin/pebble` that way.
 
 ### SBOM coverage
 
 `bake.yml` attaches an SPDX SBOM from BuildKit's Syft scanner. Syft identifies only what has metadata it reads (dpkg, `package.json`, `dist-info`, Go build info, `cargo auditable`, and a few version patterns). The build fills the gaps:
 
-- **`/legal/sbom/devcontainer.cdx.json`** lists exactly the components Syft can't detect: standalone binaries without metadata, Codex's bundled libraries, and what's compiled into Node and Python's `pyexpat`. Syft merges it into the attestation. Only undetectable components go in it, because Syft doesn't merge an entry with a package it found itself, so listing one would duplicate it.
+- **`/legal/sbom/devcontainer.cdx.json`** lists exactly the components Syft can't detect: standalone binaries without metadata, git and the zlib-ng compiled into it, Codex's bundled libraries, and what's compiled into Node and Python's `pyexpat`. Syft merges it into the attestation. Only undetectable components go in it, because Syft doesn't merge an entry with a package it found itself, so listing one would duplicate it.
 - **Docker's apt packages** get a machine-readable `copyright` file written from their fetched licenses, so Syft and Debian tooling can read them.
 - **Go modules:** Syft looks up a module's license in any `pkg/mod/<module>@<version>/` directory. The build downloads every module compiled into the image's Go binaries through the verified Go proxy and keeps only their license files, under `/legal/go/pkg/mod/`. These double as the Go binaries' transitive notices. The first download is about 900 MB and takes about two minutes, cached afterwards.
 - **`scripts/license-evidence.yaml`** covers modules whose notices name a license Syft can't see: a text in a subdirectory, under another name, or only linked. Reviewed texts are added beside the upstream files, never replacing them. Each entry pins the files it was reviewed against, so an upstream change fails the build until someone reviews it again.
@@ -51,7 +51,7 @@ To inspect the attestation locally, export an OCI layout: `docker buildx bake im
 
 ## Copyleft components
 
-The image conveys GPL (v2 and v3), LGPL, and MPL-2.0 components: golangci-lint and pebble (GPLv3), Codex's bubblewrap and GStreamer/GLib (LGPL), MPL-2.0 Go modules in several tools and in Docker's binaries, and most of the Ubuntu base, including Bash and Git. Being unmodified or installed with apt doesn't remove the redistribution obligations ([GNU FAQ](https://www.gnu.org/licenses/gpl-faq.en.html#UnchangedJustBinary)).
+The image conveys GPL (v2 and v3), LGPL, and MPL-2.0 components: golangci-lint (GPLv3), git (GPLv2, compiled here), Codex's bubblewrap and GStreamer/GLib (LGPL), MPL-2.0 Go modules in several tools and in Docker's binaries, and most of the Debian base and its packages, including Bash and coreutils. Being unmodified or installed with apt doesn't remove the redistribution obligations ([GNU FAQ](https://www.gnu.org/licenses/gpl-faq.en.html#UnchangedJustBinary)).
 
 **Policy: publish the complete source of every copyleft component in the same registry repository as the image, before the image's tags are published.** One mechanism satisfies every license:
 
@@ -75,8 +75,20 @@ Roots come from each platform's `manifest.tsv`. apt packages need no configurati
 
 - **Docker's apt repository publishes no source packages**, so moby, buildx, containerd, and runc are fetched from upstream git at the exact commit their binaries record. moby records an abbreviated commit, and gomplate and betterleaks record none, so those are trusted by tag.
 - **Go roots** are vendored, and every module the binaries report has to appear in `vendor/modules.txt` at the same version.
+- **apt packages come from three repositories**: Docker's hardened rebuilds (`dhi.io`, which publishes `deb-src` for its `+dhi` versions), Debian's archive, and Debian's security archive. Only `trixie` is mapped for the archive: `trixie-updates` publishes only `Sources.xz`, which the planner can't read, and today holds only `tzdata`, which comes from `dhi.io`. `trixie-security` has the same limitation, and no installed package comes from it today. A package from either fails planning rather than going uncovered.
 - **Codex** is a `bundle`: a sparse checkout of its vendored bubblewrap and voice build scripts, plus the archives its `sources.json` lists.
-- **Gaps** (pebble; see [Open questions](#open-questions)) are reported on every run but don't fail it, so they stay visible until they're resolved.
+- **git** is a `bundle` too ([compiled components](#compiled-components)).
+- **Gaps** are reported on every run but don't fail it, so they stay visible until they're resolved. There are none today.
+
+### Compiled components
+
+A component compiled in the Dockerfile (`install: source-build`, so far only git) owes the source it was compiled from and the script that controlled the build. Its stage records both in `/legal/attribution/<name>/SOURCE`, and `collect-legal.sh` copies them into its manifest row:
+
+- **The archive**, by URL and SHA-256: git's signed release tarball.
+- **The build script**, by repository path and SHA-256 (`build-script:`): `scripts/build/git.nu`. Planning checks the checkout's copy against that digest and fails if it differs, so source is always planned from the image's own commit. The script goes into the source image under `build/`, and its digest is part of the key: the source image changes only when the script or a version does, not on every commit.
+- **Libraries compiled in** (`embedded:`), each with a row of its own marked `embedded-in:<component>`: zlib-ng, under the Zlib license. A permissive license owes no source by itself, but a library compiled into a GPL binary is part of that binary's Corresponding Source, so the planner adds the archive of every library embedded in a covered copyleft component. Codex's bundled libraries aren't affected: Codex isn't copyleft.
+
+git's source image holds the git tarball, zlib-ng's archive, `git.nu`, and git's `COPYING` and `LGPL-2.1` from the release's tag. The Rust standard library is also compiled into git. It's Apache-2.0 OR MIT, so it owes no source, and its notices ship in `/legal/attribution/git/rust/`.
 
 ### Building source images
 
@@ -132,11 +144,10 @@ Claude Code is **preinstalled** under Anthropic's [terms for offering Claude Cod
 
 1. **Distribution compliance review.** Before the first public release, confirm that source images in the image's own repository, linked by a source index, count as "the same place" under GPLv2/LGPL-2.x and as §6(d) directions under GPLv3. Also confirm coverage for the actual license versions and the recorded elections, complete transitive notices, and the Claude Code terms for this distribution. The project's CC0 dedication resolves none of these.
 2. **Copyleft source gaps:**
-   - **pebble:** its exact source isn't public (its commit isn't in `canonical/pebble` or on the Go proxy). The options: remove it (which means not shipping Ubuntu's base layer unchanged), ship it and accept the gap, or ask Canonical to publish the commit.
    - **Unknown licenses:** the Rust crates in uv, nushell, and Codex, and whatever Claude Code bundles may add copyleft roots.
 3. **License gaps** reported by `collect-legal.sh`, which doesn't fail on them yet:
    - Ten bundled npm/pnpm modules ship only a `license` field, no license text.
    - jq's `COPYING` doesn't cover its bundled oniguruma.
-   - Fifteen apt packages have copyright files that aren't machine-readable, so they're recorded as `NOASSERTION`. Most mention GPL or LGPL; zip and unzip (Info-ZIP) don't. Source planning treats `NOASSERTION` as copyleft, so their source is published regardless.
+   - Sixteen apt packages have copyright files that aren't machine-readable, so they're recorded as `NOASSERTION`. Most mention GPL or LGPL; zip and unzip (Info-ZIP) don't. Source planning treats `NOASSERTION` as copyleft, so their source is published regardless.
    - golangci-lint's `-only` recording is pending review.
    - Transitive notices aren't collected yet for Rust binaries (uv, git-cliff, nushell, ripgrep, Codex).

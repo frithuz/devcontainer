@@ -50,10 +50,8 @@ capabilities:
           - github.com:443
           - release-assets.githubusercontent.com:443
           - codeload.github.com:443
-          - archive.ubuntu.com
-          - security.ubuntu.com
-          - ports.ubuntu.com
-          - ppa.launchpadcontent.net:443
+          - deb.debian.org
+          - dhi.io:443
           - download.docker.com:443
           - registry.npmjs.org:443
           - pypi.org:443
@@ -251,7 +249,7 @@ capabilities:
       content: |
         ## Sandbox environment
 
-        This sandbox runs the frithuz devcontainer image (Ubuntu 26.04 LTS) with one
+        This sandbox runs the frithuz devcontainer image (Debian 13, Docker Hardened Images) with one
         pinned toolset: Go, Node with pnpm, Python with uv, gh, task, jq, yq, and linters
         such as golangci-lint and shfmt. /legal/manifest.tsv lists everything.
 

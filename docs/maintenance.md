@@ -7,12 +7,14 @@
 Dependabot runs weekly on two ecosystems: `docker`, for every pinned `FROM` in `Dockerfile` and `source.Dockerfile`, and `github-actions`, for actions pinned by commit SHA. Both wait out a 3-day cooldown after a release before proposing it. The kits' reference to this image is left to `kits.yml` ([sandbox kits](#sandbox-kits)), because a bump must rewrite each kit's `provides` with it.
 
 - Lint tools are grouped into one PR. Go, Node, and Python stay **ungrouped**, so each language bump gets its own reviewable PR.
-- Go and Python minor lines, Node majors, and Ubuntu LTS bases count as major updates. They get separate PRs and need a human merge. Patch and digest-only updates can auto-merge once CI passes. Pre-release tags are ignored.
+- Go, Python, and Rust minor lines, Node majors, and a new Debian release for the base count as major updates. They get separate PRs and need a human merge. Patch and digest-only updates can auto-merge once CI passes. Pre-release tags are ignored.
 
 ## Updates Dependabot can't handle
 
-- **apt packages** (base, git PPA, Docker Engine), **`gh`**, and the **agent CLIs** aren't pinned. The weekly build's refresh argument reinstalls them ([architecture.md](architecture.md#dockerfile-structure)). Other builds may reuse cached layers, so a push build can be up to a week behind on these.
+- **The base mirror.** The `debian` stage pins `frithuz/dhi-debian-base:trixie-dev`, a mirror of `dhi.io/debian-base`, which needs a login to pull. Dependabot proposes a new digest only after the mirror is re-synced from `dhi.io`, so Docker's fixes to the base reach the image as fast as the mirror follows them. Its tag names no version, so Dependabot only ever proposes digests; moving to a new Debian release is a deliberate tag change. A new base digest also rebuilds git and reruns its test suite.
+- **apt packages** (base and Docker Engine), **`gh`**, and the **agent CLIs** aren't pinned. The weekly build's refresh argument reinstalls them ([architecture.md](architecture.md#dockerfile-structure)). Other builds may reuse cached layers, so a push build can be up to a week behind on these.
 - **`jv`, `task`, and `dnslookup`** are pinned as Go module versions in their builder stages and bumped by hand.
+- **git and zlib-ng** are pinned in the `git` stage and bumped by hand: `VERSION` for git, and `ZLIB_NG_VERSION`, `ZLIB_NG_COMMIT`, and `ZLIB_NG_SHA256` together for zlib-ng ([architecture.md](architecture.md#git)). Both test suites run on every bump.
 - **`lint.yml`'s container** pins a published image by tag and digest, bumped by hand. Dependabot doesn't update workflow `container:` images, and `kits.yml` can't do it either: `GITHUB_TOKEN` can't push changes to workflow files. Use GHCR's `build-<run id>` tag of Quay's current `latest`.
 - **License files** are fetched from the installed version's upstream tag on every build, so there's nothing to track. When a tool is bumped, review its `SOURCE` checksums for a license change ([legal.md](legal.md#how-files-get-there)).
 

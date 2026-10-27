@@ -8,7 +8,8 @@
 # - git: the exact commit, exported with git archive, then its Go dependencies vendored
 #   (go mod vendor) unless the repository commits vendor/. Every module the binaries were built
 #   from (manifest.tsv) must be in vendor/modules.txt at the same version.
-# - bundle: the git subpaths at the exact commit, plus archives checked against their SHA-256.
+# - bundle: the git subpaths at the exact commit, plus archives checked against their SHA-256, and
+#   the build scripts that compiled them (from the plan directory, checked the same way) under build/.
 #
 # Usage: build-source-image.sh <plan.json> <out>
 set -euo pipefail
@@ -154,6 +155,14 @@ bundle)
 			curl -fsSL --retry 3 -o "$file" "$url"
 			verify "$file" "$(jq -r .digest <<<"$part")"
 			input "$(basename "$url")" source "$url" "$file"
+			;;
+		file)
+			path=$(jq -r .path <<<"$part")
+			[[ $path =~ ^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$ && $path != *..* ]] || die "unexpected build script path: $path"
+			file=$(dirname "$plan")/files/$path
+			verify "$file" "$(jq -r .digest <<<"$part")"
+			install -D -m 0644 "$file" "$dest/build/$path"
+			input "$(basename "$path")" build "$path" "$file"
 			;;
 		*) die "unknown bundle part: $part" ;;
 		esac

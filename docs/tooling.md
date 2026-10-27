@@ -4,13 +4,14 @@ The [`Dockerfile`](../Dockerfile) is the inventory: its source stages list every
 
 ## Install methods
 
-Each tool gets one of three methods, in order of preference:
+Each tool gets one of four methods, in order of preference:
 
 1. **COPY** from a pinned upstream image. Dependabot updates the pin, and the binary is exactly what upstream shipped.
-2. **Script**: apt, or a release download verified against its published checksums. These aren't pinned. The weekly build refreshes them, and Dependabot can't track them ([maintenance.md](maintenance.md#updates-dependabot-cant-handle)).
-3. **Vendor installer**, run as `agent`. Used only for the agent CLIs, which self-update at runtime.
+2. **Compiled** in its own stage at a pinned version, bumped by hand: `go install` for Go tools without an image, and git from its signed release tarball.
+3. **Script**: apt, or a release download verified against its published checksums. These aren't pinned. The weekly build refreshes them, and Dependabot can't track them ([maintenance.md](maintenance.md#updates-dependabot-cant-handle)).
+4. **Vendor installer**, run as `agent`. Used only for the agent CLIs, which self-update at runtime.
 
-A tool falls back to a script only when there's no usable image: no upstream image (`gh`), or a binary that shouldn't be copied from an image (setuid `sudo-rs`, git with its libraries and helpers, Docker Engine with its daemon plumbing).
+A tool falls back to a script only when there's no usable image: no upstream image (`gh`), or a binary that shouldn't be copied from an image (setuid `sudo-rs`, Docker Engine with its daemon plumbing).
 
 ## Quirks per tool
 
@@ -18,7 +19,7 @@ A tool falls back to a script only when there's no usable image: no upstream ima
 - **Python** keeps its headers, so packages with C extensions can build. The system `site-packages` is root-owned, so `pip install` as `agent` falls back to `~/.local`, which isn't on the default `PATH`. Projects should use a virtual environment. Its shared-library requirements are in [architecture.md](architecture.md#binary-compatibility).
 - **uv** has no configuration baked in. It picks up the image's Python when that satisfies `requires-python`, and downloads a managed Python only when a project needs another version. `uv tool install` lands in `~/.local/bin`, which has the same `PATH` caveat as `pip`.
 - **oras** ships so that anyone holding the image can find its copyleft source from inside it ([legal.md](legal.md#finding-the-source)).
-- **Node** doesn't use Corepack (current releases no longer ship it). pnpm comes from its own image. Node links against `libatomic.so.1`, which the Ubuntu base lacks, so `libatomic1` comes from apt.
+- **Node** doesn't use Corepack (current releases no longer ship it). pnpm comes from its own image. Node links against `libatomic.so.1`, which the base lacks, so `libatomic1` comes from apt.
 - **pnpm** picks its command from `argv[0]`, so the `pn`, `pnpx`, and `pnx` aliases have to be **hard links** next to the binary. Through a symlink, the binary sees itself as `pnpm`. The published image doesn't include the aliases yet, so the `files` stage creates them. Copy from the glibc variant, never `-alpine`. Its global configuration is in [architecture.md](architecture.md#pnpm-configuration).
 - **gh** has no official image. The install script resolves the latest release through the `releases/latest` redirect instead of the rate-limited API. The checksums come from the same release as the tarball, so they catch a corrupt download, not a compromised release.
 - **jv and Task** have no upstream images and are built with `go install` at pinned versions, so they're bumped by hand. Task supplies the `task` command for repository automation, including `task repo:init`.
@@ -27,9 +28,9 @@ A tool falls back to a script only when there's no usable image: no upstream ima
 - **nushell** is copied from the `-bookworm` (glibc) variant of its image, never `-alpine`. Only `nu` is copied: the `nu_plugin_*` binaries the image also ships aren't included. That build includes the `mcp` feature, so `nu --mcp` serves Nushell's MCP server over stdio, or HTTP with `--mcp-transport http`. The smoke tests fail if a new version drops it. It's `agent`'s login shell ([architecture.md](architecture.md#login-shell)).
 - **fd and bat** come from apt, where Debian renames them `fdfind` and `batcat`. The setup step links the upstream names into `/usr/local/bin`.
 - **toybox** stands in for iproute2 (GPL-2): `netstat` and `ifconfig` are links to it in `/usr/local/bin`, and `lsof -i` covers the rest of what `ss` did. Nothing permissive replaces `ip route`, `tc`, or `bridge`; routes are readable in `/proc/net/route`. Its other commands aren't linked, so they don't shadow the system's.
-- **sudo-rs** comes from the Ubuntu archive: it's a setuid binary tied to PAM and the distro's configuration. The original `sudo` package must never be installed alongside it.
-- **Docker Engine** comes from Docker's apt repository, not Ubuntu's `docker.io`. Copying binaries out of `docker:dind` isn't an option: that image is Alpine-based, and the apt packages bring the plumbing DinD needs (`containerd`, `runc`, iptables). The repository is keyed to the Ubuntu codename, so a new Ubuntu release depends on Docker publishing for it.
-- **git** comes from the git-core PPA. Ubuntu's archive lags upstream, and copying git out of another image drags its libraries and helpers along. The PPA's `InRelease` is also signed with an old RSA-1024 key that apt on 26.04 rejects, so only the RSA-4096 key is trusted.
+- **sudo-rs** comes from apt: it's a setuid binary tied to PAM and the distro's configuration. Debian installs it under other names and without a sudoers file, which the setup step supplies ([architecture.md](architecture.md#users)). The original `sudo` package must never be installed alongside it.
+- **Docker Engine** comes from Docker's apt repository, not Debian's `docker.io`. Copying binaries out of `docker:dind` isn't an option: that image is Alpine-based, and the apt packages bring the plumbing DinD needs (`containerd`, `runc`, iptables). The repository is keyed to the Debian codename, so a new Debian release depends on Docker publishing for it.
+- **git** is compiled from its signed release tarball, with zlib-ng for faster compression, and tested before it's installed ([architecture.md](architecture.md#git)). Debian's git lags upstream, and copying git out of another image drags its libraries and helpers along. It's a client build: no servers, no Perl or Python commands, no man pages or completion. `git subtree` is included.
 
 ## Agent installers
 

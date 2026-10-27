@@ -102,13 +102,19 @@ roots:
     subpaths: [codex-rs/vendor/bubblewrap, third_party/voice]
     note: LGPL bubblewrap and voice libraries
 
+  # The signed release tarball the git stage compiled (its manifest source), the zlib-ng archive
+  # compiled into it, and the build script, with the license texts from the tag's commit.
+  - name: git
+    kind: bundle
+    repository: https://github.com/git/git
+    tag: v{version}
+    components: [git, zlib-ng]
+    subpaths: [COPYING, LGPL-2.1]
+    note: GPL-2.0-only, compiled from source
+
 # Copyleft components whose source can't be produced yet. Reported on every run but not fatal,
 # so they stay visible until they're resolved (docs/legal.md#open-questions).
-gaps:
-  - name: pebble
-    repository: https://github.com/canonical/pebble
-    components: [pebble]
-    reason: the commit in its build info isn't public
+gaps: []
 
 # Dual-licensed components distributed under their permissive option. They owe no source.
 elections:

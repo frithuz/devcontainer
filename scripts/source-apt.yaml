@@ -5,28 +5,39 @@
 # prefix its .deb URL (manifest.tsv) starts with. Both architectures map to the same source
 # repository, so their packages share source images.
 repositories:
-  - name: ubuntu
+  # Docker's hardened rebuilds (+dhi versions). Most of the base image and the installed
+  # packages come from here; the rest fall back to Debian's archive.
+  - name: dhi
     binaryUrlPrefixes:
-      - https://ports.ubuntu.com/ubuntu-ports/
-      - https://archive.ubuntu.com/ubuntu/
-      - https://security.ubuntu.com/ubuntu/
+      - https://dhi.io/deb/debian/main/
     source:
-      url: https://archive.ubuntu.com/ubuntu
-      suites: [resolute, resolute-security, resolute-updates]
-      components: [main, restricted, universe, multiverse]
-      signedBy: /usr/share/keyrings/ubuntu-archive-keyring.gpg
-
-  - name: git-core
-    binaryUrlPrefixes:
-      - https://ppa.launchpadcontent.net/git-core/ppa/ubuntu/
-    source:
-      url: https://ppa.launchpadcontent.net/git-core/ppa/ubuntu
-      suites: [resolute]
+      url: https://dhi.io/deb/debian/main
+      suites: [trixie]
       components: [main]
-      signedBy: /etc/apt/keyrings/git-core.asc
+      signedBy: /usr/share/keyrings/dhi-deb-main.gpg
+
+  # Not trixie-updates: it publishes only Sources.xz, which plan-sources.sh can't read, and holds
+  # only tzdata, which comes from dhi. A package taken from it fails the plan.
+  - name: debian
+    binaryUrlPrefixes:
+      - https://deb.debian.org/debian/
+    source:
+      url: https://deb.debian.org/debian
+      suites: [trixie]
+      components: [main]
+      signedBy: /usr/share/keyrings/debian-archive-keyring.pgp
+
+  - name: debian-security
+    binaryUrlPrefixes:
+      - https://deb.debian.org/debian-security/
+    source:
+      url: https://deb.debian.org/debian-security
+      suites: [trixie-security]
+      components: [main]
+      signedBy: /usr/share/keyrings/debian-archive-keyring.pgp
 
   # Publishes no source packages: its copyleft programs are git roots in source-roots.yaml.
   - name: docker
     binaryUrlPrefixes:
-      - https://download.docker.com/linux/ubuntu/
+      - https://download.docker.com/linux/debian/
     source: null

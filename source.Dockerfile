@@ -14,7 +14,7 @@ ARG KIND=git
 # Everything runs on the build platform: a source image's layer is the same for every platform,
 # so it's fetched once and shared by both platform manifests.
 FROM --platform=$BUILDPLATFORM golang:1.27-trixie@sha256:fbb7ae40b62ff8afe31662df570d39b4f5052ac32b90dae8e60d7657a20a74f4 AS go
-FROM --platform=$BUILDPLATFORM ubuntu:26.04@sha256:c098726dd9b9733f3e885f8de0ef375206a311b0a317eadc40d347b1115fb944 AS ubuntu
+FROM --platform=$BUILDPLATFORM frithuz/dhi-debian-base:trixie-dev@sha256:cc4e05ff415ee2d83918f2af45c737983209924ef7362c53f00cfcdaa1c94326 AS debian
 FROM --platform=$BUILDPLATFORM ghcr.io/jqlang/jq:1.8.2@sha256:b9c68867e5766576263a222e91db3de422d802069c7af70440e667a95344e486 AS jq
 FROM --platform=$BUILDPLATFORM ghcr.io/oras-project/oras:v1.3.6@sha256:9cfb578be975b762fd898b9d004243d8003aeb807a3e15b2ed212cdd1326c9eb AS oras
 # An explicit exception to digest pinning: nushell deletes its old images from GHCR when it
@@ -45,14 +45,12 @@ FROM scratch AS plan
 COPY --from=plan-run /out/ /
 
 # Fetch: one root program, from its plan.
-FROM ubuntu AS fetch-apt
-# Every apt source is HTTPS (scripts/source-apt.yaml too). The base image's Ubuntu sources use
-# plain HTTP and it has no CA certificates, so ca-certificates is fetched trusting the go stage's
-# bundle (a pinned image). apt lists live in a cache mount (the deb-src fetches below keep theirs
-# in subdirectories of it).
+FROM debian AS fetch-apt
+# Every apt source is HTTPS (scripts/source-apt.yaml too); the base image's sources use plain
+# HTTP. apt lists live in a cache mount (the deb-src fetches below keep theirs in subdirectories
+# of it).
 COPY --link --from=nushell /usr/bin/nu /usr/local/bin/nu
 RUN --mount=type=cache,id=source-apt-lists,target=/var/lib/apt/lists,sharing=locked \
-    --mount=type=bind,from=go,source=/etc/ssl/certs/ca-certificates.crt,target=/tmp/bootstrap-ca.crt \
     --mount=type=bind,source=scripts/build/run.nu,target=/mnt/src/scripts/build/run.nu \
     --mount=type=bind,source=scripts/build/apt-bootstrap.nu,target=/mnt/src/scripts/build/apt-bootstrap.nu \
     nu /mnt/src/scripts/build/run.nu /mnt/src/scripts/build/apt-bootstrap.nu
