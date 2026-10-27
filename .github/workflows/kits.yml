@@ -94,7 +94,7 @@ jobs:
             echo "$title"
             echo
             echo "Points the claude and codex kits at a published image, and at the"
-            echo "agent versions it installed."
+            echo "latest release of Docker's mixin for each agent."
             echo
             echo "    $IMAGE"
             echo

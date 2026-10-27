@@ -38,7 +38,7 @@ Copied and compiled tools are described in `scripts/legal-components.yaml`. **Ev
 
 `bake.yml` attaches an SPDX SBOM from BuildKit's Syft scanner. Syft identifies only what has metadata it reads (dpkg, `package.json`, `dist-info`, Go build info, `cargo auditable`, and a few version patterns). The build fills the gaps:
 
-- **`/legal/sbom/devcontainer.cdx.json`** lists exactly the components Syft can't detect: standalone binaries without metadata, git and the zlib-ng compiled into it, Codex's bundled libraries, and what's compiled into Node and Python's `pyexpat`. Syft merges it into the attestation. Only undetectable components go in it, because Syft doesn't merge an entry with a package it found itself, so listing one would duplicate it.
+- **`/legal/sbom/devcontainer.cdx.json`** lists exactly the components Syft can't detect: standalone binaries without metadata, git and the zlib-ng compiled into it, and what's compiled into Node and Python's `pyexpat`. Syft merges it into the attestation. Only undetectable components go in it, because Syft doesn't merge an entry with a package it found itself, so listing one would duplicate it.
 - **Docker's apt packages** get a machine-readable `copyright` file written from their fetched licenses, so Syft and Debian tooling can read them.
 - **Go modules:** Syft looks up a module's license in any `pkg/mod/<module>@<version>/` directory. The build downloads every module compiled into the image's Go binaries through the verified Go proxy and keeps only their license files, under `/legal/go/pkg/mod/`. These double as the Go binaries' transitive notices. The first download is about 900 MB and takes about two minutes, cached afterwards.
 - **`scripts/license-evidence.yaml`** covers modules whose notices name a license Syft can't see: a text in a subdirectory, under another name, or only linked. Reviewed texts are added beside the upstream files, never replacing them. Each entry pins the files it was reviewed against, so an upstream change fails the build until someone reviews it again.
@@ -51,7 +51,7 @@ To inspect the attestation locally, export an OCI layout: `docker buildx bake im
 
 ## Copyleft components
 
-The image conveys GPL (v2 and v3), LGPL, and MPL-2.0 components: git (GPLv2, compiled here), Codex's bubblewrap and GStreamer/GLib (LGPL), MPL-2.0 Go modules in several tools and in Docker's binaries, and most of the Debian base and its packages, including Bash and coreutils. Being unmodified or installed with apt doesn't remove the redistribution obligations ([GNU FAQ](https://www.gnu.org/licenses/gpl-faq.en.html#UnchangedJustBinary)).
+The image conveys GPL (v2 and v3), LGPL, and MPL-2.0 components: git (GPLv2, compiled here), MPL-2.0 Go modules in several tools and in Docker's binaries, and most of the Debian base and its packages, including Bash and coreutils. Being unmodified or installed with apt doesn't remove the redistribution obligations ([GNU FAQ](https://www.gnu.org/licenses/gpl-faq.en.html#UnchangedJustBinary)).
 
 **Policy: publish the complete source of every copyleft component in the same registry repository as the image, before the image's tags are published.** One mechanism satisfies every license:
 
@@ -76,7 +76,6 @@ Roots come from each platform's `manifest.tsv`. apt packages need no configurati
 - **Docker's apt repository publishes no source packages**, so moby, buildx, containerd, and runc are fetched from upstream git at the exact commit their binaries record. moby records an abbreviated commit, and gomplate and betterleaks record none, so those are trusted by tag.
 - **Go roots** are vendored, and every module the binaries report has to appear in `vendor/modules.txt` at the same version.
 - **apt packages come from three repositories**: Docker's hardened rebuilds (`dhi.io`, which publishes `deb-src` for its `+dhi` versions), Debian's archive, and Debian's security archive. Only `trixie` is mapped for the archive: `trixie-updates` publishes only `Sources.xz`, which the planner can't read, and today holds only `tzdata`, which comes from `dhi.io`. `trixie-security` has the same limitation, and no installed package comes from it today. A package from either fails planning rather than going uncovered.
-- **Codex** is a `bundle`: a sparse checkout of its vendored bubblewrap and voice build scripts, plus the archives its `sources.json` lists.
 - **git** is a `bundle` too ([compiled components](#compiled-components)).
 - **Gaps** are reported on every run but don't fail it, so they stay visible until they're resolved. There are none today.
 
@@ -86,7 +85,7 @@ A component compiled in the Dockerfile (`install: source-build`: git and nushell
 
 - **The archive**, by URL and SHA-256: git's signed release tarball.
 - **The build script**, by repository path and SHA-256 (`build-script:`): `scripts/build/git.nu`. Planning checks the checkout's copy against that digest and fails if it differs, so source is always planned from the image's own commit. The script goes into the source image under `build/`, and its digest is part of the key: the source image changes only when the script or a version does, not on every commit.
-- **Libraries compiled in** (`embedded:`), each with a row of its own marked `embedded-in:<component>`: zlib-ng, under the Zlib license. A permissive license owes no source by itself, but a library compiled into a GPL binary is part of that binary's Corresponding Source, so the planner adds the archive of every library embedded in a covered copyleft component. Codex's bundled libraries aren't affected: Codex isn't copyleft.
+- **Libraries compiled in** (`embedded:`), each with a row of its own marked `embedded-in:<component>`: zlib-ng, under the Zlib license. A permissive license owes no source by itself, but a library compiled into a GPL binary is part of that binary's Corresponding Source, so the planner adds the archive of every library embedded in a covered copyleft component.
 
 git's source image holds the git tarball, zlib-ng's archive, `git.nu`, and git's `COPYING` and `LGPL-2.1` from the release's tag. The Rust standard library is also compiled into git. It's Apache-2.0 OR MIT, so it owes no source, and its notices ship in `/legal/attribution/git/rust/`.
 
@@ -110,7 +109,7 @@ Both registries distribute the image, so **both carry the same source images and
 
 The untagged image is reachable by digest as soon as it's pushed, like any manifest, but consumers find images through tags.
 
-**Sandbox kits** are published to their own repositories ([maintenance.md](maintenance.md#publishing-the-kits)). A kit is the image it pins plus a few layers of its own: its descriptor, and the git-ssh-sign key command with its Apache-2.0 license in `/legal/attribution/git-ssh-sign/`. None of them is copyleft, so a kit owes the same source as its image. Each kit is pushed to GHCR untagged. `scripts/source-indexes.sh inherit` then checks that each platform manifest's layers start with the base image's for that platform. It copies the base's source images into the kit's repository with their `source-*` tags, and gives each kit subject the source index of the base's matching subject. Only then is the kit tagged, and `promote` carries it to Quay the same way. A kit change that adds a copyleft component would need its own source plan, so `inherit` isn't enough for it.
+**Sandbox kits** are published to their own repositories ([maintenance.md](maintenance.md#publishing-the-kits)). A kit is the image it pins plus a few layers of its own: its descriptor, the git-ssh-sign key command with its Apache-2.0 license in `/legal/attribution/git-ssh-sign/`, and its agent from Docker's mixin, with the notices and `manifest.tsv` rows its `legal.nu` adds. The Claude kit adds Claude Code (Anthropic's terms, [below](#claude-code)). The Codex kit adds Codex (Apache-2.0) and the ripgrep it bundles (Unlicense OR MIT), and leaves out the package's LGPL parts: the voice libraries entirely, and its vendored bubblewrap, replaced by a copy of the image's own `bwrap` from Debian's `bubblewrap` package, whose source the image's source images already carry. None of the kits' own layers is copyleft, so a kit owes the same source as its image. Each kit is pushed to GHCR untagged. `scripts/source-indexes.sh inherit` then checks that each platform manifest's layers start with the base image's for that platform. It copies the base's source images into the kit's repository with their `source-*` tags, and gives each kit subject the source index of the base's matching subject. Only then is the kit tagged, and `promote` carries it to Quay the same way. A kit change that adds a copyleft component would need its own source plan, so `inherit` isn't enough for it.
 
 **Why one source index per subject:** Quay implements the OCI Referrers API natively. GHCR doesn't, so referrers live in a fallback index under the tag `sha256-<digest>`. Adding a second referrer rewrites that index, the client then tries to delete the old one, and GHCR rejects registry `DELETE`s with 405. So each subject gets exactly one source index, attached once, and a retry validates the existing index instead of attaching again. On Quay, `oras` runs with `--distribution-spec v1.1-referrers-api`, so a Quay-side problem fails loudly instead of silently creating fallback tags.
 
@@ -134,7 +133,7 @@ Most components are static Go or Rust binaries that embed their dependencies, an
 
 ## Claude Code
 
-Claude Code is **preinstalled** under Anthropic's [terms for offering Claude Code in products](https://code.claude.com/docs/en/legal-and-compliance#can-customers-offer-claude-code-in-their-products): the binary stays unmodified, its built-in authentication is preserved, and users authenticate with their own credentials. Don't resell or intermediate their usage, and follow the naming and branding conditions. Its notice is Anthropic's `LICENSE.md` from the npm package of the installed version, recorded as `LicenseRef-Anthropic-Terms` rather than an invented open-source license.
+The image doesn't carry Claude Code. The Claude kit adds it, unmodified, from Docker's mixin, under Anthropic's [terms for offering Claude Code in products](https://code.claude.com/docs/en/legal-and-compliance#can-customers-offer-claude-code-in-their-products): its built-in authentication is preserved, and users authenticate with their own credentials. Don't resell or intermediate their usage, and follow the naming and branding conditions. The kit's build checks the binary against Anthropic's release manifest for the pinned version, and records Anthropic's `LICENSE.md` from the npm package of that version as `LicenseRef-Anthropic-Terms`, rather than an invented open-source license.
 
 ## Enforcement
 
@@ -146,7 +145,7 @@ Claude Code is **preinstalled** under Anthropic's [terms for offering Claude Cod
 
 1. **Distribution compliance review.** Before the first public release, confirm that source images in the image's own repository, linked by a source index, count as "the same place" under GPLv2/LGPL-2.x and as §6(d) directions under GPLv3. Also confirm coverage for the actual license versions and the recorded elections, complete transitive notices, and the Claude Code terms for this distribution. The project's CC0 dedication resolves none of these.
 2. **Copyleft source gaps:**
-   - **Unknown licenses:** the Rust crates in uv, nushell, and Codex, and whatever Claude Code bundles may add copyleft roots.
+   - **Unknown licenses:** the Rust crates in uv and nushell, and in the kits' Codex, and whatever Claude Code bundles may add copyleft roots.
 3. **License gaps** reported by `collect-legal.sh`, which doesn't fail on them yet:
    - Six npm modules bundled with pnpm ship only a `license` field, no license text.
    - jq's `COPYING` doesn't cover its bundled oniguruma.

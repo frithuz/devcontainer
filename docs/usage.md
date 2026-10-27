@@ -29,7 +29,7 @@ GHCR gets a new image first, and Quay follows as it's copied. Tests don't gate p
 
 - Avoid Dev Container Features that install tools the image already provides. They drift from the pinned versions.
 - Project-specific setup goes in `postCreateCommand`, not in a derived image, unless it's expensive.
-- Agent credentials and config stay out of the image. Mount them, or log in inside the container. `~/.claude` can be mounted whole. **Don't mount a whole `~/.codex`**: it would hide Codex's installed binaries. Mount `auth.json` and `config.toml` individually ([tooling.md](tooling.md#agent-installers)).
+- The image carries no agent CLIs; the [sandbox kits](#agent-sandboxes-sbx) add them. In a devcontainer, install one with its vendor's installer.
 
 Dependabot's `devcontainers` and `docker` ecosystems can bump the image reference.
 
@@ -94,8 +94,8 @@ Ordinary container jobs use the runner's daemon, through the socket the standard
 
 The image meets the [Docker Sandboxes custom image requirements](https://docs.docker.com/ai/sandboxes/customize/author/base-images/#use-your-own-linux-image) ([architecture.md](architecture.md#docker-sandboxes-contract)). On its own it starts a bash shell (`agent`'s login shell is nu, but the `CMD` is bash). To run an agent, use a **kit** under `sandboxes/`: `devcontainer-claude` or `devcontainer-codex`. Each is a [v3 workload](https://docs.docker.com/ai/sandboxes/customize/) made of two files:
 
-- `<agent>.dockerfile` pins the image by digest, sets the agent as `ENTRYPOINT`, and labels the image `com.docker.sandboxes.start-docker`, without which `sbx` doesn't give the image's Docker engine the privileges it needs to start.
-- `<agent>.yaml` is the descriptor. Its `provides` states the agent version the pinned image installed. It declares the `sbx`, network-policy, credential, volume, and lifecycle capabilities, and seeds the agent's config from the credential mode the host binds.
+- `<agent>.dockerfile` pins the image and Docker's mixin for the agent by digest, copies the agent onto the image, sets it as `ENTRYPOINT`, and labels the image `com.docker.sandboxes.start-docker`, without which `sbx` doesn't give the image's Docker engine the privileges it needs to start. Its `legal.nu` adds the agent's notices.
+- `<agent>.yaml` is the descriptor. Its `provides` states the agent version the pinned mixin carries. It declares the `sbx`, network-policy, credential, volume, and lifecycle capabilities, and seeds the agent's config from the credential mode the host binds.
 
 V3 needs `sbx` v0.45 or later, and v3 workloads only take v3 mixins. `sbx` names a kit's agent after its directory and rejects a built-in agent's name, so the directories are `devcontainer-<agent>`, not `<agent>`. A publish run keeps the pins current through a PR ([maintenance.md](maintenance.md#sandbox-kits)).
 
@@ -115,5 +115,6 @@ sbx run 'quay.io/frithuz/claude-kit:latest@sha256:<digest>' <workspace>
 - git over SSH to GitHub uses the host's SSH agent. Load your key with `ssh-add` and keep `sbx`'s `ssh.agentForwardingEnabled` on, the default. Each kit asks for the agent only to log in as `git@github.com`, so it can't log in anywhere else. Without an agent, the sandbox still starts, without SSH. As Docker's `sbx/github-ssh` mixin does, the kits install GitHub's SSH host keys when the sandbox is created, in `/etc/ssh/ssh_known_hosts`.
 - git signs commits and tags with the host's SSH key, as Docker's `git-ssh-sign` kit does, in repositories that have a remote. Those without one, such as test fixtures, don't sign. The agent may only make git signatures. When the repository's remote is on github.com and `gh` is authenticated, the key command picks an agent key registered as a signing key on the committer's GitHub account. The kit includes the whole signing setup only when the host forwards an SSH agent. Each kit's dockerfile adds the key command, unmodified, from Docker's kit repository at a pinned commit and checksum, so building a kit needs `raw.githubusercontent.com`.
 - Agents may auto-update inside the sandbox, so each kit allows its agent's update hosts, along with the image's apt sources and the npm, PyPI, and Go module registries.
-- Claude Code's session state lives on sandbox volumes. Codex keeps its binaries in `~/.codex`, so nothing is mounted there.
+- Each agent comes from Docker's mixin for it, at the version the kit pins, and doesn't update itself ([tooling.md](tooling.md#agents)). Codex comes without its voice libraries, which need audio devices a sandbox doesn't have.
+- Claude Code's session state lives on sandbox volumes. Codex's app server copies its package into `~/.codex`, so nothing is mounted there.
 - Don't run `start-dockerd` inside a sandbox. Container access there is up to `sbx`.

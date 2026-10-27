@@ -174,7 +174,7 @@ RUN --mount=type=bind,source=scripts/build/run.nu,target=/mnt/src/scripts/build/
     --mount=type=bind,source=scripts/build/files.nu,target=/mnt/src/scripts/build/files.nu \
     nu /mnt/src/scripts/build/run.nu /mnt/src/scripts/build/files.nu
 
-# Final image: three layers, every copied file, then the system and agents, then /legal
+# Final image: three layers, every copied file, then the system, then /legal
 # (docs/architecture.md#dockerfile-structure).
 FROM debian AS image
 
@@ -188,7 +188,7 @@ ARG REFRESH
 # 1. Every copied file, first, so the setup below can use the toolchains and nu.
 COPY --link --from=files /out/ /
 
-# 2. The system and the agents, in one step.
+# 2. The system, in one step.
 # Runtime packages, plus the shared libraries the copied Node and Python link against.
 # apt lists live in a cache mount: never in a layer, and apt-get update only fetches what
 # changed since the last build.
@@ -202,8 +202,7 @@ RUN --mount=type=cache,id=apt-lists-$TARGETARCH,target=/var/lib/apt/lists,sharin
 
 # Defaults for every context. The locale exists only after the step above. PNPM_HOME matches the
 # directory it creates; pnpm's configuration applies to every user and HOME (see "pnpm
-# configuration"). Claude Code's Bash tool runs only bash or zsh, so it's pinned to bash rather
-# than left to detect agent's nu login shell. Codex falls back to bash on its own.
+# configuration").
 ENV LANG=en_US.UTF-8
 ENV LC_ALL=en_US.UTF-8
 ENV LANGUAGE=en_US:en
@@ -212,7 +211,6 @@ ENV GOTOOLCHAIN=local
 ENV BASH_ENV=/etc/devcontainer/env.sh
 ENV PNPM_HOME=/usr/local/share/pnpm
 ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/go/bin
-ENV CLAUDE_CODE_SHELL=/bin/bash
 ENV pnpm_config_global_bin_dir=/usr/local/bin
 ENV pnpm_config_global_dir=/usr/local/share/pnpm/global
 ENV pnpm_config_store_dir=/usr/local/share/pnpm/store

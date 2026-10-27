@@ -2,7 +2,7 @@
 out/
 
 # /legal content generated inside the image by scripts/collect-legal.sh. The repository's
-# legal/ holds only README.md, SOURCE.md, and claude/; never commit or copy these back in.
+# legal/ holds only README.md and SOURCE.md; never commit or copy these back in.
 /legal/attribution/
 /legal/go/
 /legal/manifest.tsv

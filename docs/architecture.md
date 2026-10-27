@@ -26,7 +26,7 @@ The base is one of them: the `debian` stage pins [Docker Hardened Images](https:
 **The final stage (`image`)** has as few layers as possible, three:
 
 1. `COPY --link --from=files /out/ /`, first, so the setup step can use the toolchains and nu. It doesn't consume `REFRESH`.
-2. One `RUN` for the system and the agents: apt (base packages and Docker Engine), the locale, the shared directories, the `agent` user, and the agent installers. They run as `agent` through `setpriv`, which Claude Code's installer accepts, unlike `sudo`.
+2. One `RUN` for the system: apt (base packages and Docker Engine), the locale, the shared directories, and the `agent` user.
 3. The `/legal` step. It reads `REVISION`, which changes on every commit, so it stays separate. Merged into step 2, every build would reinstall everything.
 
 The `ENV` instructions sit between steps 2 and 3. They add no layers, and after step 2 the locale they select exists.
@@ -81,15 +81,13 @@ nu is compiled in the `nushell` stage (`scripts/build-nushell.sh`) from its crat
 
 ## Filesystem
 
-Platform tools live in system paths and work for any UID. The agent CLIs are the deliberate exception: their installers install per-user and update in place, so they belong to `agent`.
+Platform tools live in system paths and work for any UID.
 
 Docker daemon state (`/var/lib/docker`, `/var/lib/containerd`) must be a mounted volume when DinD is used, never a layer of the image.
 
 ### Default PATH
 
 GitHub Actions container jobs ignore a `PATH` set with `ENV`. So **every image-provided command must resolve under the default `PATH`**. Standalone binaries go straight into `/usr/local/bin`, and everything else gets a symlink there.
-
-The agent links are deliberately **chained**: `/usr/local/bin/claude` → `~agent/.local/bin/claude` → the current version. The installers own the inner link and repoint it on each self-update, so the outer link never goes stale, and it resolves for root in CI too.
 
 Debian's own `python3` isn't installed, and nothing the image installs depends on it. The copied CPython in `/usr/local/bin` is the image's `python3`. A package installed later that needs Debian's `python3` pulls it in alongside, and `/usr/local/bin/python3` still takes precedence on the `PATH`.
 
@@ -149,7 +147,7 @@ Anything that must hold in every context goes in `ENV`. Anything that needs shel
 
 `agent`'s login shell is nu (`/usr/local/bin/nu`, listed in `/etc/shells`), so an interactive login, such as an editor's terminal, opens in nu. root keeps bash, and the image's `CMD` stays `/bin/bash`. The `ENV` and `BASH_ENV` rules above don't change: nothing may depend on nu's config either.
 
-The agent CLIs still run their commands in bash. Claude Code's Bash tool accepts only bash or zsh, so `CLAUDE_CODE_SHELL=/bin/bash` pins it rather than leaving it to detection. Codex reads the login shell from `/etc/passwd`, doesn't recognize nu, and falls back to bash on Linux. Neither runs nu for its tool calls, so don't point either one at it.
+The kits' agent CLIs still run their commands in bash. Claude Code's Bash tool accepts only bash or zsh, so the Claude kit sets `CLAUDE_CODE_SHELL=/bin/bash` rather than leaving it to detection. Codex reads the login shell from `/etc/passwd`, doesn't recognize nu, and falls back to bash on Linux. Neither runs nu for its tool calls, so don't point either one at it.
 
 No credentials, tokens, or user config are ever baked into the image. Auth always comes from the consuming context at runtime.
 

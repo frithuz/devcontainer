@@ -4,12 +4,11 @@ The [`Dockerfile`](../Dockerfile) is the inventory: its source stages list every
 
 ## Install methods
 
-Each tool gets one of four methods, in order of preference:
+Each tool gets one of three methods, in order of preference:
 
 1. **COPY** from a pinned upstream image. Dependabot updates the pin, and the binary is exactly what upstream shipped.
 2. **Compiled** in its own stage at a pinned version, bumped by hand: `go install` for Go tools without an image, git from its signed release tarball, and nushell from its crates.io release.
 3. **Script**: apt, or a release download verified against its published checksums. These aren't pinned. The weekly build refreshes them, and Dependabot can't track them ([maintenance.md](maintenance.md#updates-dependabot-cant-handle)).
-4. **Vendor installer**, run as `agent`. Used only for the agent CLIs, which self-update at runtime.
 
 A tool falls back to a script only when there's no usable image: no upstream image (`gh`), or a binary that shouldn't be copied from an image (setuid `sudo-rs`, Docker Engine with its daemon plumbing).
 
@@ -32,16 +31,17 @@ A tool falls back to a script only when there's no usable image: no upstream ima
 - **Docker Engine** comes from Docker's apt repository, not Debian's `docker.io`. Copying binaries out of `docker:dind` isn't an option: that image is Alpine-based, and the apt packages bring the plumbing DinD needs (`containerd`, `runc`, iptables). The repository is keyed to the Debian codename, so a new Debian release depends on Docker publishing for it.
 - **git** is compiled from its signed release tarball, with zlib-ng for faster compression, and tested before it's installed ([architecture.md](architecture.md#git)). Debian's git lags upstream, and copying git out of another image drags its libraries and helpers along. It's a client build: no servers, no Perl or Python commands, no man pages or completion. `git subtree` is included.
 
-## Agent installers
+## Agents
 
-Claude Code and Codex aim for availability, not version control. Their standalone installers run as `agent`, so the binaries land in `agent`'s home with the ownership they need to self-update. The weekly build refreshes them, and other builds may reuse a cached install. These are the only downloaded scripts piped to a shell (`http get ... | sh`) allowed in the repository.
+The image carries no agent CLIs: CI doesn't use them, and the [sandbox kits](usage.md#agent-sandboxes-sbx) add them. Each kit's dockerfile copies the agent out of Docker's mixin for it (`docker.io/docker/sbx-kit-claude-mixin`, `sbx-kit-codex-mixin`), pinned by version tag and digest, onto the image ([maintenance.md](maintenance.md#sandbox-kits)). The binaries are root-owned, so the agents stay at the pinned version.
 
-**Claude Code** refuses to install as root under `sudo` from a non-root user, which is why the setup step switches to `agent` with `setpriv` instead. The install needs about 512 MB of free memory, and a low-memory build gets OOM-killed (exit 137).
+**Claude Code** is one native binary, `/usr/local/bin/claude`. Its updater is off (`DISABLE_AUTOUPDATER=1`), and its Bash tool is pinned to bash (`CLAUDE_CODE_SHELL=/bin/bash`), since it accepts only bash or zsh and `agent`'s login shell is nu.
 
-**Codex** is a static musl build, so glibc doesn't matter. It bundles ripgrep, bubblewrap, and native voice libraries (GStreamer, GLib), each with license and source obligations of its own ([legal.md](legal.md#copyleft-components)). Other quirks:
+**Codex** is its release package, under `/opt/codex`, with a link on `PATH`. It's a static musl build, so glibc doesn't matter. The kit changes the package two ways:
 
-- The installer prompts unless `CODEX_NON_INTERACTIVE=1` is set.
-- The installer runs `codex` once, which leaves temp directories in `~/.codex/tmp`. In a lower image layer Codex can't rename them away (overlayfs returns `EXDEV`), so it warns on every start unless the install step deletes them.
-- **Codex keeps its binaries in `CODEX_HOME` (`~/.codex`), next to its config and auth.** Mounting a host `~/.codex` hides the installed binary, and from a macOS host it also exposes Darwin binaries. Consumers mount individual files instead ([usage.md](usage.md#editor-devcontainers)). Claude Code doesn't have this problem: its binaries live in `~/.local/share/claude`, not `~/.claude`.
+- **No voice libraries.** `codex-resources/voice` (GStreamer and GLib, LGPL) needs audio devices a sandbox doesn't have.
+- **The image's `bwrap`.** Codex's app server, which its terminal UI starts, refuses a package without `codex-resources/bwrap`, though the kit runs Codex with its own sandbox off. The kit copies in the image's `bwrap`, from Debian's `bubblewrap` package, in place of the copy Codex vendors, so the kit adds no copyleft code of its own ([legal.md](legal.md#publishing)). It has to be a copy: Codex rejects a link that leaves its package. The app server also needs `ps`, which is why the image installs `procps`.
 
-Both installers append a `PATH` line to a shell profile. Nothing relies on it.
+Codex's app server copies the package into `CODEX_HOME` (`~/.codex`) when it starts, so nothing mounts over that directory. The mixins ship no license notices, so each kit's `legal.nu` adds them and appends the agent's rows to the kit's `/legal/manifest.tsv`.
+
+Outside a sandbox, install an agent with its vendor's installer.

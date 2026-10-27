@@ -1,7 +1,7 @@
 # syntax=docker/sandbox-kit:3
-# Claude Code on the devcontainer image. The credential, volumes, and settings seed follow
-# Docker's claude workload (github.com/docker/sandbox-kit-spec, examples/claude), without
-# the version re-pin and Docker Desktop hooks: the image installs Claude Code itself.
+# Claude Code on the devcontainer image, from Docker's Claude Code mixin (claude.dockerfile).
+# The credential, volumes, and settings seed follow Docker's claude workload
+# (github.com/docker/sandbox-kit-spec, examples/claude), without its Docker Desktop hooks.
 schemaVersion: "3"
 displayName: Claude Code (devcontainer)
 description: Claude Code on the frithuz devcontainer image
@@ -22,9 +22,9 @@ args:
     description: Effort level (settings.json `effortLevel`); empty keeps the CLI default
     env: CLAUDE_REASONING_EFFORT
 
-# The version the image installed. The agent may update itself inside the sandbox.
-# scripts/update-kits.sh rewrites this line and the dockerfile's FROM together.
-provides: ["claude@2.1.310"]
+# The version of the mixin the dockerfile pins. The binary is root-owned and its updater is off,
+# so it stays at that version. scripts/update-kits.sh rewrites this line and both pins together.
+provides: ["claude@2.1.311"]
 
 capabilities:
   - type: com.docker.sandbox/sbx@1
@@ -174,8 +174,8 @@ capabilities:
   - type: com.docker.sandbox/lifecycle@1
     config:
       install:
-        # The image ships its own agent-owned ~/.claude.json, so this rewrites it whole
-        # with the onboarding and trust flags for the workspace.
+        # Written whole, with the onboarding and trust flags for the workspace, as root and then
+        # handed to agent.
         - command: |
             set -e
             ws="${WORKSPACE_DIR:-/}"

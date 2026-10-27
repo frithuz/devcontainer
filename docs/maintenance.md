@@ -12,7 +12,7 @@ Dependabot runs weekly on two ecosystems: `docker`, for every pinned `FROM` in `
 ## Updates Dependabot can't handle
 
 - **The base mirror.** The `debian` stage pins `frithuz/dhi-debian-base:trixie-dev`, a mirror of `dhi.io/debian-base`, which needs a login to pull. Dependabot proposes a new digest only after the mirror is re-synced from `dhi.io`, so Docker's fixes to the base reach the image as fast as the mirror follows them. Its tag names no version, so Dependabot only ever proposes digests; moving to a new Debian release is a deliberate tag change. A new base digest also rebuilds git and reruns its test suite.
-- **apt packages** (base and Docker Engine), **`gh`**, and the **agent CLIs** aren't pinned. The weekly build's refresh argument reinstalls them ([architecture.md](architecture.md#dockerfile-structure)). Other builds may reuse cached layers, so a push build can be up to a week behind on these.
+- **apt packages** (base and Docker Engine) and **`gh`** aren't pinned. The weekly build's refresh argument reinstalls them ([architecture.md](architecture.md#dockerfile-structure)). Other builds may reuse cached layers, so a push build can be up to a week behind on these.
 - **`jv`, `task`, and `dnslookup`** are pinned as Go module versions in their builder stages and bumped by hand.
 - **git and zlib-ng** are pinned in the `git` stage and bumped by hand: `VERSION` for git, and `ZLIB_NG_VERSION`, `ZLIB_NG_COMMIT`, and `ZLIB_NG_SHA256` together for zlib-ng ([architecture.md](architecture.md#git)). Both test suites run on every bump.
 - **`lint.yml`'s container** pins a published image by tag and digest, bumped by hand. Dependabot doesn't update workflow `container:` images, and `kits.yml` can't do it either: `GITHUB_TOKEN` can't push changes to workflow files. Use GHCR's `build-<run id>` tag of Quay's current `latest`.
@@ -128,15 +128,11 @@ Recovery of an interrupted publication is described in [integrations/ghcr.md](in
 
 ### Sandbox kits
 
-Each kit pins the image in its dockerfile's `FROM` and states the agent version that image installed in its descriptor's `provides` (`claude@2.1.310`). The agent can still update itself inside a sandbox, so `provides` records what the image shipped, not what's running.
+Each kit's dockerfile pins two things by tag and digest: the image (`ARG IMAGE`) and Docker's mixin for its agent (`ARG MIXIN`, `docker.io/docker/sbx-kit-<agent>-mixin:<version>`). Its descriptor's `provides` states the mixin's version (`claude@2.1.311`). The agent can't update itself, so that's the version that runs.
 
-The versions come from `/legal/manifest.tsv`, which every build writes for each platform. They can also be read from the registry without pulling the image, through the SBOM attestation (the `claude-code` and `codex` packages):
+`scripts/update-kits.sh <name>:<tag>@sha256:<digest>` pins the given image, and each agent's newest mixin: the release Docker Hub's `latest` tag points at, by the version tag with the same digest. The tags aren't ordered by version (`sbx-kit-codex-mixin` has an old `1.0.0`), so the highest one isn't the newest. It rewrites both pins and `provides` together. Run it by hand to point the kits at any published image.
 
-```sh
-docker buildx imagetools inspect quay.io/frithuz/devcontainer:latest --format '{{json .SBOM}}'
-```
-
-`scripts/update-kits.sh <name>:<tag>@sha256:<digest>` copies both platforms' manifests out of an image and fails unless each agent has one version across them. It then rewrites every kit's `FROM` and `provides` together. Run it by hand to point the kits at any published image.
+Building a kit fails on an image that still records an agent in its `manifest.tsv`, or that lacks the `bwrap` the Codex kit copies.
 
 `kits.yml` runs the script, and it starts two ways. `publish.yml` calls it after a promotion that tags `latest` in Quay, with that image. `promote` reports `latest` only after `oras tag` has applied it, so a run that promotes without `latest` leaves the kits alone. To point the kits at another image already in Quay, run **kits** by hand with its `quay.io/frithuz/devcontainer:<tag>@sha256:<digest>` reference.
 
@@ -188,6 +184,6 @@ The no-co-author rule in [AGENTS.md](../AGENTS.md) still applies.
 
 - **License.** Contributions are accepted under [CC0-1.0](../LICENSE). Contribute only work you can dedicate, and keep imported third-party material under its own license ([legal.md](legal.md#project-license)).
 - **Adding a tool.** Prefer a pinned upstream image with a static or glibc-compatible binary. Justify any scripted install in the PR. Either way, make its command resolve under the default `PATH`, and add it to `scripts/legal-components.yaml` in the same PR, which also makes the smoke tests check it. A command that isn't a component goes in `test/smoke.sh`'s list. The build fails on an ELF file it can't attribute.
-- Never add an unpinned `FROM` or an unchecked download. Piping a download to a shell is allowed only for the agent installers.
+- Never add an unpinned `FROM` or an unchecked download, and never pipe a download to a shell.
 - Keep build-only tooling out of the final stage. Fetching belongs in builder stages.
 - Don't break the [sandbox contract](architecture.md#docker-sandboxes-contract).

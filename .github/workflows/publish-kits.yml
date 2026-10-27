@@ -1,8 +1,9 @@
 # Publishes the sandbox kits as OCI images, each to its own repository: claude-kit and codex-kit, on
 # GHCR first, then promoted to Quay (docs/maintenance.md#publishing-the-kits). A kit carries every
-# layer of the image it pins, so it carries that image's copyleft components too. Each subject gets
-# the source index of the base's matching subject, with the source images it lists, before any tag
-# points at it (docs/legal.md#publishing).
+# layer of the image it pins, so it carries that image's copyleft components too, and adds none of
+# its own: its agent comes from Docker's mixin without copyleft parts. Each subject gets the source
+# index of the base's matching subject, with the source images it lists, before any tag points at
+# it (docs/legal.md#publishing).
 name: publish-kits
 run-name: >-
   ${{ github.event_name == 'push'
@@ -74,14 +75,14 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # The kit pins Quay's image. The same digest is on GHCR, with its source, because promote
-      # copies it from there.
+      # The kit pins Quay's image (ARG IMAGE). The same digest is on GHCR, with its source, because
+      # promote copies it from there.
       - name: Read the kit's base
         run: |
           dockerfile=sandboxes/devcontainer-$KIT/$KIT.dockerfile
-          ref=$(awk '$1 == "FROM" { print $2 }' "$dockerfile")
+          ref=$(sed -n 's/^ARG IMAGE=//p' "$dockerfile")
           if [[ ! $ref =~ ^quay\.io/frithuz/devcontainer:[^@/]+@(sha256:[0-9a-f]{64})$ ]]; then
-            echo "::error file=$dockerfile::FROM isn't a quay.io/frithuz/devcontainer:<tag>@sha256:<digest> pin: ${ref:-none}"
+            echo "::error file=$dockerfile::ARG IMAGE isn't a quay.io/frithuz/devcontainer:<tag>@sha256:<digest> pin: ${ref:-none}"
             exit 1
           fi
           owner=${GITHUB_REPOSITORY_OWNER,,}

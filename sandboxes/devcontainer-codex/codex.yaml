@@ -1,8 +1,8 @@
 # syntax=docker/sandbox-kit:3
-# Codex on the devcontainer image. The credential and config seed follow Docker's codex
-# workload (github.com/docker/sandbox-kit-spec, examples/codex), without the version
-# re-pin and Docker Desktop hooks: the image installs Codex itself. Codex keeps its
-# binaries in ~/.codex, so nothing mounts over that directory.
+# Codex on the devcontainer image, from Docker's Codex mixin (codex.dockerfile). The credential
+# and config seed follow Docker's codex workload (github.com/docker/sandbox-kit-spec,
+# examples/codex), without its Docker Desktop hooks. Codex's app server copies its package into
+# ~/.codex when it starts, so nothing mounts over that directory.
 schemaVersion: "3"
 displayName: Codex (devcontainer)
 description: OpenAI Codex on the frithuz devcontainer image
@@ -23,8 +23,8 @@ args:
     description: Reasoning effort (config.toml `model_reasoning_effort`); empty keeps the CLI default
     env: CODEX_REASONING_EFFORT
 
-# The version the image installed. The agent may update itself inside the sandbox.
-# scripts/update-kits.sh rewrites this line and the dockerfile's FROM together.
+# The version of the mixin the dockerfile pins. scripts/update-kits.sh rewrites this line and
+# both pins together.
 provides: ["codex@0.164.0"]
 
 capabilities:

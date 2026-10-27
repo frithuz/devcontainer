@@ -271,90 +271,6 @@ printf 'component: gh\nrepository: https://github.com/cli/cli\nref: v%s\nlicense
 row gh "$gh_version" "$arch" MIT "$attribution/gh/LICENSE" "release:$gh_url $gh_digest"
 covered+=(/usr/local/bin/gh)
 
-# --- Codex and the components bundled in its package --------------------------------------
-codex_pkg=$(readlink -f /home/agent/.codex/packages/standalone/current)
-codex_version=$(jq -r .version "$codex_pkg/codex-package.json")
-codex_target=$(jq -r .target "$codex_pkg/codex-package.json")
-codex_tag=rust-v$codex_version
-covered+=(/home/agent/.codex/packages/standalone)
-fetch codex openai/codex "$codex_tag" Apache-2.0 LICENSE NOTICE
-row codex "$codex_version" "$arch" Apache-2.0 "$attribution/codex/LICENSE $attribution/codex/NOTICE" \
-	"installer:https://chatgpt.com/codex/install.sh release:https://github.com/openai/codex/releases/tag/$codex_tag target:$codex_target binary-sha256:$(sha256sum "$codex_pkg/bin/codex" | cut -d' ' -f1)"
-sbom application codex "$codex_version" "pkg:github/openai/codex@$codex_tag" Apache-2.0 "$codex_pkg/bin/codex" \
-	"https://github.com/openai/codex/tree/$codex_tag" "https://github.com/openai/codex/releases/tag/$codex_tag" -
-
-bwrap_dir=codex-rs/vendor/bubblewrap
-# Download before searching: grep -m1 exiting early would make curl fail under pipefail.
-bwrap_meson=$(curl -fsSL --retry 3 "https://raw.githubusercontent.com/openai/codex/$codex_tag/$bwrap_dir/meson.build")
-bwrap_version=$(grep -m1 -oE "version[[:space:]]*:[[:space:]]*'[^']+'" <<<"$bwrap_meson" | grep -oE "'[^']+'" | tr -d "'")
-fetch bubblewrap openai/codex "$codex_tag" LGPL-2.0-or-later "$bwrap_dir/COPYING"
-row bubblewrap "${bwrap_version:-NOASSERTION}" "$arch" LGPL-2.0-or-later "$attribution/bubblewrap/COPYING" \
-	"embedded-in:codex source:https://github.com/openai/codex/tree/$codex_tag/$bwrap_dir"
-sbom application bubblewrap "${bwrap_version:-NOASSERTION}" "pkg:generic/bubblewrap@${bwrap_version:-unknown}" LGPL-2.0-or-later \
-	"$codex_pkg/codex-resources/bwrap" "https://github.com/openai/codex/tree/$codex_tag/$bwrap_dir" - -
-
-rg_version=$(version_of "$codex_pkg/codex-path/rg --version")
-fetch ripgrep BurntSushi/ripgrep "$rg_version" "Unlicense OR MIT" COPYING LICENSE-MIT UNLICENSE
-row ripgrep "$rg_version" "$arch" "Unlicense OR MIT" "$attribution/ripgrep/COPYING $attribution/ripgrep/LICENSE-MIT $attribution/ripgrep/UNLICENSE" \
-	"embedded-in:codex source:https://github.com/BurntSushi/ripgrep/tree/$rg_version"
-sbom application ripgrep "$rg_version" "pkg:cargo/ripgrep@$rg_version" "Unlicense OR MIT" "$codex_pkg/codex-path/rg" \
-	"https://github.com/BurntSushi/ripgrep/tree/$rg_version" - -
-
-voice=$codex_pkg/codex-resources/voice
-if [[ -f $voice/sources.json ]]; then
-	declare -A voice_license=(
-		["glib"]=LGPL-2.1-or-later ["gstreamer"]=LGPL-2.1-or-later ["gst-plugins-base"]=LGPL-2.1-or-later
-		["gst-plugins-good"]=LGPL-2.1-or-later ["proxy-libintl"]=LGPL-2.0-or-later ["libffi"]=MIT
-		["pcre2"]="BSD-3-Clause WITH PCRE2-exception" ["opus"]=BSD-3-Clause ["zlib"]=Zlib)
-	while IFS=$'\t' read -r name version url sha256; do
-		license=${voice_license[$name]:-}
-		[[ -n $license ]] || gap "codex voice library $name has no known license; recorded as NOASSERTION"
-		row "codex-voice:$name" "$version" "$arch" "${license:-NOASSERTION}" "$voice/NOTICE.md $voice/licenses" \
-			"embedded-in:codex source:$url sha256:$sha256"
-		sbom library "$name" "$version" "pkg:generic/$name@$version?download_url=$(jq -rn --arg u "$url" '$u | @uri')" \
-			"${license:-NOASSERTION}" - - "$url" "$sha256"
-	done < <(jq -r '.sources[] | select(.role != "build-tool") | [.name, .version, .url, .sha256] | @tsv' "$voice/sources.json")
-fi
-
-# --- Claude Code --------------------------------------------------------------------------
-# Proprietary. Verify the installed binary against the release manifest, and take Anthropic's
-# notice (LICENSE.md) from the npm package of the same version, checked against its integrity.
-claude_bin=$(readlink -f /home/agent/.local/bin/claude)
-claude_version=$(version_of 'claude --version')
-claude_sha=$(sha256sum "$claude_bin" | cut -d' ' -f1)
-covered+=(/home/agent/.local/share/claude)
-case $arch in
-amd64) claude_platform=linux-x64 ;;
-arm64) claude_platform=linux-arm64 ;;
-*) claude_platform=linux-$arch ;;
-esac
-claude_manifest=https://downloads.claude.ai/claude-code-releases/$claude_version/manifest.json
-claude_release=$(curl -fsSL --retry 3 "$claude_manifest" |
-	jq -r --arg p "$claude_platform" '[.commit, .platforms[$p].checksum] | join(" ")')
-read -r claude_commit claude_expected <<<"$claude_release"
-[[ $claude_sha == "$claude_expected" ]] ||
-	error "claude $claude_version binary sha256 $claude_sha doesn't match $claude_manifest ($claude_expected)"
-
-claude_npm=$(curl -fsSL --retry 3 "https://registry.npmjs.org/@anthropic-ai/claude-code/$claude_version" |
-	jq -r '[.dist.tarball, .dist.integrity] | join(" ")')
-read -r claude_tarball claude_integrity <<<"$claude_npm"
-claude_tmp=$(mktemp -d)
-curl -fsSL --retry 3 -o "$claude_tmp/package.tgz" "$claude_tarball"
-[[ "sha512-$(openssl dgst -sha512 -binary "$claude_tmp/package.tgz" | base64 -w0)" == "$claude_integrity" ]] ||
-	error "claude npm package doesn't match its registry integrity $claude_integrity"
-tar -xzf "$claude_tmp/package.tgz" -C "$claude_tmp" package/LICENSE.md
-mkdir -p "$attribution/claude"
-install -m 0644 "$claude_tmp/package/LICENSE.md" "$attribution/claude/LICENSE.md"
-rm -rf "$claude_tmp"
-printf 'component: claude\nrepository: none (proprietary)\nref: %s (commit %s)\nlicense: LicenseRef-Anthropic-Terms\nfiles:\n  - path: package/LICENSE.md\n    url: %s\n    integrity: %s\n    sha256: %s\n' \
-	"$claude_version" "$claude_commit" "$claude_tarball" "$claude_integrity" \
-	"$(sha256sum "$attribution/claude/LICENSE.md" | cut -d' ' -f1)" >"$attribution/claude/SOURCE"
-
-row claude "$claude_version" "$arch" LicenseRef-Anthropic-Terms "$attribution/claude/LICENSE.md" \
-	"installer:https://claude.ai/install.sh release:$claude_manifest commit:$claude_commit binary-sha256:$claude_sha"
-sbom application claude-code "$claude_version" "pkg:generic/claude-code@$claude_version" LicenseRef-Anthropic-Terms "$claude_bin" \
-	- "$claude_manifest" -
-
 # --- Libraries compiled into node and python ----------------------------------------------
 # node reports its bundled libraries in process.versions; their notices are in Node's LICENSE.
 # <name> <license> <CPE vendor:product, or -> per key. ABI and data versions aren't listed.
@@ -415,7 +331,7 @@ done
 # Go proxy (verified against sum.golang.org) and keep only its license files, at the module
 # cache layout SBOM scanners search: /legal/go/pkg/mod/<module>@<version>/.
 go_mods=$(mktemp)
-go version -m /usr/bin /usr/sbin /usr/lib /usr/libexec /usr/local/bin /opt /home/agent/.local/share /home/agent/.codex 2>/dev/null |
+go version -m /usr/bin /usr/sbin /usr/lib /usr/libexec /usr/local/bin /opt /home/agent/.local/share 2>/dev/null |
 	awk -F'\t' '
 		function flush() { if (path != "") print bin "\t" kind "\t" path "\t" ver; path = "" }
 		# A binary with a "path" but no "mod" line was built outside module mode; its main

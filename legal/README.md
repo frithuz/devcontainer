@@ -17,8 +17,8 @@ License notices, attribution, and source information for the software in this im
 - Packages installed with apt keep their notices at `/usr/share/doc/<package>/copyright`, which
   `manifest.tsv` references instead of copying.
 - `sbom/devcontainer.cdx.json` is a CycloneDX list of the components SBOM scanners can't
-  identify from the files alone (standalone binaries without package metadata, git and the
-  libraries compiled into it, and the libraries bundled with Codex), with versions, licenses, and checksums. The image's SBOM
+  identify from the files alone (standalone binaries without package metadata, and git and the
+  libraries compiled into it), with versions, licenses, and checksums. The image's SBOM
   attestation picks it up.
 - `go/pkg/mod/<module>@<version>/` holds the license files of every Go module compiled into
   the image's Go binaries, taken from the module source through the Go proxy.
@@ -26,5 +26,7 @@ License notices, attribution, and source information for the software in this im
   installed apt packages.
 - `SOURCE.md` explains how to get Corresponding Source for copyleft components.
 
-Claude Code is proprietary software preinstalled under Anthropic's terms; see
-`attribution/claude/LICENSE.md`, Anthropic's notice from the release of the installed version.
+The image carries no agent CLIs. A sandbox kit adds one, with its notices in
+`attribution/<agent>/` and its rows in `manifest.tsv`. Claude Code is proprietary software under
+Anthropic's terms; see `attribution/claude/LICENSE.md` in the Claude kit, Anthropic's notice from
+the release the kit carries.

@@ -85,16 +85,9 @@ roots:
   # bundle: git subpaths at the exact commit of the tag, plus the archives of the covered
   # copyleft components whose manifest source is "source:<url> sha256:<hex>". {version} is the
   # first component's version.
-  - name: codex
-    kind: bundle
-    repository: https://github.com/openai/codex
-    tag: rust-v{version}
-    components: [codex, bubblewrap, codex-voice:*]
-    subpaths: [codex-rs/vendor/bubblewrap, third_party/voice]
-    note: LGPL bubblewrap and voice libraries
-
-  # The signed release tarball the git stage compiled (its manifest source), the zlib-ng archive
-  # compiled into it, and the build script, with the license texts from the tag's commit.
+  #
+  # git: the signed release tarball the git stage compiled (its manifest source), the zlib-ng
+  # archive compiled into it, and the build script, with the license texts from the tag's commit.
   - name: git
     kind: bundle
     repository: https://github.com/git/git

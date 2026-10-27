@@ -1,5 +1,5 @@
-# The image's system and agents, after apt-bootstrap.nu (Dockerfile's image stage, step 2): apt packages, the locale, the shared directories, the agent user, and the
-# agent CLIs.
+# The image's system, after apt-bootstrap.nu (Dockerfile's image stage, step 2): apt packages, the
+# locale, the shared directories, and the agent user. The agent CLIs come with the sandbox kits.
 $env.DEBIAN_FRONTEND = 'noninteractive'
 let arch = dpkg --print-architecture | str trim
 
@@ -8,7 +8,8 @@ let packages = [
   bash ca-certificates curl less locales neovim openssh-client passwd sudo-rs
   media-types netbase tzdata
   bat fd-find file fzf lsd ripgrep tmux unzip xz-utils zip
-  lsof netcat-openbsd openssl toybox trippy
+  lsof netcat-openbsd openssl procps toybox trippy
+  bubblewrap
   libatomic1
   libcurl4t64 libpcre2-8-0
   libbz2-1.0 libdb5.3t64 libffi8 libgdbm6t64 liblzma5 libmpdec4 libncursesw6
@@ -104,18 +105,8 @@ mkdir $"($pnpm_home)/global" $"($pnpm_home)/store"
 chown -R root:staff $pnpm_home
 chmod 2775 $pnpm_home $"($pnpm_home)/global" $"($pnpm_home)/store"
 
-# Agent CLIs, installed as agent so they can self-update. setpriv rather than sudo: Claude
-# Code's installer refuses to run under sudo.
+# Runs a command as agent, with agent's environment.
 let as_agent = [--reuid=agent --regid=agent --init-groups env HOME=/home/agent USER=agent LOGNAME=agent]
-http get https://claude.ai/install.sh | setpriv ...$as_agent bash
-http get https://chatgpt.com/codex/install.sh | setpriv ...$as_agent CODEX_NON_INTERACTIVE=1 sh
-# The installer runs codex once, leaving arg0 temp dirs. In a lower image layer they
-# can't be renamed away (overlayfs EXDEV), so codex warns on every start.
-rm -rf /home/agent/.codex/tmp
-# Runtime leftovers: Claude Code's socket directory and Node's compile cache.
-rm -rf /tmp/cc-socks /tmp/node-compile-cache
-# Chained links, so the agents resolve for root too and survive self-updates.
-ln -s /home/agent/.local/bin/claude /home/agent/.local/bin/codex /usr/local/bin/
 
 # gh-stack as agent's gh extension, laid out as `gh extension install github/gh-stack` would: a
 # directory with the binary and a manifest that makes it a binary extension. The binary is a link

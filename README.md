@@ -11,7 +11,7 @@ A single container image on Docker Hardened Images' Debian 13 base, `quay.io/fri
 ## Principles
 
 - **Copy, don't install.** Tools come from pinned upstream images wherever possible. ([tooling](docs/tooling.md))
-- **Pin the platform, not the agents.** Platform tools are pinned. Claude Code and Codex are only guaranteed to be present, and may self-update. ([tooling](docs/tooling.md#agent-installers))
+- **One image for CI and sandboxes.** The image carries the platform tools, and no agents. The sandbox kits add Claude Code or Codex from Docker's agent mixins, pinned by version. ([tooling](docs/tooling.md#agents))
 - **Default `PATH` only.** Every command resolves without relying on `ENV PATH`. ([architecture](docs/architecture.md#default-path))
 - **Automate updates.** Dependabot covers what it can, and everything else is listed explicitly. ([maintenance](docs/maintenance.md))
 - **Build once, publish to both registries.** Weekly builds refresh unpinned installations. Tests report against the published digest while Quay synchronization proceeds; test failures do not remove releases. ([publishing](docs/maintenance.md#workflow))
