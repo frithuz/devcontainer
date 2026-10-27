@@ -61,17 +61,6 @@ modules:
       - path: flate/LICENSE
         as: LICENSE.flate
 
-  - module: github.com/aws/aws-sdk-go
-    reason: >-
-      The code in internal/sync/singleflight/ is the Go authors', under the BSD 3-Clause license
-      in internal/sync/singleflight/LICENSE. It is linked into the image.
-    reviewed:
-      - file: internal/sync/singleflight/LICENSE
-        sha256: 2d36597f7117c38b006835ae7f537487207d8ec407aa9d9980794b2030cbc067
-    include:
-      - path: internal/sync/singleflight/LICENSE
-        as: LICENSE.singleflight
-
   - module: github.com/aws/aws-sdk-go-v2
     reason: >-
       The code in internal/sync/singleflight/ is the Go authors', under the BSD 3-Clause license

@@ -127,17 +127,6 @@ components:
     notices: [/legal/attribution/gh-stack/LICENSE]
     paths: [/usr/local/bin/gh-stack]
 
-  - name: gomplate
-    stage: gomplate
-    license: MIT
-    version: gomplate --version
-    notices: [/legal/attribution/gomplate/LICENSE]
-    paths: [/usr/local/bin/gomplate]
-    upstream:
-      repository: hairyhenderson/gomplate
-      tag: v{version}
-      files: [LICENSE]
-
   - name: git-cliff
     stage: git-cliff
     license: MIT OR Apache-2.0

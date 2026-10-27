@@ -73,7 +73,7 @@ Source is published as one **source image per root program per exact version**. 
 
 Roots come from each platform's `manifest.tsv`. apt packages need no configuration: `scripts/source-apt.yaml` maps their repositories to source repositories. Only non-apt roots, gaps, and elections are listed in `scripts/source-roots.yaml`. Every copyleft component has to be covered by one of these, or planning fails. Go modules' licenses aren't in the manifest, so the Go programs that owe source are listed by hand. Quirks:
 
-- **Docker's apt repository publishes no source packages**, so moby, buildx, containerd, and runc are fetched from upstream git at the exact commit their binaries record. moby records an abbreviated commit, and gomplate and betterleaks record none, so those are trusted by tag.
+- **Docker's apt repository publishes no source packages**, so moby, buildx, containerd, and runc are fetched from upstream git at the exact commit their binaries record. moby records an abbreviated commit, and betterleaks records none, so those are trusted by tag.
 - **Go roots** are vendored, and every module the binaries report has to appear in `vendor/modules.txt` at the same version.
 - **apt packages come from three repositories**: Docker's hardened rebuilds (`dhi.io`, which publishes `deb-src` for its `+dhi` versions), Debian's archive, and Debian's security archive. Only `trixie` is mapped for the archive: `trixie-updates` publishes only `Sources.xz`, which the planner can't read, and today holds only `tzdata`, which comes from `dhi.io`. `trixie-security` has the same limitation, and no installed package comes from it today. A package from either fails planning rather than going uncovered.
 - **git** is a `bundle` too ([compiled components](#compiled-components)).

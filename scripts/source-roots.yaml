@@ -10,15 +10,6 @@
 roots:
   # git: the exact commit of a Go program's tag, with its dependencies vendored. {version} is
   # the main module's version; every Go module compiled into the binaries must be vendored.
-  - name: gomplate
-    kind: git
-    repository: https://github.com/hairyhenderson/gomplate
-    tag: "{version}"
-    module: github.com/hairyhenderson/gomplate/v5
-    binaries: [gomplate]
-    vendoring: go-vendor
-    note: MPL-2.0 modules
-
   - name: yq
     kind: git
     repository: https://github.com/mikefarah/yq
