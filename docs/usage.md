@@ -83,8 +83,7 @@ jobs:
 
 - **`--user root` is required.** GitHub mounts the workspace and runner tooling with ownership a non-root user can't write to. If git then reports "dubious ownership", add `git config --global --add safe.directory "$GITHUB_WORKSPACE"`. The image doesn't set this globally, so local devcontainers keep the protection.
 - **Set `shell: bash`.** Container jobs otherwise default to `sh`, which doesn't load `BASH_ENV`.
-- Actions ignores the image's `ENV PATH`. Every image-provided command still resolves, but tools you `go install` need `$GOPATH/bin` added through `$GITHUB_PATH`.
-- Actions sets `HOME=/github/home`. pnpm's configuration still applies, because it comes from image `ENV`.
+- Steps keep the image's `ENV`, `PATH` included, so tools you `go install` resolve from `$GOPATH/bin`. Actions only sets `HOME=/github/home`, which pnpm's configuration doesn't depend on.
 - JavaScript actions run on the runner's own Node. The image's Node is for your steps.
 - Avoid `actions/setup-python`, `setup-node`, and `setup-go`. They install separate toolchains that drift from the image's.
 
