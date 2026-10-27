@@ -77,7 +77,7 @@ jobs:
       image: ghcr.io/<owner>/devcontainer:<YYYYMMDD>@sha256:<digest>
     steps:
       - uses: actions/checkout@<sha>
-      - run: golangci-lint run
+      - run: go test ./...
 ```
 
 - Steps run as root, the image's default user, as [GitHub requires](https://docs.github.com/en/actions/reference/workflows-and-actions/dockerfile-support#user): it mounts the workspace and runner tooling with ownership a non-root user can't write to. Don't pass `--user agent`. If git reports "dubious ownership", add `git config --global --add safe.directory "$GITHUB_WORKSPACE"`. The image doesn't set this globally, so local devcontainers keep the protection.

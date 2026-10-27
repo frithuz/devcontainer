@@ -10,15 +10,6 @@
 roots:
   # git: the exact commit of a Go program's tag, with its dependencies vendored. {version} is
   # the main module's version; every Go module compiled into the binaries must be vendored.
-  - name: golangci-lint
-    kind: git
-    repository: https://github.com/golangci/golangci-lint
-    tag: "{version}"
-    module: github.com/golangci/golangci-lint/v2
-    binaries: [golangci-lint]
-    vendoring: go-vendor
-    note: GPL-3.0-only
-
   - name: gomplate
     kind: git
     repository: https://github.com/hairyhenderson/gomplate

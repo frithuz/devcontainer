@@ -145,17 +145,6 @@ components:
       tag: v{version}
       files: [LICENSE]
 
-  - name: golangci-lint
-    stage: golangci-lint
-    license: GPL-3.0-only
-    version: golangci-lint --version
-    notices: [/legal/attribution/golangci-lint/LICENSE]
-    paths: [/usr/local/bin/golangci-lint]
-    upstream:
-      repository: golangci/golangci-lint
-      tag: v{version}
-      files: [LICENSE]
-
   - name: git-cliff
     stage: git-cliff
     license: MIT OR Apache-2.0

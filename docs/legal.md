@@ -51,7 +51,7 @@ To inspect the attestation locally, export an OCI layout: `docker buildx bake im
 
 ## Copyleft components
 
-The image conveys GPL (v2 and v3), LGPL, and MPL-2.0 components: golangci-lint (GPLv3), git (GPLv2, compiled here), Codex's bubblewrap and GStreamer/GLib (LGPL), MPL-2.0 Go modules in several tools and in Docker's binaries, and most of the Debian base and its packages, including Bash and coreutils. Being unmodified or installed with apt doesn't remove the redistribution obligations ([GNU FAQ](https://www.gnu.org/licenses/gpl-faq.en.html#UnchangedJustBinary)).
+The image conveys GPL (v2 and v3), LGPL, and MPL-2.0 components: git (GPLv2, compiled here), Codex's bubblewrap and GStreamer/GLib (LGPL), MPL-2.0 Go modules in several tools and in Docker's binaries, and most of the Debian base and its packages, including Bash and coreutils. Being unmodified or installed with apt doesn't remove the redistribution obligations ([GNU FAQ](https://www.gnu.org/licenses/gpl-faq.en.html#UnchangedJustBinary)).
 
 **Policy: publish the complete source of every copyleft component in the same registry repository as the image, before the image's tags are published.** One mechanism satisfies every license:
 
@@ -61,7 +61,7 @@ The image conveys GPL (v2 and v3), LGPL, and MPL-2.0 components: golangci-lint (
 
 Publishing the source avoids written offers and their three-year commitments. Source stays available as long as its image does.
 
-**What's owed:** a GPL or LGPL binary owes its *whole* Corresponding Source, including permissive modules compiled into it. An MPL module owes only itself. A dual license with a permissive option owes nothing once that option is elected, and elections are recorded in `scripts/source-roots.yaml`. golangci-lint states no "or later", so it's recorded as `GPL-3.0-only`.
+**What's owed:** a GPL or LGPL binary owes its *whole* Corresponding Source, including permissive modules compiled into it. An MPL module owes only itself. A dual license with a permissive option owes nothing once that option is elected, and elections are recorded in `scripts/source-roots.yaml`.
 
 ### Source images
 
@@ -149,5 +149,4 @@ Claude Code is **preinstalled** under Anthropic's [terms for offering Claude Cod
    - Ten bundled npm/pnpm modules ship only a `license` field, no license text.
    - jq's `COPYING` doesn't cover its bundled oniguruma.
    - Sixteen apt packages have copyright files that aren't machine-readable, so they're recorded as `NOASSERTION`. Most mention GPL or LGPL; zip and unzip (Info-ZIP) don't. Source planning treats `NOASSERTION` as copyleft, so their source is published regardless.
-   - golangci-lint's `-only` recording is pending review.
    - Transitive notices aren't collected yet for Rust binaries (uv, git-cliff, nushell, ripgrep, Codex).

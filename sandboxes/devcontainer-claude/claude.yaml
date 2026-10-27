@@ -277,7 +277,8 @@ capabilities:
 
         This sandbox runs the frithuz devcontainer image (Debian 13, Docker Hardened Images) with one
         pinned toolset: Go, Node with pnpm, Python with uv, gh, task, jq, yq, and linters
-        such as golangci-lint and shfmt. /legal/manifest.tsv lists everything.
+        such as shfmt. /legal/manifest.tsv lists everything. Project tools such as
+        golangci-lint come from the project's own dependencies (`go tool`, pnpm, uv).
 
         - Persistent environment comes from `BASH_ENV` (/etc/devcontainer/env.sh), not
           shell profiles. Don't rely on `.bashrc` or `/etc/profile`.

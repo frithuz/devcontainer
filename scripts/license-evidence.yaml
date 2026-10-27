@@ -50,17 +50,6 @@ modules:
 
   # Licenses kept in a subdirectory for code linked into the image (forked Go code and the like).
   # The text is already shipped at its upstream path; the entry adds it at the top for Syft.
-  - module: github.com/Antonboom/testifylint
-    reason: >-
-      The code in internal/checkers/printf/ is the Go authors', under the BSD 3-Clause license in
-      internal/checkers/printf/LICENSE. It is linked into the image.
-    reviewed:
-      - file: internal/checkers/printf/LICENSE
-        sha256: 2d36597f7117c38b006835ae7f537487207d8ec407aa9d9980794b2030cbc067
-    include:
-      - path: internal/checkers/printf/LICENSE
-        as: LICENSE.printf
-
   - module: github.com/andybalholm/brotli
     reason: >-
       The code in flate/ is the Go authors', under the BSD 3-Clause license in flate/LICENSE. It
@@ -150,28 +139,6 @@ modules:
     include:
       - path: json/LICENSE
         as: LICENSE.json
-
-  - module: github.com/golangci/gofmt
-    reason: >-
-      The code in internal/ is the Go authors', under the BSD 3-Clause license in
-      internal/LICENSE. It is linked into the image.
-    reviewed:
-      - file: internal/LICENSE
-        sha256: 2d36597f7117c38b006835ae7f537487207d8ec407aa9d9980794b2030cbc067
-    include:
-      - path: internal/LICENSE
-        as: LICENSE.internal
-
-  - module: github.com/golangci/golangci-lint/v2
-    reason: >-
-      The code in internal/go/ is the Go authors', under the BSD 3-Clause license in
-      internal/go/LICENSE. It is linked into the image.
-    reviewed:
-      - file: internal/go/LICENSE
-        sha256: 2d36597f7117c38b006835ae7f537487207d8ec407aa9d9980794b2030cbc067
-    include:
-      - path: internal/go/LICENSE
-        as: LICENSE.internal-go
 
   - module: github.com/hashicorp/golang-lru/v2
     reason: >-
