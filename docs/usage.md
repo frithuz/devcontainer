@@ -92,21 +92,21 @@ Ordinary container jobs use the runner's daemon, through the socket the standard
 
 ## Agent sandboxes (`sbx`)
 
-The image meets the [Docker Sandboxes custom image requirements](https://docs.docker.com/ai/sandboxes/customize/author/base-images/#use-your-own-linux-image) ([architecture.md](architecture.md#docker-sandboxes-contract)). On its own it starts a bash shell (`agent`'s login shell is nu, but the `CMD` is bash). To run an agent, use a **kit** under `sandboxes/`: `claude` or `codex`. Each is a [v3 workload](https://docs.docker.com/ai/sandboxes/customize/) made of two files:
+The image meets the [Docker Sandboxes custom image requirements](https://docs.docker.com/ai/sandboxes/customize/author/base-images/#use-your-own-linux-image) ([architecture.md](architecture.md#docker-sandboxes-contract)). On its own it starts a bash shell (`agent`'s login shell is nu, but the `CMD` is bash). To run an agent, use a **kit** under `sandboxes/`: `devcontainer-claude` or `devcontainer-codex`. Each is a [v3 workload](https://docs.docker.com/ai/sandboxes/customize/) made of two files:
 
-- `<agent>.dockerfile` pins the image by digest and sets the agent as `ENTRYPOINT`.
+- `<agent>.dockerfile` pins the image by digest, sets the agent as `ENTRYPOINT`, and labels the image `com.docker.sandboxes.start-docker`, without which `sbx` doesn't give the image's Docker engine the privileges it needs to start.
 - `<agent>.yaml` is the descriptor. Its `provides` states the agent version the pinned image installed. It declares the `sbx`, network-policy, credential, volume, and lifecycle capabilities, and seeds the agent's config from the credential mode the host binds.
 
-V3 needs `sbx` v0.45 or later, and v3 workloads only take v3 mixins. A publish run keeps the pins current through a PR ([maintenance.md](maintenance.md#sandbox-kits)).
+V3 needs `sbx` v0.45 or later, and v3 workloads only take v3 mixins. `sbx` names a kit's agent after its directory and rejects a built-in agent's name, so the directories are `devcontainer-<agent>`, not `<agent>`. A publish run keeps the pins current through a PR ([maintenance.md](maintenance.md#sandbox-kits)).
 
 **Kits aren't published.** `sbx` builds them from this repository at a pinned commit, so a given commit always builds the same sandbox. Remote kit sources default to Docker Hub only, so allow this repository once:
 
 ```sh
 sbx settings set kit.allowedSources '["docker.io/","github.com/frithuz/devcontainer"]'
-sbx run 'git+https://github.com/frithuz/devcontainer.git#ref=<COMMIT>&dir=sandboxes/claude' <workspace>
+sbx run 'git+https://github.com/frithuz/devcontainer.git#ref=<COMMIT>&dir=sandboxes/devcontainer-claude' <workspace>
 ```
 
-`kit.allowedSources` replaces the whole list, so keep any sources you already allow. When working on a kit, run it from a local checkout: `sbx run ./sandboxes/claude <workspace>`. To build one without `sbx`, use the kit frontend directly: `docker buildx build -f sandboxes/claude/claude.yaml sandboxes/claude`.
+`kit.allowedSources` replaces the whole list, so keep any sources you already allow. When working on a kit, run it from a local checkout: `sbx run ./sandboxes/devcontainer-claude <workspace>`. To build one without `sbx`, use the kit frontend directly: `docker buildx build -f sandboxes/devcontainer-claude/claude.yaml sandboxes/devcontainer-claude`.
 
 - Pass `--kit-arg model=<id>` or `--kit-arg reasoningEffort=<level>` to set the agent's defaults. Both are empty by default, which keeps the CLI's own default.
 - No credentials are in the image. The sandbox's credential proxy injects them at runtime, as an API key or OAuth, whichever the host has bound.

@@ -76,7 +76,7 @@ jobs:
         run: |
           for kit in claude codex; do
             docker buildx build --platform linux/amd64 --output type=cacheonly \
-              -f "sandboxes/$kit/$kit.yaml" "sandboxes/$kit"
+              -f "sandboxes/devcontainer-$kit/$kit.yaml" "sandboxes/devcontainer-$kit"
           done
 
       - name: Open or update the pull request

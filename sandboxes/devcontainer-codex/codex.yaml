@@ -167,8 +167,11 @@ capabilities:
     config:
       path: /home/agent/.agents/skills
 
-  - type: com.docker.sandbox/agent-context@2
-    config:
+  # sbx v0.50 rejects agent-context@2, so offer both, optional, as Docker's workloads do
+  # during its rollout. The runtime selects the one it supports.
+  - type: com.docker.sandbox/agent-context@1
+    optional: true
+    config: &agent-context
       filename: AGENTS.md
       directory: /home/agent/.codex
       content: |
@@ -184,3 +187,7 @@ capabilities:
           are already on `PATH`.
         - Never run `start-dockerd` here. Container access is up to the sandbox.
         - Credentials are proxy-managed. Tokens in local config files are sentinels.
+
+  - type: com.docker.sandbox/agent-context@2
+    optional: true
+    config: *agent-context

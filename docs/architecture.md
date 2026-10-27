@@ -9,7 +9,7 @@
 - `source.Dockerfile`: builds [source images](legal.md#source-images).
 - `test/`: `smoke.sh`, the smoke tests the `preflight` stage runs through `preflight.nu`, and `runtime.sh`, the DinD checks, run by `ci.yml` against a built image.
 - `.github/workflows/`: `lint.yml` (the workflow and repository linters), `ci.yml` (DinD checks and source planning on PRs), `publish.yml`, partly implemented ([maintenance.md](maintenance.md#publishing-publishyml)), and `kits.yml`, which keeps the sandbox kits pinned to the latest image ([maintenance.md](maintenance.md#sandbox-kits)).
-- `sandboxes/`: Docker Sandboxes kits, one directory per agent ([usage.md](usage.md#agent-sandboxes-sbx)).
+- `sandboxes/`: Docker Sandboxes kits, one `devcontainer-<agent>` directory per agent ([usage.md](usage.md#agent-sandboxes-sbx)).
 
 ## Dockerfile structure
 

@@ -41,7 +41,7 @@ this repository.
 | `docker-bake.hcl`                      | `docker-bake.hcl`               |
 | `rootfs/usr/local/bin/start-dockerd`   | `rootfs/start-dockerd`          |
 | a script in `scripts/`                 | `scripts/install-gh.sh`, etc.   |
-| a sandbox kit                          | `sandboxes/claude`              |
+| a sandbox kit                          | `sandboxes/devcontainer-claude` |
 | tests                                  | `test`                          |
 | CI workflows                           | `.github/workflows` or `ci.yml` |
 | documentation                          | `docs` (or `docs/usage.md`)     |

@@ -41,10 +41,11 @@ for kit in claude codex; do
 		exit 1
 	fi
 
-	descriptor=sandboxes/$kit/$kit.yaml
+	dir=sandboxes/devcontainer-$kit
+	descriptor=$dir/$kit.yaml
 	provides='^provides: \["'$kit'@[^"]*"\]$'
 	old=$(grep -E "$provides" "$descriptor" | sed -E 's/.*@([^"]*)".*/\1/' || true)
-	replace_line "sandboxes/$kit/$kit.dockerfile" '^FROM ' "FROM $ref"
+	replace_line "$dir/$kit.dockerfile" '^FROM ' "FROM $ref"
 	replace_line "$descriptor" "$provides" "provides: [\"$kit@$versions\"]"
 	printf '%s\t%s\t%s\n' "$kit" "${old:--}" "$versions"
 done
