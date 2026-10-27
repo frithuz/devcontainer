@@ -1,8 +1,8 @@
 # Quay.io
 
-The image is published to **`quay.io/frithuz/devcontainer`**. This page covers the one-time setup in Quay and GitHub that the [publish workflow](../maintenance.md#publishing-publishyml) depends on.
+The image is published to **`quay.io/frithuz/devcontainer`**, and the sandbox kits to **`quay.io/frithuz/claude-kit`** and **`quay.io/frithuz/codex-kit`**. This page covers the one-time setup in Quay and GitHub that the [publish workflow](../maintenance.md#publishing-publishyml) and the [kits' publish workflow](../maintenance.md#publishing-the-kits) depend on.
 
-Quay is the **default distribution registry**. Only one job writes to it: **`promote`**, our own job. It copies the image, with its signatures, source indexes, and source images, from the [GHCR mirror](ghcr.md), confirms the source is attached, and applies the tags. For now `promote` runs only on runs that tag `latest`, which are pushes to `main` and manual runs that ask for it ([maintenance.md](../maintenance.md#publishing-publishyml)); every other run stays on GHCR. Promotion runs independently of tests and continues when tests fail. It runs in the GitHub environment **`quay`** and authenticates as a single robot account, **`frithuz+promote`**, using **OIDC federation only**. No Quay token is stored anywhere, in GitHub or elsewhere.
+Quay is the **default distribution registry**. Only the **`promote`** jobs write to it: `publish.yml`'s for the image, and `publish-kits.yml`'s for each kit. It copies the image, with its signatures, source indexes, and source images, from the [GHCR mirror](ghcr.md), confirms the source is attached, and applies the tags. For now `promote` runs only on runs that tag `latest`, which are pushes to `main` and manual runs that ask for it ([maintenance.md](../maintenance.md#publishing-publishyml)); every other run stays on GHCR. Promotion runs independently of tests and continues when tests fail. It runs in the GitHub environment **`quay`** and authenticates as a single robot account, **`frithuz+promote`**, using **OIDC federation only**. No Quay token is stored anywhere, in GitHub or elsewhere.
 
 ## 1. Organization
 
@@ -10,7 +10,7 @@ In **Organizations → frithuz → Settings**:
 
 | Setting | Value | Why |
 | --- | --- | --- |
-| **Default Permissions** | None for any robot or team | Default permissions grant access to *every new repository*. The robot must only ever reach `devcontainer` |
+| **Default Permissions** | None for any robot or team | Default permissions grant access to *every new repository*. The robot must only ever reach `devcontainer`, `claude-kit`, and `codex-kit` |
 | **Teams** | `frithuz+promote` isn't a member of any team | Team membership would grant whatever the team can reach |
 
 ## 2. Repository `frithuz/devcontainer`
@@ -26,6 +26,10 @@ In **Organizations → frithuz → Settings**:
 
 Create the repository before the first promote. If a push creates it, Quay makes it **private**.
 
+### Kit repositories `frithuz/claude-kit` and `frithuz/codex-kit`
+
+Create each the same way, **Public**, with `frithuz+promote` as its only robot, with **Write**. Each description says which agent the kit runs, how to run it with `sbx` ([usage.md](../usage.md#agent-sandboxes-sbx)), and the same directions for fetching copyleft source: a kit carries every layer of the image it pins.
+
 ## 3. Robot account `frithuz+promote`
 
 Create it under **Organizations → frithuz → Robot Accounts → Create Robot Account**. The wizard asks for a name and description, then offers optional steps: add to a team, add to repositories, and default permissions. Set them exactly as below and leave every other optional step empty. Federation only works for robots that belong to an **organization**, not to a user (as of Quay 3.16).
@@ -33,16 +37,16 @@ Create it under **Organizations → frithuz → Robot Accounts → Create Robot 
 | Field | Value |
 | --- | --- |
 | Name | `promote` (full name `frithuz+promote`) |
-| Description | `publish.yml promote job: copies images and referrers from the GHCR mirror, applies tags. OIDC federation only.` |
+| Description | `publish.yml and publish-kits.yml promote jobs: copy images and referrers from the GHCR mirror, apply tags. OIDC federation only.` |
 | Add to team | None |
-| Repository permissions | `devcontainer`: **Write** (push manifests and referrers, create and move tags) |
+| Repository permissions | `devcontainer`, `claude-kit`, and `codex-kit`: **Write** (push manifests and referrers, create and move tags) |
 | Default permissions | None |
 | Robot federation | Issuer `https://token.actions.githubusercontent.com`, subject `repo:frithuz@306324456/devcontainer@1433350495:environment:quay`, OIDC audiences `quay` (see [section 4](#4-oidc-federation)) |
 | Robot token | **Never copied or stored.** It exists but isn't used. If it's ever exposed, regenerate it to invalidate it. Federation keeps working |
 
 Steps:
 1. Create the robot with the name and description above.
-2. In **Add to repository**, select `devcontainer` with **Write**. Skip the team and default-permission steps.
+2. In **Add to repository**, select `devcontainer`, `claude-kit`, and `codex-kit`, each with **Write**. Skip the team and default-permission steps.
 3. Set up federation as described in [section 4](#4-oidc-federation).
 
 The robot doesn't need **Admin**. That would let it change visibility, permissions, and repository settings.
@@ -122,7 +126,7 @@ The `promote` job in [`publish.yml`](../../.github/workflows/publish.yml) names 
 | --- | --- |
 | Exchange returns 401/403 | The audience doesn't match (`QUAY_AUDIENCE` against the entry's OIDC audiences), or the subject doesn't match: a job without `environment: quay`, a different environment name, or the mutable instead of the immutable prefix. Decode the OIDC token (it's a JWT) and compare its `aud` and `sub` claims with the federation entry |
 | `ACTIONS_ID_TOKEN_REQUEST_URL` is empty | The job is missing `permissions: id-token: write` |
-| Login succeeds, then the first push returns `unauthorized` | The robot can read the public repository but can't write to it. Give `frithuz+promote` **Write** on `devcontainer` (see [section 3](#3-robot-account-frithuzpromote)) |
+| Login succeeds, then the first push returns `unauthorized` | The robot can read the public repository but can't write to it. Give `frithuz+promote` **Write** on the repository (see [section 3](#3-robot-account-frithuzpromote)) |
 | `check` finds no source index on Quay | The subject has none on GHCR either (the `sources` job's summary lists them), or Quay didn't take a referrer. The copy step requires the Referrers API, so the copy itself would have failed |
 | Repository is private after the first promote | It was created by the push. Make it public in **Settings** |
 | The robot can reach other repositories | An organization **Default Permission** or team membership grants it. Remove it (see [section 1](#1-organization)) |

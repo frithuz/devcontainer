@@ -1,0 +1,212 @@
+# Publishes the sandbox kits as OCI images, each to its own repository: claude-kit and codex-kit, on
+# GHCR first, then promoted to Quay (docs/maintenance.md#publishing-the-kits). A kit carries every
+# layer of the image it pins, so it carries that image's copyleft components too. Each subject gets
+# the source index of the base's matching subject, with the source images it lists, before any tag
+# points at it (docs/legal.md#publishing).
+name: publish-kits
+run-name: >-
+  ${{ github.event_name == 'push'
+      && format('Publish kits {0}', github.ref_name)
+      || format('Publish kits {0} — manual by @{1}', github.ref_name, github.actor) }}
+
+on:
+  # A merged kits PR, or any other change to a kit.
+  push:
+    branches: [main]
+    paths: [sandboxes/**]
+  workflow_dispatch:
+    inputs:
+      latest:
+        description: Also tag the kits as latest, and promote them to Quay
+        type: boolean
+        default: false
+
+permissions: {}
+
+# Keep in step with publish.yml.
+env:
+  ORAS_URL: https://github.com/oras-project/oras/releases/download/v1.3.6/oras_1.3.6_linux_amd64.tar.gz
+  ORAS_CHECKSUM: 66fb0ad7206f3f6fa77ed5b552049d364ccf4b50b1684554f731f76302b52ca0
+
+concurrency:
+  group: publish-kits
+  cancel-in-progress: false
+
+jobs:
+  # Not docker/github-builder's bake.yml: its finalize step rebuilds the index with imagetools,
+  # which drops the index annotations the kit frontend writes, the descriptor among them. A kit
+  # build runs nothing on the target platform, so one runner builds both.
+  ghcr:
+    name: Publish ${{ matrix.kit }}-kit to GHCR
+    runs-on: ubuntu-26.04
+    strategy:
+      fail-fast: false
+      matrix:
+        kit: [claude, codex]
+    permissions:
+      contents: read
+      packages: write # push the kit, its source images, and its source indexes
+    defaults:
+      run:
+        shell: bash
+    env:
+      KIT: ${{ matrix.kit }}
+      LATEST: ${{ github.event_name != 'workflow_dispatch' || inputs.latest }}
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Set up ORAS
+        uses: oras-project/setup-oras@005458ad77f1c8facd38a094e4af2e69e5607ff4 # v2.0.2
+        with:
+          url: ${{ env.ORAS_URL }}
+          checksum: ${{ env.ORAS_CHECKSUM }}
+
+      - name: Log in to GHCR
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # The kit pins Quay's image. The same digest is on GHCR, with its source, because promote
+      # copies it from there.
+      - name: Read the kit's base
+        run: |
+          dockerfile=sandboxes/devcontainer-$KIT/$KIT.dockerfile
+          ref=$(awk '$1 == "FROM" { print $2 }' "$dockerfile")
+          if [[ ! $ref =~ ^quay\.io/frithuz/devcontainer:[^@/]+@(sha256:[0-9a-f]{64})$ ]]; then
+            echo "::error file=$dockerfile::FROM isn't a quay.io/frithuz/devcontainer:<tag>@sha256:<digest> pin: ${ref:-none}"
+            exit 1
+          fi
+          owner=${GITHUB_REPOSITORY_OWNER,,}
+          {
+            echo "BASE=ghcr.io/$owner/devcontainer"
+            echo "BASE_DIGEST=${BASH_REMATCH[1]}"
+            echo "REPOSITORY=ghcr.io/$owner/$KIT-kit"
+          } >>"$GITHUB_ENV"
+
+      # Pushed by digest, untagged, so no tag points at the kit before its source is attached.
+      - name: Build and push the kit
+        run: |
+          docker buildx build --platform linux/amd64,linux/arm64 --sbom=true \
+            --output "type=image,name=$REPOSITORY,push-by-digest=true,push=true" \
+            --metadata-file metadata.json \
+            -f "sandboxes/devcontainer-$KIT/$KIT.yaml" "sandboxes/devcontainer-$KIT"
+          digest=$(jq -er '."containerimage.digest"' metadata.json)
+          echo "DIGEST=$digest" >>"$GITHUB_ENV"
+
+      # A retry keeps an identical source index and fails on a different one.
+      - name: Attach the source indexes
+        run: scripts/source-indexes.sh inherit --referrers tag "$BASE" "$BASE_DIGEST" "$REPOSITORY" "$DIGEST" | tee indexes.tsv
+
+      - name: Tag the kit
+        run: |
+          tags=("build-$GITHUB_RUN_ID")
+          [[ $LATEST != true ]] || tags+=(latest)
+          oras tag "$REPOSITORY@$DIGEST" "${tags[@]}"
+
+      - name: Summary
+        run: |
+          {
+            echo "## Published $KIT-kit to GHCR"
+            echo
+            echo "- Kit: \`$REPOSITORY:build-$GITHUB_RUN_ID@$DIGEST\`"
+            echo "- Base: \`$BASE@$BASE_DIGEST\`"
+            echo
+            echo "### Source indexes"
+            echo
+            echo "| Subject | Digest | Source index | Source images |"
+            echo "| --- | --- | --- | --- |"
+            awk -F'\t' '{ print "| " $1 " | `" $2 "` | `" $3 "` | " $4 " |" }' indexes.tsv
+          } >>"$GITHUB_STEP_SUMMARY"
+
+  promote:
+    name: Promote ${{ matrix.kit }}-kit to Quay
+    needs: ghcr
+    # Only runs that tag latest go to Quay, as for the image.
+    if: ${{ !cancelled() && needs.ghcr.result == 'success' && (github.event_name != 'workflow_dispatch' || inputs.latest) }}
+    runs-on: ubuntu-26.04
+    # Quay's robot federation trusts only this environment's OIDC subject (docs/integrations/quayio.md).
+    environment: quay
+    strategy:
+      fail-fast: false
+      matrix:
+        kit: [claude, codex]
+    permissions:
+      contents: read
+      packages: read # copy from GHCR
+      id-token: write # Quay robot federation
+    defaults:
+      run:
+        shell: bash
+    env:
+      KIT: ${{ matrix.kit }}
+      QUAY_ROBOT: frithuz+promote
+      QUAY_AUDIENCE: quay
+      QUAY_REPOSITORY: quay.io/frithuz/${{ matrix.kit }}-kit
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up ORAS
+        uses: oras-project/setup-oras@005458ad77f1c8facd38a094e4af2e69e5607ff4 # v2.0.2
+        with:
+          url: ${{ env.ORAS_URL }}
+          checksum: ${{ env.ORAS_CHECKSUM }}
+
+      - name: Log in to GHCR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$GH_TOKEN" | oras login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+
+      # The ghcr job tags the kit only after its source indexes are attached.
+      - name: Resolve the kit on GHCR
+        run: |
+          repository=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/$KIT-kit
+          digest=$(oras manifest fetch --descriptor "$repository:build-$GITHUB_RUN_ID" | jq -er .digest)
+          {
+            echo "GHCR_REPOSITORY=$repository"
+            echo "DIGEST=$digest"
+          } >>"$GITHUB_ENV"
+
+      # Exchanges the job's OIDC token for a one-hour Quay token. No Quay credential is stored.
+      - name: Log in to Quay with OIDC federation
+        run: |
+          oidc=$(curl -fsS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$QUAY_AUDIENCE" | jq -er .value)
+          echo "::add-mask::$oidc"
+          token=$(curl -fsS --user "$QUAY_ROBOT:$oidc" https://quay.io/oauth2/federation/robot/token | jq -er .token)
+          echo "::add-mask::$token"
+          printf '%s' "$token" | oras login quay.io --username "$QUAY_ROBOT" --password-stdin
+
+      # Referrers carry the attestations and source indexes, and each source index its source
+      # images, so Quay gets no source-* tags.
+      - name: Copy the kit with its referrers
+        run: oras cp -r --to-distribution-spec v1.1-referrers-api "$GHCR_REPOSITORY@$DIGEST" "$QUAY_REPOSITORY@$DIGEST"
+
+      - name: Check the source indexes
+        run: scripts/source-indexes.sh check --referrers api "$QUAY_REPOSITORY" "$DIGEST" | tee indexes.tsv
+
+      - name: Tag the kit
+        run: oras tag "$QUAY_REPOSITORY@$DIGEST" "build-$GITHUB_RUN_ID" latest
+
+      - name: Summary
+        run: |
+          {
+            echo "## Promoted $KIT-kit to Quay"
+            echo
+            echo "- Kit: \`$QUAY_REPOSITORY:build-$GITHUB_RUN_ID@$DIGEST\`"
+            echo
+            echo "### Source indexes"
+            echo
+            echo "| Subject | Digest | Source index | Source images |"
+            echo "| --- | --- | --- | --- |"
+            awk -F'\t' '{ print "| " $1 " | `" $2 "` | `" $3 "` | " $4 " |" }' indexes.tsv
+          } >>"$GITHUB_STEP_SUMMARY"

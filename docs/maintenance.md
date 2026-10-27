@@ -114,14 +114,14 @@ Recovery of an interrupted publication is described in [integrations/ghcr.md](in
 ### Registry and signing
 
 - **GHCR** is a public package linked to this repository, written with `GITHUB_TOKEN`. Grant the Admin Actions role only once retention deletion exists ([integrations/ghcr.md](integrations/ghcr.md)).
-- **Quay** has one robot, `frithuz+promote`, with Write on `devcontainer` only, logging in exclusively through federation pinned to the `quay` environment, which only `main` can deploy to ([integrations/quayio.md](integrations/quayio.md)). Create the repository as public before the first promote. A push that creates the repository creates it private.
+- **Quay** has one robot, `frithuz+promote`, with Write on `devcontainer`, `claude-kit`, and `codex-kit` only, logging in exclusively through federation pinned to the `quay` environment, which only `main` can deploy to ([integrations/quayio.md](integrations/quayio.md)). Create each repository as public before its first promote. A push that creates a repository creates it private.
 - **Other credentials**, if ever needed, come from 1Password Workload Identity, never GitHub secrets ([integrations/1password.md](integrations/1password.md)).
 - **Attestations and signing:** `bake.yml` attaches an SBOM and SLSA provenance and signs keylessly with cosign on GHCR. `promote` copies the signatures to Quay with the image. The signing identity is `bake.yml` itself, so verification works the same against either registry.
 
 ### Tags and schedule
 
 - **Consumers** should pin `:YYYYMMDD@sha256:<digest>`. Date tags sort as versions, so the consumer's Dependabot proposes newer snapshots. With `:latest`, it can only bump the digest.
-- Only the image is published. Sandbox kits are consumed from git ([usage.md](usage.md#agent-sandboxes-sbx)).
+- **Kits** get `build-<run id>` and `latest`, in their own repositories ([publishing the kits](#publishing-the-kits)).
 - **Retention:** nothing expires today. Any future deletion policy must follow the [legal retention rules](legal.md#retention).
 
 ### Sandbox kits
@@ -143,7 +143,17 @@ If anything changed, it builds the kits with the kit frontend, which validates e
 - A weekly refresh reaches the kits when it publishes: when its inventory changed, or when the build inputs changed since `latest`, for example after a push whose publication failed.
 - A PR opened with `GITHUB_TOKEN` doesn't trigger other workflows, so `lint.yml` doesn't run on it. The kits build in `kits.yml` is its check.
 - Enable **Settings → Actions → General → Allow GitHub Actions to create and approve pull requests**, or `gh pr create` fails.
-- The kits aren't build inputs, so merging a kits PR starts a `publish` run that stops after the comparison. Otherwise it would publish a new image, which would open the next kits PR.
+- The kits aren't build inputs, so merging a kits PR starts a `publish` run that stops after the comparison. Otherwise it would publish a new image, which would open the next kits PR. It also starts `publish-kits`, which publishes the updated kits.
+
+### Publishing the kits
+
+`publish-kits.yml` publishes each kit to its own repository: `claude-kit` and `codex-kit`, on GHCR and then Quay. It runs on pushes to `main` that change `sandboxes/`, which includes a merged kits PR, and by hand.
+
+1. **`ghcr`**, once per kit, builds both platforms on one runner with `docker buildx build` and an SBOM, and pushes the kit by digest, untagged. It doesn't use `bake.yml`, whose finalize step rebuilds the index and drops the index annotations the kit frontend writes, the kit descriptor among them. A kit build runs nothing on the target platform, so it needs no emulation.
+2. It attaches the source indexes with `scripts/source-indexes.sh inherit` ([legal.md](legal.md#publishing)). The kit's `FROM` pins Quay's image, and the same digest is on GHCR with its source, so it reads the base from `ghcr.io/<owner>/devcontainer`. Then it tags the kit `build-<run id>`, plus `latest` on pushes and on manual runs that ask for it.
+3. **`promote`** copies each kit with its referrers to Quay, checks its source indexes, and tags it there. Only runs that tag `latest` are promoted, as for the image.
+
+The kits aren't signed yet.
 
 ## Contributor setup
 

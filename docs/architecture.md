@@ -8,7 +8,7 @@
 - `scripts/build/`: the nu scripts the Dockerfiles' `RUN` steps mount and run, through `run.nu`, which prints each one and its sha256 into the build log first.
 - `source.Dockerfile`: builds [source images](legal.md#source-images).
 - `test/`: `smoke.sh`, the smoke tests the `preflight` stage runs through `preflight.nu`, and `runtime.sh`, the DinD checks, run by `ci.yml` against a built image.
-- `.github/workflows/`: `lint.yml` (the workflow and repository linters), `ci.yml` (DinD checks and source planning on PRs), `publish.yml`, partly implemented ([maintenance.md](maintenance.md#publishing-publishyml)), and `kits.yml`, which keeps the sandbox kits pinned to the latest image ([maintenance.md](maintenance.md#sandbox-kits)).
+- `.github/workflows/`: `lint.yml` (the workflow and repository linters), `ci.yml` (DinD checks and source planning on PRs), `publish.yml`, partly implemented ([maintenance.md](maintenance.md#publishing-publishyml)), `kits.yml`, which keeps the sandbox kits pinned to the latest image ([maintenance.md](maintenance.md#sandbox-kits)), and `publish-kits.yml`, which publishes them ([maintenance.md](maintenance.md#publishing-the-kits)).
 - `sandboxes/`: Docker Sandboxes kits, one `devcontainer-<agent>` directory per agent ([usage.md](usage.md#agent-sandboxes-sbx)).
 
 ## Dockerfile structure

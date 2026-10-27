@@ -6,16 +6,24 @@
 # (docs/data-model.md#source-index). Runs on the host, including macOS's bash 3.2, with oras and jq.
 #
 #   scripts/source-indexes.sh attach [--referrers api|tag] <plan.tsv> <repository> <digest>
+#   scripts/source-indexes.sh inherit [--referrers api|tag] <base> <base digest> <repository> <digest>
 #   scripts/source-indexes.sh check [--referrers api|tag] <repository> <digest>
 #
 #   attach       build each subject's source index from plan.tsv (scripts/plan-sources.sh) and push
 #                it by digest, untagged. Every planned source image must already be in <repository>.
 #                A subject that already has the same source index keeps it. Any other source index
 #                fails, because GHCR can't replace a referrer. Then checks.
+#   inherit      for an image built FROM <base>@<base digest> that adds no copyleft component, such
+#                as a sandbox kit: give each subject the source index of the base's matching subject,
+#                the index or the same platform, after checking that the base's layers start the
+#                subject's. Copies what the base's source index lists from <base> into <repository>
+#                first, with the source images' tags. Keeps or fails on an existing source index as
+#                attach does. Then checks.
 #   check        require exactly one source index per subject, and everything it lists in
 #                <repository>.
 #   --referrers  how oras finds and records referrers: api (the Referrers API, Quay) or tag
-#                (fallback tags, GHCR). Default: oras detects it.
+#                (fallback tags, GHCR), in every repository the mode reads or writes. Default: oras
+#                detects it.
 #
 # Output: one line per subject, image index first: subject (index or linux/<arch>), its digest,
 # its source index's digest, and the number of source images listed, tab-separated.
@@ -28,6 +36,7 @@ readonly manifest_type=application/vnd.oci.image.manifest.v1+json
 
 usage() {
 	echo "usage: source-indexes.sh attach [--referrers api|tag] <plan.tsv> <repository> <digest>" >&2
+	echo "       source-indexes.sh inherit [--referrers api|tag] <base> <base digest> <repository> <digest>" >&2
 	echo "       source-indexes.sh check [--referrers api|tag] <repository> <digest>" >&2
 	exit 2
 }
@@ -40,7 +49,7 @@ note() {
 }
 
 mode=${1:-}
-[[ $mode == attach || $mode == check ]] || usage
+[[ $mode == attach || $mode == inherit || $mode == check ]] || usage
 shift
 spec=()
 if [[ ${1:-} == --referrers ]]; then
@@ -51,11 +60,15 @@ if [[ ${1:-} == --referrers ]]; then
 	esac
 	shift 2
 fi
-plan=
+plan='' base='' base_digest=''
 if [[ $mode == attach ]]; then
 	(($# > 0)) || usage
 	plan=$1
 	shift
+elif [[ $mode == inherit ]]; then
+	(($# > 2)) || usage
+	base=$1 base_digest=$2
+	shift 2
 fi
 (($# == 2)) || usage
 repository=$1 digest=$2
@@ -73,20 +86,23 @@ descriptor() {
 		'{mediaType: $mediaType, digest: $digest, size: $size}'
 }
 
-# referrers <digest>: digests of the source indexes whose subject is <digest>.
+# referrers <digest> [<repository>]: digests of the source indexes whose subject is <digest>.
 referrers() {
-	oras discover ${spec[@]+"${spec[@]}"} --artifact-type "$artifact_type" --depth 1 --format json "$repository@$1" |
+	oras discover ${spec[@]+"${spec[@]}"} --artifact-type "$artifact_type" --depth 1 --format json "${2:-$repository}@$1" |
 		jq -r '.referrers[].digest'
 }
 
-# Subjects, one per line: name (index or linux/<arch>), architecture ("-" for the index), descriptor.
-index=$(oras manifest fetch "$repository@$digest")
-[[ $(jq -r .mediaType <<<"$index") == "$index_type" ]] || fail "$repository@$digest isn't an OCI image index"
-{
-	printf 'index\t-\t%s\n' "$(oras manifest fetch --descriptor "$repository@$digest" | jq -c '{mediaType, digest, size}')"
+# subjects <repository> <digest>: one line per subject, name (index or linux/<arch>), architecture
+# ("-" for the index), descriptor.
+subjects() {
+	local index
+	index=$(oras manifest fetch "$1@$2")
+	[[ $(jq -r .mediaType <<<"$index") == "$index_type" ]] || fail "$1@$2 isn't an OCI image index"
+	printf 'index\t-\t%s\n' "$(oras manifest fetch --descriptor "$1@$2" | jq -c '{mediaType, digest, size}')"
 	jq -r '.manifests[] | select(.platform.os == "linux")
 		| ["linux/\(.platform.architecture)", .platform.architecture, ({mediaType, digest, size} | tojson)] | @tsv' <<<"$index"
-} >"$work/subjects.tsv"
+}
+subjects "$repository" "$digest" >"$work/subjects.tsv"
 (($(wc -l <"$work/subjects.tsv") > 1)) || fail "$repository@$digest has no linux platform manifests"
 
 # select_arch <arch> <file>: rows whose first column (space-separated <arch>:<component> covers)
@@ -133,7 +149,8 @@ attach() {
 	[[ -s $work/sources.tsv ]] || fail "$plan lists no source images"
 
 	printf '{}' >"$work/empty.json"
-	local config name arch subject subject_digest layer record want have
+	local config name arch subject subject_digest layer record
+	attached=false
 	config=$(descriptor "$work/empty.json" application/vnd.oci.empty.v1+json)
 	while IFS=$'\t' read -r name arch subject; do
 		subject_digest=$(jq -r .digest <<<"$subject")
@@ -167,22 +184,104 @@ attach() {
 				manifests: [$record] + [$sources | split("\n")[] | select(. != "") | split("\t")[1] | fromjson],
 				subject: $subject
 			}' >"$work/source-index.json"
-		want=$(descriptor "$work/source-index.json" "$index_type" | jq -r .digest)
-
-		have=$(referrers "$subject_digest")
-		if [[ $have == "$want" ]]; then
-			note "$name: source index $want is already attached"
-			continue
-		elif [[ -n $have ]]; then
-			fail "$name ($subject_digest) already has source index $(paste -sd' ' - <<<"$have"), not $want." \
-				"A subject can't get a second one (docs/legal.md#publishing)"
-		fi
+		attached "$name" "$subject_digest" "$work/source-index.json"
+		[[ $attached == false ]] || continue
 		oras blob push "$repository@$(jq -r .digest <<<"$config")" "$work/empty.json" >/dev/null
 		oras blob push "$repository@$(jq -r .digest <<<"$layer")" "$work/record.json" >/dev/null
 		oras manifest push "$repository@$(jq -r .digest <<<"$record")" "$work/record-manifest.json" >/dev/null
-		oras manifest push ${spec[@]+"${spec[@]}"} "$repository@$want" "$work/source-index.json" >/dev/null
-		note "$name: attached source index $want"
+		push_source_index "$name" "$work/source-index.json"
 	done <"$work/subjects.tsv"
+}
+
+# attached <name> <subject digest> <source index file>: sets attached to true when the subject
+# already has this source index, or false when it has none. Any other source index fails.
+attached() {
+	local want have
+	want=$(descriptor "$3" "$index_type" | jq -r .digest)
+	have=$(referrers "$2")
+	attached=false
+	if [[ $have == "$want" ]]; then
+		note "$1: source index $want is already attached"
+		attached=true
+	elif [[ -n $have ]]; then
+		fail "$1 ($2) already has source index $(paste -sd' ' - <<<"$have"), not $want." \
+			"A subject can't get a second one (docs/legal.md#publishing)"
+	fi
+}
+
+# push_source_index <name> <source index file>
+push_source_index() {
+	local want
+	want=$(descriptor "$2" "$index_type" | jq -r .digest)
+	oras manifest push ${spec[@]+"${spec[@]}"} "$repository@$want" "$2" >/dev/null
+	note "$1: attached source index $want"
+}
+
+# layers <repository> <digest>: a platform manifest's layer digests, one per line.
+layers() {
+	oras manifest fetch "$1@$2" | jq -r '.layers[].digest'
+}
+
+inherit() {
+	subjects "$base" "$base_digest" >"$work/base-subjects.tsv"
+	local name arch subject subject_digest base_subject base_subject_digest found source_index listed tag copied
+	attached=false
+	: >"$work/copied"
+	# Every platform is checked before anything is attached. The index has no layers of its own,
+	# so it inherits only once each of its platforms has shown it's built on the base's.
+	while IFS=$'\t' read -r name arch subject; do
+		base_subject=$(awk -F'\t' -v name="$name" '$1 == name { print $3 }' "$work/base-subjects.tsv")
+		[[ -n $base_subject ]] || fail "$base@$base_digest has no $name subject"
+		[[ $name != index ]] || continue
+		subject_digest=$(jq -r .digest <<<"$subject")
+		base_subject_digest=$(jq -r .digest <<<"$base_subject")
+		layers "$base" "$base_subject_digest" >"$work/base-layers"
+		layers "$repository" "$subject_digest" >"$work/layers"
+		head -n "$(wc -l <"$work/base-layers")" "$work/layers" | cmp -s "$work/base-layers" - ||
+			fail "$name ($subject_digest) isn't built on $base@$base_subject_digest: its layers don't start with the base's"
+	done <"$work/subjects.tsv"
+
+	while IFS=$'\t' read -r name arch subject; do
+		subject_digest=$(jq -r .digest <<<"$subject")
+		base_subject=$(awk -F'\t' -v name="$name" '$1 == name { print $3 }' "$work/base-subjects.tsv")
+		base_subject_digest=$(jq -r .digest <<<"$base_subject")
+
+		found=$(referrers "$base_subject_digest" "$base")
+		(($(grep -c . <<<"$found" || true) == 1)) ||
+			fail "$base: $name ($base_subject_digest) doesn't have exactly one source index"
+		source_index=$(oras manifest fetch "$base@$found")
+		jq -cjS --argjson subject "$subject" '.subject = $subject' <<<"$source_index" >"$work/source-index.json"
+		attached "$name" "$subject_digest" "$work/source-index.json"
+
+		# Copied even when the source index is already attached, so a rerun completes an
+		# interrupted copy. oras skips what's already there. The source record has no tag, and each
+		# source image keeps the tag the base's record gives it.
+		source_tags "$source_index" >"$work/listed.tsv"
+		while IFS=$'\t' read -r listed tag; do
+			grep -qxF "$listed" "$work/copied" && continue
+			if [[ $tag == - ]]; then
+				oras cp "$base@$listed" "$repository@$listed" >/dev/null
+			else
+				oras cp "$base@$listed" "$repository:$tag" >/dev/null
+			fi
+			echo "$listed" >>"$work/copied"
+		done <"$work/listed.tsv"
+		[[ $attached == true ]] || push_source_index "$name" "$work/source-index.json"
+	done <"$work/subjects.tsv"
+	copied=$(grep -c . "$work/copied" || true)
+	note "copied or found $copied source records and source images from $base"
+}
+
+# source_tags <source index json>: each listed manifest's digest and tag ("-" for the record, and
+# for a source image the record doesn't name), tab-separated.
+source_tags() {
+	local record_digest record_layer
+	record_digest=$(jq -r --arg t "$record_type" '.manifests[] | select(.artifactType == $t) | .digest' <<<"$1")
+	record_layer=$(oras manifest fetch "$base@$record_digest" | jq -r '.layers[0].digest')
+	oras blob fetch --output "$work/base-record.json" "$base@$record_layer"
+	jq -r --slurpfile record "$work/base-record.json" '
+		($record[0].sources | map({key: .digest, value: .tag}) | from_entries) as $tags
+		| .manifests[] | [.digest, ($tags[.digest] // "-")] | @tsv' <<<"$1"
 }
 
 check() {
@@ -211,5 +310,7 @@ check() {
 
 if [[ $mode == attach ]]; then
 	attach
+elif [[ $mode == inherit ]]; then
+	inherit
 fi
 check

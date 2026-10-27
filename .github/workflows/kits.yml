@@ -71,11 +71,12 @@ jobs:
 
       # The kit frontend validates each descriptor and runs the conformance checks while it
       # builds. A PR opened with GITHUB_TOKEN doesn't trigger workflows, so this is the PR's check.
+      # Both platforms, as publish-kits.yml builds them.
       - name: Build the kits
         if: steps.update.outputs.changed == 'true'
         run: |
           for kit in claude codex; do
-            docker buildx build --platform linux/amd64 --output type=cacheonly \
+            docker buildx build --platform linux/amd64,linux/arm64 --output type=cacheonly \
               -f "sandboxes/devcontainer-$kit/$kit.yaml" "sandboxes/devcontainer-$kit"
           done
 

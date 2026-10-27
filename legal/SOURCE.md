@@ -24,7 +24,8 @@ docker cp source:/source ./source && docker rm source
 ```
 
 The commands work against either registry the image is published to, `quay.io/frithuz/devcontainer`
-or its GHCR mirror. Each source image's `/source/SOURCE.json` records where its source came from and
+or its GHCR mirror, and against the sandbox kits built on it, `quay.io/frithuz/claude-kit` and
+`quay.io/frithuz/codex-kit`, which carry the same source. Each source image's `/source/SOURCE.json` records where its source came from and
 how it was verified.
 
 An image built locally from this repository has no attached source index; the provenance in

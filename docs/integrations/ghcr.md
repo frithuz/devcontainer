@@ -1,6 +1,6 @@
 # GHCR (mirror)
 
-`ghcr.io/<owner>/devcontainer` is the **public build destination and mirror** of the image. `bake.yml` pushes there first, and `promote` copies that digest to Quay. After synchronization, both registries carry the same images, tags, signatures, and source. There's no private staging package. For now only runs that tag `latest` (pushes to `main`, and manual runs that ask for it) are promoted, so GHCR also carries the scheduled and other manual builds that Quay doesn't.
+`ghcr.io/<owner>/devcontainer` is the **public build destination and mirror** of the image. `bake.yml` pushes there first, and `promote` copies that digest to Quay. After synchronization, both registries carry the same images, tags, signatures, and source. The sandbox kits follow the same path through their own packages, `ghcr.io/<owner>/claude-kit` and `ghcr.io/<owner>/codex-kit` ([maintenance.md](../maintenance.md#publishing-the-kits)). There's no private staging package. For now only runs that tag `latest` (pushes to `main`, and manual runs that ask for it) are promoted, so GHCR also carries the scheduled and other manual builds that Quay doesn't.
 
 The mirror exists for two reasons:
 
@@ -15,6 +15,8 @@ The mirror exists for two reasons:
 - **Descriptions come from the index.** For a multi-platform image, GHCR shows the image index's `org.opencontainers.image.description` annotation, not the config label. `publish.yml` sets the image's through `bake.yml`'s `meta-annotations`, and `scripts/plan-sources.sh` sets each source image's.
 
 ## Setup (once)
+
+Do this for each package: `devcontainer`, `claude-kit`, and `codex-kit`.
 
 1. **The first push creates the package**, under the repository owner and linked to this repository. If it's created private, change it to **Public** in **Package settings** (a one-way change).
 2. **Grant the repository Write** in **Package settings → Manage Actions access**. Retention deletion, once implemented, needs **Admin**. Add no other repositories.

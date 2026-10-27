@@ -99,14 +99,16 @@ The image meets the [Docker Sandboxes custom image requirements](https://docs.do
 
 V3 needs `sbx` v0.45 or later, and v3 workloads only take v3 mixins. `sbx` names a kit's agent after its directory and rejects a built-in agent's name, so the directories are `devcontainer-<agent>`, not `<agent>`. A publish run keeps the pins current through a PR ([maintenance.md](maintenance.md#sandbox-kits)).
 
-**Kits aren't published.** `sbx` builds them from this repository at a pinned commit, so a given commit always builds the same sandbox. Remote kit sources default to Docker Hub only, so allow this repository once:
+**Each kit is published to its own repository**, `quay.io/frithuz/claude-kit` and `quay.io/frithuz/codex-kit`, mirrored to `ghcr.io/<owner>/claude-kit` and `ghcr.io/<owner>/codex-kit` ([maintenance.md](maintenance.md#publishing-the-kits)). Pin one by digest. `sbx` names a published kit's agent after its repository. Remote kit sources default to Docker Hub only, so allow the repositories once:
 
 ```sh
-sbx settings set kit.allowedSources '["docker.io/","github.com/frithuz/devcontainer"]'
-sbx run 'git+https://github.com/frithuz/devcontainer.git#ref=<COMMIT>&dir=sandboxes/devcontainer-claude' <workspace>
+sbx settings set kit.allowedSources '["docker.io/","quay.io/frithuz/claude-kit","quay.io/frithuz/codex-kit"]'
+sbx run 'quay.io/frithuz/claude-kit:latest@sha256:<digest>' <workspace>
 ```
 
-`kit.allowedSources` replaces the whole list, so keep any sources you already allow. When working on a kit, run it from a local checkout: `sbx run ./sandboxes/devcontainer-claude <workspace>`. To build one without `sbx`, use the kit frontend directly: `docker buildx build -f sandboxes/devcontainer-claude/claude.yaml sandboxes/devcontainer-claude`.
+`kit.allowedSources` replaces the whole list, so keep any sources you already allow. A published kit carries its image's layers, so it carries the image's copyleft source the same way ([legal.md](legal.md#publishing)).
+
+`sbx` can also build a kit from this repository at any commit, including ones that were never published. Allow `github.com/frithuz/devcontainer`, then run `sbx run 'git+https://github.com/frithuz/devcontainer.git#ref=<COMMIT>&dir=sandboxes/devcontainer-claude' <workspace>`. When working on a kit, run it from a local checkout: `sbx run ./sandboxes/devcontainer-claude <workspace>`. To build one without `sbx`, use the kit frontend directly: `docker buildx build -f sandboxes/devcontainer-claude/claude.yaml sandboxes/devcontainer-claude`.
 
 - Pass `--kit-arg model=<id>` or `--kit-arg reasoningEffort=<level>` to set the agent's defaults. Both are empty by default, which keeps the CLI's own default.
 - No credentials are in the image. The sandbox's credential proxy injects them at runtime, as an API key or OAuth, whichever the host has bound.
