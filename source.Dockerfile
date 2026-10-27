@@ -17,7 +17,9 @@ FROM --platform=$BUILDPLATFORM golang:1.27-trixie@sha256:fbb7ae40b62ff8afe31662d
 FROM --platform=$BUILDPLATFORM ubuntu:26.04@sha256:c098726dd9b9733f3e885f8de0ef375206a311b0a317eadc40d347b1115fb944 AS ubuntu
 FROM --platform=$BUILDPLATFORM ghcr.io/jqlang/jq:1.8.2@sha256:b9c68867e5766576263a222e91db3de422d802069c7af70440e667a95344e486 AS jq
 FROM --platform=$BUILDPLATFORM ghcr.io/oras-project/oras:v1.3.6@sha256:9cfb578be975b762fd898b9d004243d8003aeb807a3e15b2ed212cdd1326c9eb AS oras
-FROM --platform=$BUILDPLATFORM ghcr.io/nushell/nushell:0.116.1-bookworm@sha256:3de167aad209014bffbc3ed90fc433199b1a835c88a91befe8aa9d9b7db2d428 AS nushell
+# An explicit exception to digest pinning: nushell deletes its old images from GHCR when it
+# tags a new one, so a pinned digest stops resolving. The version tag can move under us.
+FROM --platform=$BUILDPLATFORM ghcr.io/nushell/nushell:0.116.1-bookworm AS nushell
 
 FROM go AS tools
 COPY --link --from=jq /jq /usr/local/bin/jq

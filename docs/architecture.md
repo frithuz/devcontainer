@@ -15,7 +15,7 @@
 
 The Dockerfile has four kinds of stages. The comments in the file cover the details of each step.
 
-**Source stages** declare each upstream image once, as a plain `image:tag@sha256:digest`. Dependabot's `docker` ecosystem can parse only that form, so build args never appear in a reference. Digests must be **multi-arch index digests**. A per-platform digest would make an arm64 build pull an amd64 binary.
+**Source stages** declare each upstream image once, as a plain `image:tag@sha256:digest`. Dependabot's `docker` ecosystem can parse only that form, so build args never appear in a reference. Digests must be **multi-arch index digests**. A per-platform digest would make an arm64 build pull an amd64 binary. The one exception is nushell, which is pinned by version tag only: it deletes its old images from GHCR when it tags a new one, so a digest pin stops resolving. Its legal provenance records that tag instead of a digest.
 
 **Builder stages** hold anything fetched or built by script that doesn't belong in a user's home: `gh`, `jv`, `task`, `dnslookup`, and the apt signing keys. That keeps `gnupg` and other fetch tooling out of the final image. Most start from `builder`, the `go` stage with nu added, because every `RUN` script is written in nu (AGENTS.md). The `config` stage validates `scripts/*.yaml` against their schemas and converts them to JSON. The scripts read only that output, so a malformed data file fails the build before anything uses it.
 

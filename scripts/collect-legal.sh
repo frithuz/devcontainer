@@ -133,11 +133,12 @@ fetch() {
 	done
 }
 
-# Pinned stage references, read from the Dockerfile so digests live in one place.
+# Upstream stage references, read from the Dockerfile so digests live in one place. A tag
+# marks an upstream image, not a stage name; nushell's is the one without a digest.
 declare -A stage_ref
 while read -r ref name; do
 	stage_ref[$name]=$ref
-done < <(awk 'toupper($1) == "FROM" && $2 ~ /@sha256:/ && toupper($3) == "AS" { print $2, $4 }' "$dockerfile")
+done < <(awk 'toupper($1) == "FROM" && $2 ~ /:/ && toupper($3) == "AS" { print $2, $4 }' "$dockerfile")
 base_ref=$(awk 'toupper($1) == "FROM" && $2 ~ /^ubuntu:/ { print $2; exit }' "$dockerfile")
 # Files the base image ships outside any package are listed under the "base" stage.
 stage_ref[base]=$base_ref
@@ -213,7 +214,7 @@ while IFS=$'\t' read -r -u 3 comp stage install license version_cmd notice_globs
 		distribution=-
 	else
 		ref=${stage_ref[$stage]:-}
-		[[ -n $ref ]] || error "$comp: no pinned stage '$stage' in the Dockerfile"
+		[[ -n $ref ]] || error "$comp: no upstream stage '$stage' in the Dockerfile"
 		provenance="image:$ref"
 		distribution=${ref%%@*}
 	fi

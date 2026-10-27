@@ -15,7 +15,9 @@ FROM golangci/golangci-lint:v2.15.0@sha256:fbfcfd12a6f8d7f1b97b3362ca80fc2a244d4
 FROM ghcr.io/pnpm/pnpm:12.15.0@sha256:d6148daf3ad2af8fa4ecd1aa06db73da32b2e37f63088987eea2fb375ee7f320 AS pnpm
 FROM orhunp/git-cliff:2.14.2@sha256:1e696a381a1b0366bb6ccbb6bd4e50e73473fda88eab3a757b95e0d0d66c9531 AS git-cliff
 FROM ghcr.io/betterleaks/betterleaks:v1.9.0@sha256:e3b95b0db6c2735db17165c009b0ad6d9cef34fb4578659232b98f69d7346cac AS betterleaks
-FROM ghcr.io/nushell/nushell:0.116.1-bookworm@sha256:3de167aad209014bffbc3ed90fc433199b1a835c88a91befe8aa9d9b7db2d428 AS nushell
+# An explicit exception to digest pinning: nushell deletes its old images from GHCR when it
+# tags a new one, so a pinned digest stops resolving. The version tag can move under us.
+FROM ghcr.io/nushell/nushell:0.116.1-bookworm AS nushell
 
 # Builder stages run their scripts in nu (AGENTS.md), so they start from go with nu added.
 FROM go AS builder
