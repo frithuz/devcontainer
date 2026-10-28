@@ -10,7 +10,7 @@ apt-get install -y --no-install-recommends \
 	bash ca-certificates curl less locales neovim openssh-client passwd sudo-rs \
 	media-types netbase tzdata \
 	bat fd-find file fzf lsd ripgrep tmux unzip xz-utils zip \
-	lsof netcat-openbsd openssl procps toybox trippy \
+	lsof netcat-openbsd openssl procps socat toybox trippy \
 	bubblewrap \
 	libatomic1 \
 	libcurl4t64 libpcre2-8-0 \

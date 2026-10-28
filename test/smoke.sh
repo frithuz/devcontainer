@@ -150,6 +150,7 @@ lookup() {
 		'ifconfig lo'
 		'lsof -v'
 		'nc -h'
+		'socat -V'
 		'openssl version'
 		'trip --version'
 		'sudo --version'
