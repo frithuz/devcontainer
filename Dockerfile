@@ -206,18 +206,20 @@ ENV pnpm_config_prefer_frozen_lockfile=true
 ENV pnpm_config_verify_store_integrity=true
 ENV pnpm_config_update_notifier=false
 
-# 3. /legal: the notices copied in step 1, then the generated manifest.tsv (see docs/legal.md).
-# Its own step, because REVISION changes on every commit.
+# 3. /legal: the notices copied in step 1, then the generated manifest.tsv and source.tsv (see
+# docs/legal.md). Its own step, because REVISION changes on every commit.
 ARG REVISION
+ARG REPOSITORY_URL
 RUN --mount=type=bind,target=/mnt/legal-src --mount=type=bind,from=gh,source=/opt/gh,target=/mnt/gh-legal \
     --mount=type=bind,from=config,target=/mnt/config \
     --mount=type=cache,id=legal-go-mod,target=/var/cache/legal-go-mod,sharing=locked \
+    --mount=type=cache,id=legal-apt-lists,target=/var/cache/legal-apt-lists,sharing=locked \
     --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/run.sh \
     --mount=type=bind,source=scripts/build/legal.sh,target=/mnt/src/scripts/build/legal.sh \
     bash /mnt/src/scripts/build/run.sh /mnt/src/scripts/build/legal.sh
 
 LABEL org.opencontainers.image.title="devcontainer" \
-      org.opencontainers.image.description="Debian 13 (Docker Hardened Images) image with one pinned toolset for devcontainers, GitHub Actions CI, and agent sandboxes. Copyleft source is attached as OCI referrers; see /legal/SOURCE.md." \
+      org.opencontainers.image.description="Debian 13 (Docker Hardened Images) image with one pinned toolset for devcontainers, GitHub Actions CI, and agent sandboxes. Copyleft source locations are listed in /legal/source.tsv; see /legal/SOURCE.md." \
       org.opencontainers.image.licenses="CC0-1.0" \
       org.opencontainers.image.vendor="frithuz" \
       devcontainer.metadata='[{"remoteUser":"agent"}]'
@@ -227,8 +229,8 @@ WORKDIR /home/agent/workspace
 CMD ["/bin/bash"]
 
 # Preflight: never published. Runs the smoke tests (test/smoke.sh) and exports their report and
-# exit status, plus the image's manifest.tsv, from which scripts/plan-sources.sh derives the
-# source images. A failing test doesn't fail the build: ci.yml fails on the exported status, and
+# exit status, plus the image's manifest.tsv, which publish.yml compares with the published
+# image's. A failing test doesn't fail the build: ci.yml fails on the exported status, and
 # publish.yml only needs the manifest. Only the files the tests read are mounted, so other changes
 # keep the result cached.
 FROM image AS preflight-run

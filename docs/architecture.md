@@ -4,11 +4,10 @@
 
 - `Dockerfile`, `docker-bake.hcl`: the image and its Bake targets, shared by CI and local builds.
 - `rootfs/`: files copied into the image as-is (the `BASH_ENV` script and `start-dockerd`).
-- `legal/`, `scripts/`: the committed `/legal` documents, the scripts that collect notices and plan source images, and their schema-validated YAML data.
-- `scripts/build/`: the bash scripts the Dockerfiles' `RUN` steps mount and run, through `run.sh`, which prints each one and its sha256 into the build log first.
-- `source.Dockerfile`: builds [source images](legal.md#source-images).
+- `legal/`, `scripts/`: the committed `/legal` documents, the scripts that collect notices and source locations, and their schema-validated YAML data.
+- `scripts/build/`: the bash scripts the Dockerfile's `RUN` steps mount and run, through `run.sh`, which prints each one and its sha256 into the build log first.
 - `test/`: `smoke.sh`, the smoke tests the `preflight` stage runs through `preflight.sh`, and `runtime.sh`, the DinD checks, run by `ci.yml` against a built image.
-- `.github/workflows/`: `lint.yml` (the workflow and repository linters), `ci.yml` (DinD checks and source planning on PRs), `publish.yml`, partly implemented ([maintenance.md](maintenance.md#publishing-publishyml)), `kits.yml`, which keeps the sandbox kits pinned to the latest image ([maintenance.md](maintenance.md#sandbox-kits)), and `publish-kits.yml`, which publishes them ([maintenance.md](maintenance.md#publishing-the-kits)).
+- `.github/workflows/`: `lint.yml` (the workflow and repository linters), `ci.yml` (the image checks on PRs), `publish.yml`, partly implemented ([maintenance.md](maintenance.md#publishing-publishyml)), `kits.yml`, which keeps the sandbox kits pinned to the latest image ([maintenance.md](maintenance.md#sandbox-kits)), and `publish-kits.yml`, which publishes them ([maintenance.md](maintenance.md#publishing-the-kits)).
 - `sandboxes/`: Docker Sandboxes kits, one `devcontainer-<agent>` directory per agent ([usage.md](usage.md#agent-sandboxes-sbx)).
 
 ## Dockerfile structure
@@ -35,7 +34,7 @@ The trade-off is cache reuse. Bumping any copied tool, or changing any file `fil
 
 apt is used only for what can't be copied: base OS packages and Docker Engine. Packages come from Docker's hardened rebuilds (`dhi.io`, `+dhi` versions) where Docker has one, and otherwise from Debian's archive. Every apt source is HTTPS: the base ships plain-HTTP Debian and DHI sources, which `apt-bootstrap.sh` rewrites, and its own CA certificates. The apt lists live in a cache mount, so they never reach a layer.
 
-**The `preflight` stage** builds on `image` for PR CI and local checks, and is never published. It runs the smoke tests and exports their report, and each platform's `/legal/manifest.tsv`, which source planning starts from. Publishing builds `image` once and tests that exact digest. It never relies on preflight or cache reuse for the image's identity ([maintenance.md](maintenance.md#workflow)). A refresh builds preflight first, only to decide whether the inventory changed ([maintenance.md](maintenance.md#material-changes)).
+**The `preflight` stage** builds on `image` for PR CI and local checks, and is never published. It runs the smoke tests and exports their report, and each platform's `/legal/manifest.tsv`. Publishing builds `image` once and tests that exact digest. It never relies on preflight or cache reuse for the image's identity ([maintenance.md](maintenance.md#workflow)). A refresh builds preflight first, only to decide whether the inventory changed ([maintenance.md](maintenance.md#material-changes)).
 
 ## Binary compatibility
 

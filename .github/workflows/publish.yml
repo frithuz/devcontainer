@@ -1,11 +1,11 @@
-# Builds the image once and publishes it with its source images (docs/maintenance.md#publishing).
+# Builds the image once and publishes it (docs/maintenance.md#publishing).
 #
 # A run builds only when the image would materially change from Quay's latest: its build inputs
 # changed, or a refresh changed its inventory (docs/maintenance.md#material-changes). Otherwise
 # nothing is pushed. A build pushes to GHCR under the recovery tag build-<run id>. Pushes to main,
 # scheduled refreshes, and manual runs that ask for it also tag :latest and are promoted to Quay.
 # Not yet implemented: automatic public tags (:main, :YYYYMMDD) and verify
-# (docs/legal.md#publishing). After a promotion that tags latest, kits.yml opens a PR that points
+# (docs/maintenance.md#publishing). After a promotion that tags latest, kits.yml opens a PR that points
 # the sandbox kits at the image.
 name: publish
 run-name: >-
@@ -271,7 +271,7 @@ jobs:
       # labels, and the rest the same as docker-bake.hcl's.
       set-meta-annotations: true
       meta-annotations: |
-        org.opencontainers.image.description=Debian 13 (Docker Hardened Images) image with one pinned toolset for devcontainers, GitHub Actions CI, and agent sandboxes. Copyleft source is attached as OCI referrers; see /legal/SOURCE.md.
+        org.opencontainers.image.description=Debian 13 (Docker Hardened Images) image with one pinned toolset for devcontainers, GitHub Actions CI, and agent sandboxes. Copyleft source locations are listed in /legal/source.tsv; see /legal/SOURCE.md.
         org.opencontainers.image.vendor=frithuz
         org.opencontainers.image.documentation=${{ github.server_url }}/${{ github.repository }}/blob/${{ github.sha }}/docs/usage.md
         org.opencontainers.image.base.name=${{ needs.base.outputs.name }}
@@ -286,109 +286,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-  sources:
-    name: Publish source images
-    needs: build
-    if: ${{ !cancelled() && needs.build.result == 'success' }}
-    runs-on: ubuntu-26.04
-    permissions:
-      contents: read
-      packages: write # push the source images and source indexes to GHCR
-    defaults:
-      run:
-        shell: bash
-    env:
-      DIGEST: ${{ needs.build.outputs.digest }}
-    steps:
-      - name: Check out the repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          # build-sources.sh keys source images on the last commit that changed the recipe.
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Set up Buildx
-        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-
-      - name: Set up ORAS
-        uses: oras-project/setup-oras@005458ad77f1c8facd38a094e4af2e69e5607ff4 # v2.0.2
-        with:
-          url: ${{ env.ORAS_URL }}
-          checksum: ${{ env.ORAS_CHECKSUM }}
-
-      - name: Log in to GHCR
-        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      # The apt source images' fetch stage starts from the base. DOCKERHUB_TOKEN is a repository
-      # secret, shared with the bake.yml jobs, which can't use an environment.
-      - name: Log in to dhi.io
-        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
-        with:
-          registry: dhi.io
-          username: garbee
-          password: ${{ secrets.DOCKERHUB_TOKEN }} # zizmor: ignore[secrets-outside-env]
-
-      - name: Set the repository
-        run: echo "REPOSITORY=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/devcontainer" >>"$GITHUB_ENV"
-
-      # Each platform's manifest comes from the pushed digest, never from a rebuild.
-      - name: Copy the manifests out of the image
-        run: |
-          scripts/copy-manifests.sh "$REPOSITORY@$DIGEST" out/manifests
-          find out/manifests -name manifest.tsv
-
-      # Source images already in the repository with the same key are reused, not rebuilt. The
-      # plan lists the repository's tags anonymously, so the package must be public.
-      # REVISION and REPOSITORY_URL give each newly built source image its documentation permalink.
-      - name: Build and push the source images
-        env:
-          MANIFESTS: out/manifests
-          SOURCE_PUSH: "true"
-          REVISION: ${{ github.sha }}
-          REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}
-        run: SOURCE_REPOSITORY=$REPOSITORY SOURCE_REUSE=$REPOSITORY scripts/build-sources.sh -- --progress=plain
-
-      # One source index per subject, the image index and each platform manifest, so promote's
-      # copy of the image carries its source to Quay (docs/legal.md#publishing). GHCR has no
-      # Referrers API, so they're recorded in fallback tags. A retry keeps an identical source
-      # index and fails on a different one.
-      - name: Attach the source indexes
-        run: scripts/source-indexes.sh attach --referrers tag out/sources/plan.tsv "$REPOSITORY" "$DIGEST" | tee out/sources/indexes.tsv
-
-      - name: Summary
-        run: |
-          {
-            echo "## Published to GHCR"
-            echo
-            echo "- Image: \`$REPOSITORY:build-$GITHUB_RUN_ID@$DIGEST\`"
-            echo
-            echo "### Source images"
-            echo
-            echo "| Status | Tag | Root | Version |"
-            echo "| --- | --- | --- | --- |"
-            awk -F'\t' 'NR > 1 {
-              gsub(/\|/, "\\|")
-              print "| " $1 " | " ($2 == "-" ? "-" : "`" $2 "`") " | " $5 " | " $6 " |"
-            }' out/sources/plan.tsv
-            echo
-            echo "### Source indexes"
-            echo
-            echo "| Subject | Digest | Source index | Source images |"
-            echo "| --- | --- | --- | --- |"
-            awk -F'\t' '{ print "| " $1 " | `" $2 "` | `" $3 "` | " $4 " |" }' out/sources/indexes.tsv
-          } >>"$GITHUB_STEP_SUMMARY"
-
   promote:
     name: Promote to Quay
-    needs: [build, sources]
+    needs: build
     # Only runs that tag latest go to Quay. Every other run stays on GHCR. Keep this in step with
     # the build's latest tag.
     if: >-
-      !cancelled() && needs.sources.result == 'success'
+      !cancelled() && needs.build.result == 'success'
       && (github.event_name != 'workflow_dispatch' || inputs.latest)
     runs-on: ubuntu-26.04
     # Quay's robot federation trusts only this environment's OIDC subject, and only main can
@@ -438,16 +342,11 @@ jobs:
           echo "::add-mask::$token"
           printf '%s' "$token" | oras login quay.io --username "$QUAY_ROBOT" --password-stdin
 
-      # Copied by digest, untagged. Referrers carry the signatures, attestations, and source
-      # indexes, and each source index carries its source images, so Quay gets no source-* tags.
-      # Quay has the Referrers API, so requiring it makes a Quay-side problem fail instead of
-      # creating fallback tags.
+      # Copied by digest, untagged. Referrers carry the signatures and attestations. Quay has the
+      # Referrers API, so requiring it makes a Quay-side problem fail instead of creating fallback
+      # tags.
       - name: Copy the image with its referrers
         run: oras cp -r --to-distribution-spec v1.1-referrers-api "$GHCR_REPOSITORY@$DIGEST" "$QUAY_REPOSITORY@$DIGEST"
-
-      # No tag in Quay points at the image before its source is there (docs/legal.md#publishing).
-      - name: Check the source indexes
-        run: scripts/source-indexes.sh check --referrers api "$QUAY_REPOSITORY" "$DIGEST" | tee indexes.tsv
 
       # latest is reported only once Quay has it, and the kits job runs only then. If latest is
       # gated again, gate it here, in TAGS.
@@ -470,12 +369,6 @@ jobs:
             echo "## Promoted to Quay"
             echo
             echo "- Image: \`$QUAY_REPOSITORY:build-$GITHUB_RUN_ID@$DIGEST\`"
-            echo
-            echo "### Source indexes"
-            echo
-            echo "| Subject | Digest | Source index | Source images |"
-            echo "| --- | --- | --- | --- |"
-            awk -F'\t' '{ print "| " $1 " | `" $2 "` | `" $3 "` | " $4 " |" }' indexes.tsv
           } >>"$GITHUB_STEP_SUMMARY"
 
   # Hands the image to kits.yml, which opens or updates the kits PR. Only after Quay has tagged

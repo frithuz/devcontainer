@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=schemas/license-elections.schema.json
+#
+# Dual-licensed components distributed under their permissive option. They owe no source, so
+# scripts/collect-source.sh lists none for them (docs/legal.md#copyleft-components). components
+# are manifest.tsv components, as shell globs.
+elections:
+  - name: node-zstd
+    components: [node:zstd]
+    license: BSD-3-Clause
+
+  - name: spdx-tools-golang
+    components: [go-module:github.com/spdx/tools-golang]
+    license: Apache-2.0

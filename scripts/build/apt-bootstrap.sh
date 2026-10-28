@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Makes every apt source HTTPS: the base image's Debian and DHI sources use plain HTTP. It ships
-# ca-certificates, so the update trusts the installed store. Shared by the Dockerfile's image
-# stage and source.Dockerfile's fetch-apt.
+# ca-certificates, so the update trusts the installed store. Shared by the Dockerfile's git and
+# image stages.
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 

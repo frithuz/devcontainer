@@ -1,6 +1,5 @@
 *
 !Dockerfile
-!source.Dockerfile
 !LICENSE
 !legal/
 !rootfs/

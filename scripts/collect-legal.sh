@@ -222,7 +222,7 @@ while IFS=$'\t' read -r -u 3 comp stage install license version_cmd notice_globs
 		# Compiled in its own stage, which records the archive it built in its SOURCE file.
 		awk -v s="$stage" 'toupper($1) == "FROM" && toupper($3) == "AS" && $4 == s { found = 1 } END { exit !found }' "$dockerfile" ||
 			error "$comp: no stage '$stage' in the Dockerfile"
-		# The build script that compiled it goes into its source image too.
+		# The build script that compiled it is part of its source too.
 		read -r src_url src_sha build_script build_sha < <(awk '$1 == "source:" { u = $2 } $1 == "sha256:" { h = $2 }
 			$1 == "build-script:" { s = $2; d = $3 } END { print u, h, s, d }' "$attribution/$comp/SOURCE" 2>/dev/null) || true
 		[[ -n ${src_url:-} && -n ${src_sha:-} ]] || error "$comp: $attribution/$comp/SOURCE records no source archive"
@@ -365,8 +365,8 @@ x_version_flag='-X[= ]"?[^ "=]+/[^/ "=]+\.[Vv]ersion='
 x_flag_module='s/^-X[= ]"?//; s#/[^/]+\.[Vv]ersion=$##'
 x_flag_value='s/.*=//; s/\\*$//'
 while IFS=$'\t' read -r bin kind path ver; do
-	# The commit a main module was built from, for scripts/plan-sources.sh to check its tag
-	# against: vcs.revision, or a -X <pkg>.GitCommit=/Revision= linker flag (may be abbreviated).
+	# The commit a main module was built from, recorded with it: vcs.revision, or a
+	# -X <pkg>.GitCommit=/Revision= linker flag (may be abbreviated).
 	if [[ $kind == mod ]]; then
 		rev=$(go version -m "$bin" | awk -F'\t' '$2 == "build" && $3 ~ /^vcs\.revision=/ { sub(/^vcs\.revision=/, "", $3); print $3; exit }') || true
 		if [[ -z $rev ]]; then
@@ -468,11 +468,11 @@ for key in "${go_wanted[@]}"; do
 		install -D -m 0644 "$file" "$dest/${file#"$base"/}"
 	done
 	# A binary upstream built carries upstream's obligation to publish its copyleft modules'
-	# source; one built here carries ours, and no source root covers a go-install component
-	# (docs/legal.md#copyleft-components).
+	# source; one built here carries ours, and scripts/collect-source.sh lists no source for a
+	# go-install component (docs/legal.md#copyleft-components).
 	for bin in ${mod_bins[$key]//,/ }; do
 		if [[ -n ${compiled_bins[$bin]:-} ]] && grep -qE 'Mozilla Public License|GNU (Lesser |Library |Affero )?General Public License' "${files[@]}"; then
-			error "$key, compiled into ${compiled_bins[$bin]} by go install, is under a copyleft license: install upstream's binary instead, or add a root to scripts/source-roots.yaml"
+			error "$key, compiled into ${compiled_bins[$bin]} by go install, is under a copyleft license: install upstream's binary instead"
 		fi
 	done
 	# Reviewed additions, beside the upstream files, at the top where Syft reads them.

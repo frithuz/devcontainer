@@ -4,5 +4,6 @@
 set -euo pipefail
 
 bash /mnt/legal-src/scripts/collect-legal.sh /mnt/legal-src/Dockerfile /mnt/config /mnt/gh-legal
+bash /mnt/legal-src/scripts/collect-source.sh /mnt/config
 # The version checks run node as root, which leaves a compile cache behind.
 rm -rf /tmp/node-compile-cache

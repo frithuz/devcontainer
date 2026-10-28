@@ -1,5 +1,5 @@
 # Keeps the pinned FROM references current (docs/maintenance.md#dependabot). Only the root
-# directory is scanned, which covers Dockerfile and source.Dockerfile. The sandbox kits pin this
+# directory is scanned, which covers the Dockerfile. The sandbox kits pin this
 # image and are updated by kits.yml instead.
 version: 2
 # The base, dhi.io/debian-base, needs a login to read. DOCKERHUB_TOKEN is a Dependabot secret.

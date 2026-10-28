@@ -145,9 +145,9 @@ if [[ -e $exec_path/git-http-push ]]; then
 fi
 
 # The notices, and what scripts/collect-legal.sh records as the source: the tarball this build
-# compiled, and this script, which controls the build, so git's source image carries it too
-# (scripts/plan-sources.sh checks it against this digest). zlib-ng and the Rust standard library
-# are compiled in too: zlib-ng is recorded as embedded (its archive is part of git's source), and
+# compiled, and this script, which controls the build, so /legal/source.tsv links to it at the
+# build's commit (scripts/collect-source.sh). zlib-ng and the Rust standard library are compiled
+# in too: zlib-ng is recorded as embedded (its archive is part of git's source), and
 # the Rust notices and the license texts they reference come from the toolchain that built it.
 readonly legal=/out/legal/attribution/git
 mkdir -p "$legal/rust" "$legal/zlib-ng"

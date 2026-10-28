@@ -9,26 +9,26 @@ This project's own code, configuration, and documentation are dedicated to the p
 - **Reuse:** anyone can copy, modify, and redistribute the project's work, commercially too, without attribution or publishing changes ([CC0 FAQ](https://wiki.creativecommons.org/wiki/CC0_FAQ#Does_CC0_require_others_who_use_my_work_to_give_me_attribution.3F)).
 - **Permanence and limits:** the waiver is irrevocable for work already released, falls back to an unconditional license where a waiver isn't effective, and grants no patent or trademark license ([CC0 §§2–4](https://creativecommons.org/publicdomain/zero/1.0/legalcode.en)).
 - **Software:** Creative Commons permits CC0 for software and calls it GPL-compatible ([FAQ](https://wiki.creativecommons.org/wiki/CC0_FAQ#May_I_apply_CC0_to_computer_software.3F_If_so.2C_is_there_a_recommended_implementation.3F)). The missing patent grant can still matter to downstream adopters.
-- **Redistributed components:** CC0 for this project waives nothing on behalf of third parties. The image still owes upstream notices, GPL/LGPL/MPL source delivery, and compliance with proprietary terms. Everything below exists for that reason.
+- **Redistributed components:** CC0 for this project waives nothing on behalf of third parties. The image still owes upstream notices, GPL/LGPL/MPL source, and compliance with proprietary terms. Everything below exists for that reason.
 - **Contributions:** accepted under CC0-1.0. Contributors must have the authority to dedicate them, and imported material keeps its upstream terms.
 
 ### Packaging and metadata
 
 The image copies `LICENSE` to `/legal/LICENSE` and records the project's own installed files under `CC0-1.0`, separately from third-party components. That copy is this project's packaging convention, not a condition CC0 imposes on anyone.
 
-The image label `org.opencontainers.image.licenses="CC0-1.0"` describes **only the project's own contribution**. The OCI spec is ambiguous about whether this field means the project or everything inside the image ([image-spec#1257](https://github.com/opencontainers/image-spec/issues/1257#issuecomment-2799959581)). We follow the established project-license convention, as [Docker's metadata action](https://github.com/docker/metadata-action/blob/master/src/meta.ts) does. Don't turn the label into a hand-maintained aggregate of dependency licenses. Source images are different: their `licenses` annotation, where it's set, is generated from the licenses of the components they cover ([data model](data-model.md#source-image)). `/legal/README.md` and the registry descriptions state the scope: **Project files: CC0-1.0. Bundled third-party software: respective upstream licenses and terms; see /legal.**
+The image label `org.opencontainers.image.licenses="CC0-1.0"` describes **only the project's own contribution**. The OCI spec is ambiguous about whether this field means the project or everything inside the image ([image-spec#1257](https://github.com/opencontainers/image-spec/issues/1257#issuecomment-2799959581)). We follow the established project-license convention, as [Docker's metadata action](https://github.com/docker/metadata-action/blob/master/src/meta.ts) does. Don't turn the label into a hand-maintained aggregate of dependency licenses. `/legal/README.md` and the registry descriptions state the scope: **Project files: CC0-1.0. Bundled third-party software: respective upstream licenses and terms; see /legal.**
 
 ## Image notices
 
 Everything lives under `/legal` (layout in [`legal/README.md`](../legal/README.md)), generated at build by `scripts/collect-legal.sh`. `/legal/manifest.tsv` covers **every** redistributed component: the Debian base, apt packages, copied binaries, compiled components, release tarballs, installer downloads, and bundled dependencies, each with its license, notices, and exact source provenance. A version string alone can't establish which patches or dependencies went into a binary, so provenance is recorded as digests and checksums, not versions.
 
-apt packages keep their notices at `/usr/share/doc/<pkg>/copyright`, and the manifest references them in place. Never delete them to trim the image. Notices aren't source: apt packages with copyleft licenses also get source images.
+apt packages keep their notices at `/usr/share/doc/<pkg>/copyright`, and the manifest references them in place. Never delete them to trim the image. Notices aren't source: apt packages with copyleft licenses also get their source listed in `/legal/source.tsv`.
 
 ## How files get there
 
 From most to least preferred:
 
-1. **From the source image**, when the pinned upstream image ships the license. It matches the copied binary exactly.
+1. **From the upstream image**, when the pinned upstream image ships the license. It matches the copied binary exactly.
 2. **From the install artifact**, such as the `gh` release tarball, or the source a component was compiled from: git's `COPYING` and `LGPL-2.1` and zlib-ng's `LICENSE.md` come from the archives the `git` stage built, and the Rust standard library's notices from the toolchain that compiled it.
 3. **Fetched from upstream at the installed version's tag**, when neither of the above ships it. Most copied tools ship only a binary, and Docker's `.deb`s ship no `copyright` file. Each fetched file's URL and SHA-256 are recorded in its `SOURCE` file. Nothing under `/legal/attribution` is committed, so notices can't drift from the binary, and a relicense shows up as a changed checksum.
 
@@ -53,77 +53,40 @@ To inspect the attestation locally, export an OCI layout: `docker buildx bake im
 
 The image conveys GPL (v2 and v3), LGPL, and MPL-2.0 components: git (GPLv2, compiled here), MPL-2.0 Go modules in several tools and in Docker's binaries, and most of the Debian base and its packages, including Bash and coreutils. Being unmodified or installed with apt doesn't remove the redistribution obligations ([GNU FAQ](https://www.gnu.org/licenses/gpl-faq.en.html#UnchangedJustBinary)).
 
-**Policy: publish the complete source of every GPL and LGPL component in the same registry repository as the image, before the image's tags are published.** One mechanism satisfies every license that requires it:
+**Policy: record, at build time, where the complete source of every GPL and LGPL component was published, and ship that list in the image as `/legal/source.tsv`.** Each file is listed by URL and digest, so a copy from anywhere else can be checked against it. The URLs point at upstream's servers, not ours ([`legal/SOURCE.md`](../legal/SOURCE.md)).
 
-- **GPLv2 and LGPL-2.x** accept equivalent access to the source "from the same place" as the binary. There's no provision for a third-party server, so the source has to live with the image.
-- **GPLv3 and LGPLv3** (§6(d)) accept Corresponding Source offered through the same place, with clear directions next to the object code. That's `/legal/SOURCE.md`.
-- **MPL-2.0** is file-level: it owes only the covered files' source. Every MPL-2.0 module in the image is compiled into a binary upstream built: betterleaks, yq, and Task's release binaries, and Docker's packages. Redistributing those unchanged typically owes nothing more, as long as upstream complied ([MPL FAQ Q7](https://www.mozilla.org/en-US/MPL/2.0/FAQ/)), so they get no source images. `manifest.tsv` still records each module's exact version and Go proxy archive. A binary compiled here would owe its MPL modules' source from us (Q8), so `collect-legal.sh` fails the build on a copyleft module in a `go install` component, and a Go tool with one is downloaded as upstream's release instead ([tooling.md](tooling.md#install-methods)).
+- **GPLv3 and LGPLv3** (§6(d)) accept Corresponding Source on a third-party server, with clear directions next to the object code, as long as the distributor makes sure it stays available for as long as the object code is offered.
+- **GPLv2 and LGPL-2.x** accept equivalent access "from the same place" as the binary, and have no provision for a third-party server. A list of upstream's URLs is weaker than that, and that's a deliberate trade-off ([open questions](#open-questions)).
+- **MPL-2.0** is file-level: it owes only the covered files' source. Every MPL-2.0 module in the image is compiled into a binary upstream built: betterleaks, yq, and Task's release binaries, and Docker's packages. Redistributing those unchanged typically owes nothing more, as long as upstream complied ([MPL FAQ Q7](https://www.mozilla.org/en-US/MPL/2.0/FAQ/)), so `source.tsv` doesn't list them. `manifest.tsv` still records each module's exact version and Go proxy archive. A binary compiled here would owe its MPL modules' source from us (Q8), so `collect-legal.sh` fails the build on a copyleft module in a `go install` component, and a Go tool with one is downloaded as upstream's release instead ([tooling.md](tooling.md#install-methods)).
 
-Publishing the source avoids written offers and their three-year commitments. Source stays available as long as its image does.
+**What's owed:** a GPL or LGPL binary owes its *whole* Corresponding Source, including permissive libraries compiled into it. An MPL module owes only itself. A dual license with a permissive option owes nothing once that option is elected, and elections are recorded in `scripts/license-elections.yaml`.
 
-**What's owed:** a GPL or LGPL binary owes its *whole* Corresponding Source, including permissive modules compiled into it. An MPL module owes only itself. A dual license with a permissive option owes nothing once that option is elected, and elections are recorded in `scripts/source-roots.yaml`.
+### `source.tsv`
 
-### Source images
+`scripts/collect-source.sh` writes it in the `/legal` step, after `collect-legal.sh`, from that platform's `manifest.tsv`. Columns: source, version, URL, digest (`<algorithm>:<hex>`), and the `manifest.tsv` components the file covers. A copyleft component whose source can't be found fails the build.
 
-Source is published as one **source image per root program per exact version**. A root program is the unit whose source is complete once it's fetched. A source image is a reproducible `FROM scratch` OCI image holding `/source/<root>/` and its provenance record ([data model](data-model.md#source-image)), so anyone can pull it with standard tools.
+- **apt packages:** every package whose license is copyleft, or `NOASSERTION` (a copyright file that isn't machine-readable, which can't rule it out), gets its source package at the exact source version installed: the `.dsc` and every archive it lists. apt resolves them from the `deb-src` repositories in `scripts/source-apt.yaml`, with a private configuration that leaves the image's own apt sources and lists alone, and checks the indexes against the repositories' signing keys. The digests are the strongest hash the signed index lists, SHA-512 for both repositories. The lists persist in a build cache mount, so a build fetches only what changed. Docker's apt repository publishes no source packages, and none of its packages is copyleft.
+- **Compiled components** (`install: source-build`: git): the archive it was compiled from, the archives of the libraries compiled into it, and the build script, as a permalink at the build's commit when the build passes `REVISION` and `REPOSITORY_URL` (CI does), or its repository path otherwise.
+- **Everything else** that's copyleft must be covered by an election, or the build fails.
 
-- **Reused across releases.** It's keyed by its identity (kind, root, exact reference, recipe revision), never by the image that uses it. An unchanged component is never collected or uploaded twice.
-- **Immutable.** An absent `source-*` tag is pushed. An existing tag with the expected digest is reused, and anything else fails without overwriting.
-- **Recipe changes rebuild everything.** The key includes `scripts/build-source-image.sh`'s digest and last commit, so changing the script changes every key. So does bumping `annotations_version` in `scripts/plan-sources.sh`, which is how changed annotations (such as each source image's description) reach the images already published. The fetch environment isn't in the key. If it ever changed the output, the immutability check would catch it as a conflict.
+The repositories the source comes from:
 
-Roots come from each platform's `manifest.tsv`. apt packages need no configuration: `scripts/source-apt.yaml` maps their repositories to source repositories. Only non-apt roots, gaps, and elections are listed in `scripts/source-roots.yaml`. Every copyleft component has to be covered by one of these, or planning fails. Go modules' licenses aren't in the manifest, so a Go program that owes source is listed by hand. None does today. Quirks:
-
-- **Docker's apt repository publishes no source packages**, so a copyleft package from it fails planning. Its packages aren't copyleft themselves, and the MPL-2.0 modules in their binaries are upstream's to publish.
-- **Go roots** (`kind: git`) are fetched from upstream git at the exact commit their binaries record and vendored, and every module the binaries report has to appear in `vendor/modules.txt` at the same version.
-- **apt packages come from three repositories**: Docker's hardened rebuilds (`dhi.io`, which publishes `deb-src` for its `+dhi` versions), Debian's archive, and Debian's security archive. Only `trixie` is mapped for the archive: `trixie-updates` publishes only `Sources.xz`, which the planner can't read, and today holds only `tzdata`, which comes from `dhi.io`. `trixie-security` has the same limitation, and no installed package comes from it today. A package from either fails planning rather than going uncovered.
-- **git** is a `bundle` too ([compiled components](#compiled-components)).
-- **Gaps** are reported on every run but don't fail it, so they stay visible until they're resolved. There are none today.
+- **`dhi.io`**, Docker's hardened rebuilds (`+dhi` versions), for most of the base. Its index keeps some earlier versions, but there's no published retention policy, so an old version's URL can stop working.
+- **Debian's archive** (`trixie` and `trixie-updates`) and **security archive** (`trixie-security`). A version leaves the archive when it's superseded, but [snapshot.debian.org](https://snapshot.debian.org) keeps every version Debian has published.
 
 ### Compiled components
 
 A component compiled in the Dockerfile (`install: source-build`: git) records the source it was compiled from and the script that controlled the build, which a copyleft one owes. Its stage records both in `/legal/attribution/<name>/SOURCE`, and `collect-legal.sh` copies them into its manifest row:
 
 - **The archive**, by URL and SHA-256: git's signed release tarball.
-- **The build script**, by repository path and SHA-256 (`build-script:`): `scripts/build/git.sh`. Planning checks the checkout's copy against that digest and fails if it differs, so source is always planned from the image's own commit. The script goes into the source image under `build/`, and its digest is part of the key: the source image changes only when the script or a version does, not on every commit.
-- **Libraries compiled in** (`embedded:`), each with a row of its own marked `embedded-in:<component>`: zlib-ng, under the Zlib license. A permissive license owes no source by itself, but a library compiled into a GPL binary is part of that binary's Corresponding Source, so the planner adds the archive of every library embedded in a covered copyleft component.
+- **The build script**, by repository path and SHA-256 (`build-script:`): `scripts/build/git.sh`.
+- **Libraries compiled in** (`embedded:`), each with a row of its own marked `embedded-in:<component>`: zlib-ng, under the Zlib license. A permissive license owes no source by itself, but a library compiled into a GPL binary is part of that binary's Corresponding Source, so `source.tsv` lists the archive of every library embedded in a copyleft component.
 
-git's source image holds the git tarball, zlib-ng's archive, `git.sh`, and git's `COPYING` and `LGPL-2.1` from the release's tag. The Rust standard library is also compiled into git. It's Apache-2.0 OR MIT, so it owes no source, and its notices ship in `/legal/attribution/git/rust/`.
+The Rust standard library is also compiled into git. It's Apache-2.0 OR MIT, so it owes no source, and its notices ship in `/legal/attribution/git/rust/`.
 
-### Building source images
+### Sandbox kits
 
-`source.Dockerfile` and the Bake targets build source images the same way locally and in CI, with only Docker on the host. `scripts/build-sources.sh` drives it locally and runs under macOS's bash 3.2. The steps:
-
-1. **Manifests**, exported by `preflight` or copied from a built image (`--from-image`).
-2. **Plan** (`source-plan`) resolves every root's exact inputs and key. It's never cached, because upstream state can change without any build input changing. With `SOURCE_REUSE=<repository>`, already-published tags with the same key are skipped.
-3. **Build** the generated `sources` group, written as OCI layouts locally or pushed with `SOURCE_PUSH=true`.
-
-### Publishing
-
-Both registries distribute the image, so **both carry the same source images and source indexes**. The order guarantees that no public tag points at an image before its complete source is in the same repository:
-
-1. `build` pushes the image to GHCR under its recovery tag only.
-2. `sources` builds the missing source images, then attaches **one source index per subject** (`scripts/source-indexes.sh`): the image index and each platform manifest. A source index is an OCI referrer listing, by digest, the source images that subject needs.
-3. GHCR is tagged. `promote` copies the image with its referrers to Quay by digest, which carries the source along, then confirms and tags. Only GHCR has `source-*` tags. Quay reaches its source images through the source indexes.
-
-The untagged image is reachable by digest as soon as it's pushed, like any manifest, but consumers find images through tags.
-
-**Sandbox kits** are published to their own repositories ([maintenance.md](maintenance.md#publishing-the-kits)). A kit is the image it pins plus a few layers of its own: its descriptor, the git-ssh-sign key command with its Apache-2.0 license in `/legal/attribution/git-ssh-sign/`, and its agent from Docker's mixin, with the notices and `manifest.tsv` rows its `legal.sh` adds. The Claude kit adds Claude Code (Anthropic's terms, [below](#claude-code)). The Codex kit adds Codex (Apache-2.0) and the ripgrep it bundles (Unlicense OR MIT), and leaves out the package's LGPL parts: the voice libraries entirely, and its vendored bubblewrap, replaced by a copy of the image's own `bwrap` from Debian's `bubblewrap` package, whose source the image's source images already carry. None of the kits' own layers is copyleft, so a kit owes the same source as its image. Each kit is pushed to GHCR untagged. `scripts/source-indexes.sh inherit` then checks that each platform manifest's layers start with the base image's for that platform. It copies the base's source images into the kit's repository with their `source-*` tags, and gives each kit subject the source index of the base's matching subject. Only then is the kit tagged, and `promote` carries it to Quay the same way. A kit change that adds a copyleft component would need its own source plan, so `inherit` isn't enough for it.
-
-**Why one source index per subject:** Quay implements the OCI Referrers API natively. GHCR doesn't, so referrers live in a fallback index under the tag `sha256-<digest>`. Adding a second referrer rewrites that index, the client then tries to delete the old one, and GHCR rejects registry `DELETE`s with 405. So each subject gets exactly one source index, attached once, and a retry validates the existing index instead of attaching again. On Quay, `oras` runs with `--distribution-spec v1.1-referrers-api`, so a Quay-side problem fails loudly instead of silently creating fallback tags.
-
-### Finding the source
-
-[`legal/SOURCE.md`](../legal/SOURCE.md), shipped as `/legal/SOURCE.md`, gives the directions next to the object code. The same text goes in both registries' repository descriptions. The image can't know its own digest, so the directions start from the digest the user pulled. `oras` ships in the image so they work from inside it.
-
-### Retention
-
-Nothing expires today. Images, source images, source indexes, and publication history are kept in both registries indefinitely. Any future cleanup must keep source **at least as long as every retained image that references it, in each registry**:
-
-- Source images are shared by many releases. Delete one only when no retained image's source index lists it.
-- Source indexes on Quay are untagged and linked only by `subject`, and Quay's source images are untagged, reached only through the source indexes that list them. On GHCR source indexes are reached through `sha256-*` fallback tags, so keep those tags as long as their subject.
-- Platform manifests can be shared between releases. Compute reachability from all retained publications before deleting anything, and never cascade-delete a release's children.
-
-Test failures never trigger deletion.
+A kit is the image it pins plus a few layers of its own: its descriptor, the git-ssh-sign key command with its Apache-2.0 license in `/legal/attribution/git-ssh-sign/`, and its agent from Docker's mixin, with the notices and `manifest.tsv` rows its `legal.sh` adds. The Claude kit adds Claude Code (Anthropic's terms, [below](#claude-code)). The Codex kit adds Codex (Apache-2.0) and the ripgrep it bundles (Unlicense OR MIT), and leaves out the package's LGPL parts: the voice libraries entirely, and its vendored bubblewrap, replaced by a copy of the image's own `bwrap` from Debian's `bubblewrap` package, which the image's `source.tsv` already lists. None of the kits' own layers is copyleft, so a kit owes the same source as its image and carries its `source.tsv` unchanged. A kit change that adds a copyleft component would need its `legal.sh` to list that component's source too.
 
 ## Transitive dependencies
 
@@ -136,16 +99,17 @@ The image doesn't carry Claude Code. The Claude kit adds it, unmodified, from Do
 ## Enforcement
 
 - Missing inventory entries, notices, or fetched license files fail the build. `/legal/LICENSE` must match the root `LICENSE`.
-- Every GPL and LGPL component maps to a source image in the same repository, on both architectures, before public tags are applied. Source collection errors fail the `sources` job. Runtime test results are independent.
+- Every copyleft component's source is listed in `/legal/source.tsv`, on both architectures, or the build fails. Runtime test results are independent.
 - Adding a component means adding its attribution in the same PR.
 
 ## Open questions
 
-1. **Distribution compliance review.** Before the first public release, confirm that source images in the image's own repository, linked by a source index, count as "the same place" under GPLv2/LGPL-2.x and as §6(d) directions under GPLv3, and that upstream's published source covers the MPL-2.0 modules in the binaries it built. Also confirm coverage for the actual license versions and the recorded elections, complete transitive notices, and the Claude Code terms for this distribution. The project's CC0 dedication resolves none of these.
+1. **Distribution compliance review.** Before the first public release, confirm whether a list of upstream's source URLs is acceptable for the GPLv2 and LGPL-2.x components, which provide for neither a third-party server nor this list, or whether they need source published with the image or a written offer; that `source.tsv` counts as §6(d) directions under GPLv3; and that upstream's published source covers the MPL-2.0 modules in the binaries it built. Also confirm coverage for the actual license versions and the recorded elections, complete transitive notices, and the Claude Code terms for this distribution. The project's CC0 dedication resolves none of these.
 2. **Copyleft source gaps:**
-   - **Unknown licenses:** the Rust crates in uv and in the kits' Codex, and whatever Claude Code bundles may add copyleft roots.
+   - **Unknown licenses:** the Rust crates in uv and in the kits' Codex, and whatever Claude Code bundles may add copyleft components.
+   - **Availability:** `source.tsv`'s URLs depend on upstream keeping old versions, which `dhi.io` doesn't promise ([`source.tsv`](#sourcetsv)).
 3. **License gaps** reported by `collect-legal.sh`, which doesn't fail on them yet:
    - Six npm modules bundled with pnpm ship only a `license` field, no license text.
    - jq's `COPYING` doesn't cover its bundled oniguruma.
-   - Sixteen apt packages have copyright files that aren't machine-readable, so they're recorded as `NOASSERTION`. Most mention GPL or LGPL; zip and unzip (Info-ZIP) don't. Source planning treats `NOASSERTION` as copyleft, so their source is published regardless.
+   - Sixteen apt packages have copyright files that aren't machine-readable, so they're recorded as `NOASSERTION`. Most mention GPL or LGPL; zip and unzip (Info-ZIP) don't. `collect-source.sh` treats `NOASSERTION` as copyleft, so their source is listed regardless.
    - Transitive notices aren't collected yet for Rust binaries (uv, git-cliff, ripgrep, Codex).

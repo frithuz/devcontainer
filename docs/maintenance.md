@@ -1,10 +1,10 @@
 # Maintenance
 
-> Planned: Dependabot covers only the `docker` ecosystem so far. `publish.yml` so far only builds, pushes to GHCR under the recovery tag `build-<run id>` (also `latest` on pushes to `main`, and optionally on manual runs), publishes the source images and attaches the source indexes, and, only on runs that tag `latest`, promotes the image with its source to Quay under the same tags: automatic public tags and `verify` are still to come. This page describes the intended design.
+> Planned: Dependabot covers only the `docker` ecosystem so far. `publish.yml` so far only builds, pushes to GHCR under the recovery tag `build-<run id>` (also `latest` on pushes to `main`, and optionally on manual runs), and, only on runs that tag `latest`, promotes the image to Quay under the same tags: automatic public tags and `verify` are still to come. This page describes the intended design.
 
 ## Dependabot
 
-Dependabot runs weekly on two ecosystems: `docker`, for every pinned `FROM` in `Dockerfile` and `source.Dockerfile`, and `github-actions`, for actions pinned by commit SHA. Both wait out a 3-day cooldown after a release before proposing it. The kits' reference to this image is left to `kits.yml` ([sandbox kits](#sandbox-kits)), because a bump must rewrite each kit's `provides` with it.
+Dependabot runs weekly on two ecosystems: `docker`, for every pinned `FROM` in `Dockerfile`, and `github-actions`, for actions pinned by commit SHA. Both wait out a 3-day cooldown after a release before proposing it. The kits' reference to this image is left to `kits.yml` ([sandbox kits](#sandbox-kits)), because a bump must rewrite each kit's `provides` with it.
 
 - Lint tools are grouped into one PR. Go, Node, and Python stay **ungrouped**, so each language bump gets its own reviewable PR.
 - Go, Python, and Rust minor lines, Node majors, and a new Debian release for the base count as major updates. They get separate PRs and need a human merge. Patch and digest-only updates can auto-merge once CI passes. Pre-release tags are ignored.
@@ -32,12 +32,11 @@ Both workflows build through [`docker/github-builder`](https://github.com/docker
 - **Workflows:** [actionlint](https://github.com/rhysd/actionlint) and [zizmor](https://docs.zizmor.sh/), zizmor at the `auditor` persona. They stay on the runner: zizmor's action mounts the workspace into a container by its runner path, which a job container doesn't have.
 - **Repository:** shfmt over every shell script it recognizes (including the bats tests), and betterleaks over the git history. It runs inside the published image, as a consumer would ([usage.md](usage.md#github-actions)). actionlint's `.github/actionlint.yaml` lists runner labels newer than its built-in list, and ignores its errors on background steps in `lint.yml` until it supports them. For zizmor, every write permission needs a comment saying why it's there and every job needs a `name`. `.github/zizmor.yml` lowers its minimum Dependabot cooldown to the 3 days configured.
 
-- **image:** builds the image natively on each architecture and loads it into the runner's daemon. It then builds the `preflight` target, which runs the [smoke tests](#preflight-checks-testsmokesh) inside the build and reuses the image's layers from the same builder. The job fails on the exported status and lists the failures in its summary. Last, it runs `test/runtime.sh` in a privileged container with no host socket and its own volumes for the daemon's data ([architecture.md](architecture.md#docker)). The script refuses to run if another daemon is reachable, then checks that the daemon answering is the container's, and builds and runs an image and a compose service without pulling anything. The build reads publish's cache for its platform and writes none. It also uploads each platform's `/legal/manifest.tsv`, before the checks, so sources-plan runs even when they fail. The DinD checks run even when the smoke tests fail.
-- **sources-plan:** runs `scripts/build-sources.sh --plan-only` on both platforms' manifests, so a copyleft component whose exact source can't be resolved fails the PR instead of the publish. Source images already in GHCR with the same key show as reused in the summary.
+- **image:** builds the image natively on each architecture and loads it into the runner's daemon. It then builds the `preflight` target, which runs the [smoke tests](#preflight-checks-testsmokesh) inside the build and reuses the image's layers from the same builder. The job fails on the exported status and lists the failures in its summary. Last, it runs `test/runtime.sh` in a privileged container with no host socket and its own volumes for the daemon's data ([architecture.md](architecture.md#docker)). The script refuses to run if another daemon is reachable, then checks that the daemon answering is the container's, and builds and runs an image and a compose service without pulling anything. The build reads publish's cache for its platform and writes none. A copyleft component whose source can't be found fails the build itself ([legal.md](legal.md#copyleft-components)), so it fails the PR instead of the publish. The DinD checks run even when the smoke tests fail.
 
 The GitHub Actions `container:` check needs an image in a registry, so it runs in `publish.yml` against the pushed digest.
 
-**Fork PRs skip image and sources-plan.** The image job pulls the base from `dhi.io` with `DOCKERHUB_TOKEN`, which GitHub doesn't give a fork's PR. A maintainer runs them by pushing the PR's commits to a branch in this repository. Dependabot's PRs run them, with Dependabot's copy of the token.
+**Fork PRs skip the image checks.** The image job pulls the base from `dhi.io` with `DOCKERHUB_TOKEN`, which GitHub doesn't give a fork's PR. A maintainer runs them by pushing the PR's commits to a branch in this repository. Dependabot's PRs run them, with Dependabot's copy of the token.
 
 ### Preflight checks (`test/smoke.sh`)
 
@@ -62,7 +61,7 @@ docker run --rm --network none \
 
 ## Publishing (`publish.yml`)
 
-A run publishes only a [material change](#material-changes) from Quay's `latest`. Every push to `main` starts a run, and one that doesn't touch the build's inputs, such as docs or kits alone, stops after the comparison. Pushes and scheduled refreshes that publish tag `latest`. For a manual run, select **Run workflow** and enable **Also tag the built image as latest, and promote it to Quay** (`latest`, off by default), and **force** to publish without a material change. A run that tags `latest` pushes both `build-<run id>` and `latest` to the same image digest, and `promote` copies the image to Quay with both tags. Manual runs without `latest` stay on GHCR. On GHCR the `latest` tag is applied during the build, before source publication, so it can move even if the later source job fails. On Quay it's applied only after the source indexes and their source images are copied and checked. The `refresh` input remains independent.
+A run publishes only a [material change](#material-changes) from Quay's `latest`. Every push to `main` starts a run, and one that doesn't touch the build's inputs, such as docs or kits alone, stops after the comparison. Pushes and scheduled refreshes that publish tag `latest`. For a manual run, select **Run workflow** and enable **Also tag the built image as latest, and promote it to Quay** (`latest`, off by default), and **force** to publish without a material change. A run that tags `latest` pushes both `build-<run id>` and `latest` to the same image digest, and `promote` copies the image to Quay with both tags. Manual runs without `latest` stay on GHCR. On GHCR the `latest` tag is applied during the build. On Quay it's applied only after the image is copied. The `refresh` input remains independent.
 
 The image goes to two public registries with the same tags, digests, signatures, and source:
 
@@ -86,15 +85,13 @@ There are no versioned releases:
 ```mermaid
 flowchart LR
   build[Build once, push to GHCR untagged] --> verify[Test exact digest and report]
-  build --> sources[Publish source images and attach source indexes]
-  sources --> taggh[Tag on GHCR]
-  sources --> promote[Copy image, referrers, and source to Quay, then tag]
+  build --> taggh[Tag on GHCR]
+  build --> promote[Copy image and referrers to Quay, then tag]
 ```
 
 The rules behind that shape:
 
 - **Build once.** Every later job pulls the recorded digest. None of them rebuilds or selects an image by a mutable tag.
-- **Source before tags.** Copyleft obligations require the source in the same repository as the image, so no public tag is applied in a registry until that registry has the image's source ([legal.md](legal.md#publishing)).
 - **Tests report, they don't gate.** A failing test is reported and opens an issue, but it doesn't block promotion or remove an image. Synchronization failures are separate. They're retried against the recorded digest, and an incomplete sync is a publication failure even when tests pass.
 - **Date tags are never overwritten.** Before building, check the date tag in both registries. If it exists, resume the existing publication instead of building again. Wherever a date tag is applied, an existing tag with the same digest is success, and a different digest is a conflict. Registry lookup errors fail the check rather than counting as an absent tag.
 - **Quay's one-hour window.** Quay protects an untagged, digest-only push with a hidden temporary tag for one hour. `promote` has to copy, confirm, and tag within that hour, so it only copies, checks, and tags. That hour also matches the federated Quay token's lifetime.
@@ -103,7 +100,7 @@ The rules behind that shape:
 
 Rebuilding the same commit doesn't reproduce the same digest. A refresh reruns every `RUN` step, and timestamps, logs, and caches change most layers even when nothing installed changed. Run 40313178179, a refresh of the commit run 40265483889 built, changed 38 of 42 arm64 layers, with an identical config and an identical inventory. So `publish.yml` compares what the image is made of instead, against Quay's `latest`, before anything is pushed:
 
-1. **Build inputs.** The `changes` job diffs this commit against the one `latest` was built from (its index's `org.opencontainers.image.revision`), over the files that reach the image or its source images: everything `.dockerignore` admits to the build context, `.dockerignore` itself, `docker-bake.hcl`, and `publish.yml`, which sets the image's annotations. That covers the Dockerfile's logic, `rootfs/`, the scripts, and the base image pin. The scripts that only compare or copy manifests, or point the kits at an image, are left out, and so is `test/`: the tests never reach the image.
+1. **Build inputs.** The `changes` job diffs this commit against the one `latest` was built from (its index's `org.opencontainers.image.revision`), over the files that reach the image: everything `.dockerignore` admits to the build context, `.dockerignore` itself, `docker-bake.hcl`, and `publish.yml`, which sets the image's annotations. That covers the Dockerfile's logic, `rootfs/`, the scripts, and the base image pin. The scripts that only compare or copy manifests, or point the kits at an image, are left out, and so is `test/`: the tests never reach the image.
 2. **Inventory.** Unchanged inputs can still produce a different image when a refresh installs newer apt packages or agents. On a refresh, `preflight` builds the `preflight` target, which pushes nothing and exports each platform's `/legal/manifest.tsv`. `inventory` compares it with `latest`'s, ignoring the project row's revision. Every installed apt package is a row with its version and `.deb` SHA512, and the agents' rows carry their binary checksums.
 
 | Inputs | Run | Result |
@@ -112,7 +109,7 @@ Rebuilding the same commit doesn't reproduce the same digest. A refresh reruns e
 | Unchanged | Refresh | Build and publish only if the inventory changed |
 | Unchanged | Any other | Nothing is built or pushed |
 
-`scripts/image-changes.sh` does both comparisons and prints what differs, and each job's summary shows the decision. When the inventory changed, `build` reuses `preflight`'s cache: both use the `image` cache scope and the same vars, so the refreshed layers aren't rebuilt. It still builds and pushes `image` itself, so the published image never takes its identity from preflight. The list of build inputs exists only there, derived from `.dockerignore`, so admitting a new path to the build context also makes it an input. `scripts/copy-manifests.sh` copies each platform's `/legal/manifest.tsv` out of a registry image, for the comparison, for source planning, and for `update-kits.sh`.
+`scripts/image-changes.sh` does both comparisons and prints what differs, and each job's summary shows the decision. When the inventory changed, `build` reuses `preflight`'s cache: both use the `image` cache scope and the same vars, so the refreshed layers aren't rebuilt. It still builds and pushes `image` itself, so the published image never takes its identity from preflight. The list of build inputs exists only there, derived from `.dockerignore`, so admitting a new path to the build context also makes it an input. `scripts/copy-manifests.sh` copies each platform's `/legal/manifest.tsv` out of a registry image, for the comparison and for `update-kits.sh`.
 
 Recovery of an interrupted publication is described in [integrations/ghcr.md](integrations/ghcr.md#synchronization-and-recovery) and the [data model draft](data-model.md).
 
@@ -128,7 +125,7 @@ Recovery of an interrupted publication is described in [integrations/ghcr.md](in
 
 - **Consumers** should pin `:YYYYMMDD@sha256:<digest>`. Date tags sort as versions, so the consumer's Dependabot proposes newer snapshots. With `:latest`, it can only bump the digest.
 - **Kits** get `build-<run id>` and `latest`, in their own repositories ([publishing the kits](#publishing-the-kits)).
-- **Retention:** nothing expires today. Any future deletion policy must follow the [legal retention rules](legal.md#retention).
+- **Retention:** nothing expires today.
 
 ### Sandbox kits
 
@@ -152,8 +149,8 @@ If anything changed, it builds the kits with the kit frontend, which validates e
 `publish-kits.yml` publishes each kit to its own repository: `claude-kit` and `codex-kit`, on GHCR and then Quay. It runs on pushes to `main` that change `sandboxes/`, which includes a merged kits PR, and by hand.
 
 1. **`ghcr`**, once per kit, builds both platforms on one runner with `docker buildx build` and an SBOM, and pushes the kit by digest, untagged. It doesn't use `bake.yml`, whose finalize step rebuilds the index and drops the index annotations the kit frontend writes, the kit descriptor among them. A kit build runs nothing on the target platform, so it needs no emulation.
-2. It attaches the source indexes with `scripts/source-indexes.sh inherit` ([legal.md](legal.md#publishing)). The kit's `FROM` pins Quay's image, and the same digest is on GHCR with its source, so it reads the base from `ghcr.io/<owner>/devcontainer`. Then it tags the kit `build-<run id>`, plus `latest` on pushes and on manual runs that ask for it.
-3. **`promote`** copies each kit with its referrers to Quay, checks its source indexes, and tags it there. Only runs that tag `latest` are promoted, as for the image.
+2. It tags the kit `build-<run id>`, plus `latest` on pushes and on manual runs that ask for it. The kit carries its image's `/legal/source.tsv` ([legal.md](legal.md#sandbox-kits)).
+3. **`promote`** copies each kit with its referrers to Quay and tags it there. Only runs that tag `latest` are promoted, as for the image.
 
 The kits aren't signed yet.
 

@@ -1,9 +1,7 @@
 # Publishes the sandbox kits as OCI images, each to its own repository: claude-kit and codex-kit, on
 # GHCR first, then promoted to Quay (docs/maintenance.md#publishing-the-kits). A kit carries every
-# layer of the image it pins, so it carries that image's copyleft components too, and adds none of
-# its own: its agent comes from Docker's mixin without copyleft parts. Each subject gets the source
-# index of the base's matching subject, with the source images it lists, before any tag points at
-# it (docs/legal.md#publishing).
+# layer of the image it pins, with its /legal/source.tsv, and adds no copyleft components of its
+# own: its agent comes from Docker's mixin without copyleft parts (docs/legal.md#sandbox-kits).
 name: publish-kits
 run-name: >-
   ${{ github.event_name == 'push'
@@ -46,7 +44,7 @@ jobs:
         kit: [claude, codex]
     permissions:
       contents: read
-      packages: write # push the kit, its source images, and its source indexes
+      packages: write # push the kit
     defaults:
       run:
         shell: bash
@@ -75,25 +73,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # The kit pins Quay's image (ARG IMAGE). The same digest is on GHCR, with its source, because
-      # promote copies it from there.
-      - name: Read the kit's base
-        run: |
-          dockerfile=sandboxes/devcontainer-$KIT/$KIT.dockerfile
-          ref=$(sed -n 's/^ARG IMAGE=//p' "$dockerfile")
-          if [[ ! $ref =~ ^quay\.io/frithuz/devcontainer:[^@/]+@(sha256:[0-9a-f]{64})$ ]]; then
-            echo "::error file=$dockerfile::ARG IMAGE isn't a quay.io/frithuz/devcontainer:<tag>@sha256:<digest> pin: ${ref:-none}"
-            exit 1
-          fi
-          owner=${GITHUB_REPOSITORY_OWNER,,}
-          {
-            echo "BASE=ghcr.io/$owner/devcontainer"
-            echo "BASE_DIGEST=${BASH_REMATCH[1]}"
-            echo "REPOSITORY=ghcr.io/$owner/$KIT-kit"
-          } >>"$GITHUB_ENV"
+      - name: Set the repository
+        run: echo "REPOSITORY=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/$KIT-kit" >>"$GITHUB_ENV"
 
-      # Pushed by digest, untagged, so no tag points at the kit before its source is attached. The
-      # labels are the kit's commit, which the dockerfile leaves empty.
+      # Pushed by digest, then tagged. The labels are the kit's commit, which the dockerfile leaves
+      # empty.
       - name: Build and push the kit
         env:
           REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}
@@ -107,10 +91,6 @@ jobs:
           digest=$(jq -er '."containerimage.digest"' metadata.json)
           echo "DIGEST=$digest" >>"$GITHUB_ENV"
 
-      # A retry keeps an identical source index and fails on a different one.
-      - name: Attach the source indexes
-        run: scripts/source-indexes.sh inherit --referrers tag "$BASE" "$BASE_DIGEST" "$REPOSITORY" "$DIGEST" | tee indexes.tsv
-
       - name: Tag the kit
         run: |
           tags=("build-$GITHUB_RUN_ID")
@@ -123,13 +103,6 @@ jobs:
             echo "## Published $KIT-kit to GHCR"
             echo
             echo "- Kit: \`$REPOSITORY:build-$GITHUB_RUN_ID@$DIGEST\`"
-            echo "- Base: \`$BASE@$BASE_DIGEST\`"
-            echo
-            echo "### Source indexes"
-            echo
-            echo "| Subject | Digest | Source index | Source images |"
-            echo "| --- | --- | --- | --- |"
-            awk -F'\t' '{ print "| " $1 " | `" $2 "` | `" $3 "` | " $4 " |" }' indexes.tsv
           } >>"$GITHUB_STEP_SUMMARY"
 
   promote:
@@ -173,7 +146,6 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: printf '%s' "$GH_TOKEN" | oras login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
 
-      # The ghcr job tags the kit only after its source indexes are attached.
       - name: Resolve the kit on GHCR
         run: |
           repository=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/$KIT-kit
@@ -192,13 +164,9 @@ jobs:
           echo "::add-mask::$token"
           printf '%s' "$token" | oras login quay.io --username "$QUAY_ROBOT" --password-stdin
 
-      # Referrers carry the attestations and source indexes, and each source index its source
-      # images, so Quay gets no source-* tags.
+      # Referrers carry the attestations.
       - name: Copy the kit with its referrers
         run: oras cp -r --to-distribution-spec v1.1-referrers-api "$GHCR_REPOSITORY@$DIGEST" "$QUAY_REPOSITORY@$DIGEST"
-
-      - name: Check the source indexes
-        run: scripts/source-indexes.sh check --referrers api "$QUAY_REPOSITORY" "$DIGEST" | tee indexes.tsv
 
       - name: Tag the kit
         run: oras tag "$QUAY_REPOSITORY@$DIGEST" "build-$GITHUB_RUN_ID" latest
@@ -209,10 +177,4 @@ jobs:
             echo "## Promoted $KIT-kit to Quay"
             echo
             echo "- Kit: \`$QUAY_REPOSITORY:build-$GITHUB_RUN_ID@$DIGEST\`"
-            echo
-            echo "### Source indexes"
-            echo
-            echo "| Subject | Digest | Source index | Source images |"
-            echo "| --- | --- | --- | --- |"
-            awk -F'\t' '{ print "| " $1 " | `" $2 "` | `" $3 "` | " $4 " |" }' indexes.tsv
           } >>"$GITHUB_STEP_SUMMARY"

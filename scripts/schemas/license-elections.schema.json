@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "License elections",
+  "description": "Dual-licensed components distributed under their permissive option (scripts/license-elections.yaml).",
+  "type": "object",
+  "required": ["elections"],
+  "additionalProperties": false,
+  "properties": {
+    "elections": { "type": "array", "items": { "$ref": "#/$defs/election" } }
+  },
+  "$defs": {
+    "election": {
+      "description": "A dual-licensed component distributed under its permissive option. Owes no source.",
+      "type": "object",
+      "required": ["name", "components", "license"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "description": "Unique.", "type": "string", "pattern": "^[a-z0-9][a-z0-9.-]*$" },
+        "components": {
+          "description": "manifest.tsv components this election covers (shell globs).",
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "license": { "description": "The elected license (SPDX).", "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

@@ -104,7 +104,7 @@ sbx settings set kit.allowedSources '["docker.io/","quay.io/frithuz/claude-kit",
 sbx run 'quay.io/frithuz/claude-kit:latest@sha256:<digest>' <workspace>
 ```
 
-`kit.allowedSources` replaces the whole list, so keep any sources you already allow. A published kit carries its image's layers, so it carries the image's copyleft source the same way ([legal.md](legal.md#publishing)).
+`kit.allowedSources` replaces the whole list, so keep any sources you already allow. A published kit carries its image's layers, so it carries the image's `/legal/source.tsv` too ([legal.md](legal.md#sandbox-kits)).
 
 `sbx` can also build a kit from this repository at any commit, including ones that were never published. Allow `github.com/frithuz/devcontainer`, then run `sbx run 'git+https://github.com/frithuz/devcontainer.git#ref=<COMMIT>&dir=sandboxes/devcontainer-claude' <workspace>`. When working on a kit, run it from a local checkout: `sbx run ./sandboxes/devcontainer-claude <workspace>`. To build one without `sbx`, use the kit frontend directly: `docker buildx build -f sandboxes/devcontainer-claude/claude.yaml sandboxes/devcontainer-claude`.
 

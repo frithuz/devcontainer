@@ -1,4 +1,4 @@
-# Local build output: preflight export (out/preflight/), validated config (out/config/), and source images (out/sources/).
+# Local build output: preflight export (out/preflight/) and validated config (out/config/).
 out/
 
 # /legal content generated inside the image by scripts/collect-legal.sh. The repository's

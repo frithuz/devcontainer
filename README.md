@@ -31,7 +31,7 @@ for prerequisites and hook behavior.
 | [`docs/usage.md`](docs/usage.md) | Consuming the image as a devcontainer, in CI, and in sandboxes |
 | [`docs/maintenance.md`](docs/maintenance.md) | Dependabot, CI, releases, contributor expectations |
 | [`docs/legal.md`](docs/legal.md) | Project license, third-party notices, and copyleft source publication |
-| [`docs/data-model.md`](docs/data-model.md) | Draft design of inventories, source images and indexes, and registry-backed publication records |
+| [`docs/data-model.md`](docs/data-model.md) | Draft design of inventories and registry-backed publication records |
 | [`docs/integrations/`](docs/integrations/) | Setup for external services: [Quay.io](docs/integrations/quayio.md), [GHCR mirror](docs/integrations/ghcr.md), [1Password](docs/integrations/1password.md) |
 
 ## License

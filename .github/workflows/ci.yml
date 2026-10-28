@@ -71,21 +71,6 @@ jobs:
           set: |
             image.cache-from=type=gha,scope=image-linux-${{ matrix.arch }}
 
-      # For the sources-plan job, uploaded before the DinD checks so it runs even when they fail.
-      - name: Copy the manifest out of the image
-        env:
-          ARCH: ${{ matrix.arch }}
-        run: |
-          mkdir -p "out/manifests/linux_$ARCH"
-          docker run --rm --entrypoint cat devcontainer:local /legal/manifest.tsv >"out/manifests/linux_$ARCH/manifest.tsv"
-
-      - name: Upload the manifest
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: manifest-${{ matrix.arch }}
-          path: out/manifests/
-          if-no-files-found: error
-
       # The smoke tests run in the build, which exports their report and exit status to
       # out/preflight/ instead of failing, so the report is shown either way. The image's layers
       # come from the build above, in the same builder, given the same vars.
@@ -130,66 +115,3 @@ jobs:
             --mount type=volume,target=/var/lib/containerd \
             --mount "type=bind,source=$GITHUB_WORKSPACE/test,target=/mnt/test,readonly" \
             devcontainer:local bash /mnt/test/runtime.sh
-
-  # Resolves every copyleft component's exact source from the PR's manifests, so a component
-  # whose source can't be resolved fails the PR instead of the publish
-  # (docs/legal.md#source-images). Nothing is fetched or built.
-  sources-plan:
-    name: Plan the source images
-    needs: image
-    # Needs only the manifests, which image uploads before its tests. Skipped with image on forks.
-    if: ${{ !cancelled() && needs.image.result != 'skipped' }}
-    runs-on: ubuntu-26.04
-    permissions:
-      contents: read
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - name: Check out the repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          # build-sources.sh keys source images on the last commit that changed the recipe.
-          fetch-depth: 0
-          filter: blob:none
-          persist-credentials: false
-
-      - name: Set up Buildx
-        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-
-      - name: Download the manifests
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          pattern: manifest-*
-          path: out/manifests
-          merge-multiple: true
-
-      # A failed build leaves out a platform, and a plan from the other alone would pass.
-      - name: Check both platforms
-        run: |
-          for arch in amd64 arm64; do
-            if [[ ! -s out/manifests/linux_$arch/manifest.tsv ]]; then
-              echo "::error::No manifest for linux/$arch; its image job didn't build the image"
-              exit 1
-            fi
-          done
-
-      # Tags already published with the same key show as reused. The plan lists them anonymously.
-      - name: Plan the source images
-        env:
-          MANIFESTS: out/manifests
-          SOURCE_REUSE: ghcr.io/frithuz/devcontainer
-        run: scripts/build-sources.sh --plan-only
-
-      - name: Summary
-        run: |
-          {
-            echo "## Source images"
-            echo
-            echo "| Status | Tag | Root | Version |"
-            echo "| --- | --- | --- | --- |"
-            awk -F'\t' 'NR > 1 {
-              gsub(/\|/, "\\|")
-              print "| " $1 " | " ($2 == "-" ? "-" : "`" $2 "`") " | " $5 " | " $6 " |"
-            }' out/sources/plan.tsv
-          } >>"$GITHUB_STEP_SUMMARY"

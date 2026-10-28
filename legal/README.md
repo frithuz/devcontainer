@@ -11,9 +11,9 @@ License notices, attribution, and source information for the software in this im
   dependencies.
   Columns: component, version, architecture, license, notice locations, and source provenance.
 - `attribution/<component>/` holds the upstream license and notice files for components not
-  installed with apt, taken from the source image or the source they were compiled from, or
-  fetched from upstream at the installed version during the build. Each directory's `SOURCE` file records where its files came from,
-  with their checksums.
+  installed with apt, taken from the upstream image or the source they were compiled from, or
+  fetched from upstream at the installed version during the build. Each directory's `SOURCE`
+  file records where its files came from, with their checksums.
 - Packages installed with apt keep their notices at `/usr/share/doc/<package>/copyright`, which
   `manifest.tsv` references instead of copying.
 - `sbom/devcontainer.cdx.json` is a CycloneDX list of the components SBOM scanners can't
@@ -24,6 +24,9 @@ License notices, attribution, and source information for the software in this im
   the image's Go binaries, taken from the module source through the Go proxy.
 - `provenance/` keeps build-time evidence, such as the exact `.deb` URLs and checksums of the
   installed apt packages.
+- `source.tsv` lists where the source of every copyleft component was published when the image
+  was built, one file per row. Columns: source, version, URL, digest, and the components it
+  covers.
 - `SOURCE.md` explains how to get Corresponding Source for copyleft components.
 
 The image carries no agent CLIs. A sandbox kit adds one, with its notices in
