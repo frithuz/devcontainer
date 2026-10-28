@@ -56,17 +56,6 @@ components:
       tag: "{version}"
       files: [LICENSE-APACHE, LICENSE-MIT]
 
-  - name: oras
-    stage: oras
-    license: Apache-2.0
-    version: oras version
-    notices: [/legal/attribution/oras/LICENSE]
-    paths: [/usr/local/bin/oras]
-    upstream:
-      repository: oras-project/oras
-      tag: v{version}
-      files: [LICENSE]
-
   - name: shfmt
     stage: shfmt
     license: BSD-3-Clause
