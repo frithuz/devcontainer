@@ -163,5 +163,5 @@ sha256: $(sha256sum "../git-$version.tar.xz" | cut -d' ' -f1)
 signer: $signer
 toolchain: $(rustc --version)
 build-script: ${script#/mnt/src/} sha256:$(sha256sum "$script" | cut -d' ' -f1)
-embedded: zlib-ng $zlib_ng_version Zlib ($zlib_ng_url) sha256:$zlib_ng_digest
+embedded: zlib-ng $zlib_ng_version Zlib $zlib_ng_url sha256:$zlib_ng_digest
 SOURCE
