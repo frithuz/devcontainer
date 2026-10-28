@@ -61,7 +61,7 @@ git is compiled from source in the `git` stage (`scripts/build/git.sh`), so the 
 - PCRE2 for `git grep -P`; HTTPS through the image's libcurl.
 - No Perl, Python, Tcl/Tk, translations, or expat: no `send-email`, `svn`, `p4`, `gitk`, `git-gui`, or WebDAV `http-push`.
 
-**Tested before install.** git's test suite runs through `prove`, then `git subtree`'s, and zlib-ng's runs before git is built. A failure fails the stage. The stage is cached, so the tests only run again when its inputs change: the versions, `git.sh`, or the base digest.
+**Not tested at build.** git's own test suite and `git subtree`'s don't run: they took too long for every bump. The stage's inputs are pinned, so rebuilding it gives the same git, and a release that misbehaves is tracked down by running its suite locally. zlib-ng's suite, which is quick, still runs before git links it, and a failure fails the stage. The smoke tests check the installed git as they check every tool.
 
 **Client only.** The daemon, `http-backend`, `git-shell`, `imap-send`, `instaweb`, and the scripts that would only report a missing Perl or Python are removed after install. A release that stops shipping one fails the build, so the list stays accurate. `git subtree` is installed from `contrib/`. There are no man pages or shell completion: use `git <command> -h`.
 

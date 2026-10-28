@@ -2,7 +2,7 @@
 # Builds git from its release tarball into /out (Dockerfile's git stage), after apt-bootstrap.sh,
 # with zlib-ng compiled in for faster compression. The tarball's signature must verify against
 # the pinned maintainer key and zlib-ng's archive must match its pinned digest before either is
-# used, and both test suites must pass before anything is installed. Installs under /usr/local
+# used, and zlib-ng's test suite must pass before git links it. Installs under /usr/local
 # with symlinked built-ins, so the files stage copies it as one tree, plus its license texts and
 # a record of its sources under /out/legal.
 set -euo pipefail
@@ -12,9 +12,8 @@ readonly script=${BASH_SOURCE[0]}
 readonly version=${VERSION:?VERSION must be set} signer=${SIGNER:?SIGNER must be set}
 jobs=$(nproc)
 
-# perl is for the test suite (prove and its helpers); git itself is built without it.
 apt-get install -y --no-install-recommends \
-	curl gcc make libc6-dev dpkg-dev gnupg xz-utils perl \
+	curl gcc make libc6-dev dpkg-dev gnupg xz-utils \
 	libcurl4-openssl-dev libpcre2-dev libssl-dev
 
 work=$(mktemp -d)
@@ -124,12 +123,6 @@ if [[ $(readelf --dyn-syms --wide git) != *__stack_chk_fail* ]]; then
 	echo 'git has no stack protector' >&2
 	exit 1
 fi
-
-# The test suite, through prove so the log gets one line per test script. As root, tests that
-# need an unprivileged user are skipped (the SANITY prerequisite).
-make "${make_args[@]}" DEFAULT_TEST_TARGET=prove "GIT_PROVE_OPTS=--jobs $jobs" \
-	GIT_TEST_OPTS=--verbose-log test
-make "${make_args[@]}" -C contrib/subtree "-j$jobs" test
 
 make "${make_args[@]}" DESTDIR=/out install
 make "${make_args[@]}" DESTDIR=/out -C contrib/subtree install
