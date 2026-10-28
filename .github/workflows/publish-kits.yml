@@ -92,10 +92,15 @@ jobs:
             echo "REPOSITORY=ghcr.io/$owner/$KIT-kit"
           } >>"$GITHUB_ENV"
 
-      # Pushed by digest, untagged, so no tag points at the kit before its source is attached.
+      # Pushed by digest, untagged, so no tag points at the kit before its source is attached. The
+      # labels are the kit's commit, which the dockerfile leaves empty.
       - name: Build and push the kit
+        env:
+          REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}
         run: |
           docker buildx build --platform linux/amd64,linux/arm64 --sbom=true \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            --label "org.opencontainers.image.documentation=$REPOSITORY_URL/blob/$GITHUB_SHA/docs/usage.md#agent-sandboxes-sbx" \
             --output "type=image,name=$REPOSITORY,push-by-digest=true,push=true" \
             --metadata-file metadata.json \
             -f "sandboxes/devcontainer-$KIT/$KIT.yaml" "sandboxes/devcontainer-$KIT"

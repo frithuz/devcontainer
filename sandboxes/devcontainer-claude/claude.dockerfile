@@ -21,9 +21,23 @@ COPY --from=base /legal/manifest.tsv /mnt/manifest.tsv
 RUN --mount=type=bind,source=legal.sh,target=/mnt/legal.sh bash /mnt/legal.sh
 
 FROM base
+ARG IMAGE
+ARG MIXIN
+ARG MIXIN_TAG=${MIXIN%@*}
 # sbx starts the image's Docker engine, in a privileged container, only when the image
 # carries this label, as Docker's own sandbox templates do. Without it dockerd fails to start.
-LABEL com.docker.sandboxes.start-docker="true"
+# The OCI labels replace the ones inherited from the image, which describe the image itself
+# (docs/architecture.md#image-metadata). Title and description match the descriptor's, and
+# version and base come from the pins. Only publish-kits.yml knows the kit's commit, so revision
+# and documentation are cleared here and set there with --label.
+LABEL com.docker.sandboxes.start-docker="true" \
+      org.opencontainers.image.title="Claude Code (devcontainer)" \
+      org.opencontainers.image.description="Claude Code on the frithuz devcontainer image" \
+      org.opencontainers.image.version="${MIXIN_TAG##*:}" \
+      org.opencontainers.image.base.name="${IMAGE%@*}" \
+      org.opencontainers.image.base.digest="${IMAGE#*@}" \
+      org.opencontainers.image.revision="" \
+      org.opencontainers.image.documentation=""
 # git's SSH signing-key command for the descriptor's git-ssh-sign group, from Docker's git-ssh-sign
 # kit at a pinned commit, unmodified, with the kit repository's Apache-2.0 license.
 ADD --checksum=sha256:ce4beaf2a2447073dced16fd69d8b09616b3aebe11efd995587e3c02091d840f --chmod=0755 \
