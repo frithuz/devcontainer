@@ -106,7 +106,7 @@ The `promote` job in [`publish.yml`](../../.github/workflows/publish.yml) names 
 
 ## 5. Verify
 
-- **Federation:** push to `main`, or run `publish.yml` manually on `main` (`workflow_dispatch`) with **Also tag the built image as latest, and promote it to Quay** ticked. A manual run without it, or a scheduled run, skips `promote`. The Quay login step should print `Login Succeeded`. To check that it's rejected elsewhere, run the workflow the same way from another branch: `promote` should fail before it starts because the `quay` environment's branch rule refuses it.
+- **Federation:** push to `main`, or run `publish.yml` manually on `main` (`workflow_dispatch`) with **Also tag the built image as latest, and promote it to Quay and registry.frithuz.dev** ticked. A manual run without it, or a scheduled run, skips `promote`. The Quay login step should print `Login Succeeded`. To check that it's rejected elsewhere, run the workflow the same way from another branch: `promote` should fail before it starts because the `quay` environment's branch rule refuses it.
 - **No stored credentials:** the repository should have no Actions secrets, and the organization only `OP_INTEGRATION_KEY` if [1Password](1password.md) is ever adopted.
 - **Promotion:** after a run, the Quay tags point at the same digests as the GHCR tags, and the signatures verify against the Quay reference.
 - **Independent testing:** a deliberately failing test still allows `promote` to finish. The workflow reports the test failure and the successful sync separately. Copy failures retry and report incomplete synchronization; recovery uses the same digest ([GHCR recovery](ghcr.md#synchronization-and-recovery)).

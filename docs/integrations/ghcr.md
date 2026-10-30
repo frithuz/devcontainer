@@ -30,6 +30,7 @@ Do this for each package: `devcontainer`, `claude-kit`, and `codex-kit`.
 | `tag-ghcr` | `contents: read`, `packages: write` | `oras` login with `GITHUB_TOKEN` |
 | `verify` | `contents: read`, `packages: read` | none (public) |
 | `promote` (environment `quay`) | `contents: read`, `packages: read`, `id-token: write` (Quay federation) | `oras` login with `GITHUB_TOKEN` |
+| `promote-frithuz` (environment `registry.frithuz.dev`) | `contents: read`, `packages: read`, `id-token: write` (zot OIDC) | `oras` login with `GITHUB_TOKEN` |
 
 `GITHUB_TOKEN` is created for each run and expires when the run ends. It isn't a stored secret.
 
