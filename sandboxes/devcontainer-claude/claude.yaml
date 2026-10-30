@@ -24,7 +24,7 @@ args:
 
 # The version of the mixin the dockerfile pins. The binary is root-owned and its updater is off,
 # so it stays at that version. scripts/update-kits.sh rewrites this line and both pins together.
-provides: ["claude@2.1.311"]
+provides: ["claude@2.1.314"]
 
 capabilities:
   - type: com.docker.sandbox/sbx@1

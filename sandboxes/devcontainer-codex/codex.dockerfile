@@ -3,8 +3,8 @@
 # (docker/sandbox-kit-spec, examples/codex-mixin), pinned by version and digest: Codex's release
 # package under /opt/codex. scripts/update-kits.sh rewrites both pins and the descriptor's
 # provides together.
-ARG IMAGE=quay.io/frithuz/devcontainer:build-40615010332@sha256:58256ca287dc152f303e2c6ac30c583ab660d2232ce323b46cc431b4305c4a13
-ARG MIXIN=docker.io/docker/sbx-kit-codex-mixin:0.164.0@sha256:398870e35ac16de575e087e95805e9413624a6887f5c9472d3873053765777b3
+ARG IMAGE=quay.io/frithuz/devcontainer:build-41144881393@sha256:ead09b7d6307e9ed7039bbfa939b03314376e9ddd2fb1f016138e8b3a9b8e089
+ARG MIXIN=docker.io/docker/sbx-kit-codex-mixin:0.166.0@sha256:41cb2df315d9ec195461e328616e0502d1117dca1998b8c1ccd0940e7b7e7c67
 
 FROM ${MIXIN} AS mixin
 FROM ${IMAGE} AS base
