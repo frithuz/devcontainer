@@ -25,7 +25,7 @@ args:
 
 # The version of the mixin the dockerfile pins. scripts/update-kits.sh rewrites this line and
 # both pins together.
-provides: ["codex@0.164.0"]
+provides: ["codex@0.166.0"]
 
 capabilities:
   - type: com.docker.sandbox/sbx@1
