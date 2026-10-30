@@ -140,6 +140,19 @@ components:
       tag: v{version}
       files: [LICENSE]
 
+  - name: dbmate
+    stage: dbmate
+    # A static cgo build on Alpine: musl (MIT) and SQLite (public domain, in go-sqlite3) are
+    # compiled in.
+    license: MIT
+    version: dbmate --version
+    notices: [/legal/attribution/dbmate/LICENSE]
+    paths: [/usr/local/bin/dbmate]
+    upstream:
+      repository: amacneil/dbmate
+      tag: v{version}
+      files: [LICENSE]
+
   - name: git
     stage: git
     install: source-build

@@ -21,6 +21,6 @@ The sandbox kits built on this image, `quay.io/frithuz/claude-kit` and `quay.io/
 carry this same file: the agents they add bring no copyleft code.
 
 The MPL-2.0 Go modules are compiled into binaries their upstream projects built and publish with
-their source (betterleaks, yq, Task, and Docker's packages), and are unmodified. `manifest.tsv`
-lists each module (`go-module:` rows) with its exact version and its archive on the Go module
+their source (betterleaks, dbmate, yq, Task, and Docker's packages), and are unmodified.
+`manifest.tsv` lists each module (`go-module:` rows) with its exact version and its archive on the Go module
 proxy, `https://proxy.golang.org`.
