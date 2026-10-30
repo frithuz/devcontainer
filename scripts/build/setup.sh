@@ -32,9 +32,54 @@ Components: stable
 Architectures: $arch
 Signed-By: /etc/apt/keyrings/docker.asc
 SOURCES
+# DHI's repository carries its own builds of these packages, versioned without Docker's
+# ~debian suffix, so they'd sort higher and win. They have no maintainer scripts, so the
+# docker group isn't created. Docker's repository takes precedence for them.
+cat >/etc/apt/preferences.d/docker <<'PREFERENCES'
+Package: docker-ce docker-ce-cli docker-buildx-plugin docker-compose-plugin containerd.io
+Pin: origin download.docker.com
+Pin-Priority: 900
+PREFERENCES
 apt-get update
 apt-get install -y --no-install-recommends \
 	docker-ce docker-ce-cli docker-buildx-plugin docker-compose-plugin containerd.io
+
+# DHI's base can carry packages at versions its repository no longer serves. DHI moved its builds
+# from +dhiN to +deb13u0+dhiN, which sorts lower, and rebuilt some of them, but the base still
+# shipped a few under the old names. Move each one to the repository's build of the same release,
+# allowing the downgrade, so the image holds only packages the provenance below can record. Once
+# the base matches its repository, this finds nothing.
+mapfile -t names < <(dpkg-query -W -f '${db:Status-Abbrev} ${Package}\n' | awk '$1 == "ii" { print $2 }')
+declare -A served=()
+while IFS='|' read -r name version _; do
+	served["${name// /}=${version// /}"]=1
+done < <(apt-cache madison "${names[@]}")
+moves=()
+unserved=()
+while read -r name version; do
+	if [[ -n ${served["$name=$version"]:-} ]]; then
+		continue
+	fi
+	if [[ $version =~ ^(.*)\+(dhi[0-9]+)$ && -n ${served["$name=${BASH_REMATCH[1]}+deb13u0+${BASH_REMATCH[2]}"]:-} ]]; then
+		moves+=("$name=${BASH_REMATCH[1]}+deb13u0+${BASH_REMATCH[2]}")
+	else
+		unserved+=("$name=$version")
+	fi
+done < <(dpkg-query -W -f '${db:Status-Abbrev} ${Package} ${Version}\n' | awk '$1 == "ii" { print $2, $3 }')
+if ((${#unserved[@]})); then
+	echo "No repository serves these installed versions, or a +deb13u0 build of them:" >&2
+	printf '  %s\n' "${unserved[@]}" >&2
+	exit 1
+fi
+if ((${#moves[@]})); then
+	echo "Moving to the repository's builds: ${moves[*]}"
+	# Installing a package by name marks it manually installed, so restore the auto marks.
+	mapfile -t auto < <(apt-mark showauto "${moves[@]%%=*}")
+	apt-get install -y --no-install-recommends --allow-downgrades "${moves[@]}"
+	if ((${#auto[@]})); then
+		apt-mark auto "${auto[@]}"
+	fi
+fi
 
 # No apt installs follow, so record the exact .deb URL and checksum of every installed
 # package (base image included) from the package lists.
