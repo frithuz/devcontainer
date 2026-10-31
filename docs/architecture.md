@@ -46,7 +46,7 @@ Copied binaries have to run on the base's glibc (Debian 13's):
 
 ## git
 
-The standalone `Dockerfile.git` separates Git's release from the devcontainer.
+The standalone `git.Dockerfile` separates Git's release from the devcontainer.
 It uses a pinned hardened Debian builder and Rust
 toolchain, then copies only `/out` into a scratch artifact. That tree contains
 Git, its helpers and templates, attribution, and the exact build recipe. It is
@@ -55,7 +55,7 @@ the compatible Debian shared libraries and shell. The main Dockerfile pins
 `quay.io/frithuz/git` by version and digest and copies its `/out` tree.
 
 `publish-git.yml` watches the standalone recipe and its scripts. It compares
-`VERSION` and the release archive's `SHA256` in `Dockerfile.git` with the version
+`VERSION` and the release archive's `SHA256` in `git.Dockerfile` with the version
 tag's source-checksum annotation on Quay. A missing tag or changed checksum
 builds both architectures; matching inputs skip compilation. Registry errors
 fail the run. Recipe, toolchain, and zlib-ng changes alone require a manual run
@@ -69,7 +69,7 @@ matching artifact, the workflow mirrors it to registry.frithuz.dev without
 recompiling. A forced rebuild can move that tag; the main Dockerfile pins its
 digest too. After publishing a Git release, update that pin to consume it.
 
-Git is compiled from source in `Dockerfile.git` using `scripts/build/git.sh`.
+Git is compiled from source in `git.Dockerfile` using `scripts/build/git.sh`.
 The builder uses the same hardened Debian release as the devcontainer, so its
 shared libraries are compatible. Git installs under `/usr/local` with its
 built-in commands as symlinks, so the `files` stage copies it as one tree.
@@ -90,7 +90,7 @@ built-in commands as symlinks, so the `files` stage copies it as one tree.
 
 **Client only.** The daemon, `http-backend`, `git-shell`, `imap-send`, `instaweb`, and the scripts that would only report a missing Perl or Python are removed after install. A release that stops shipping one fails the build, so the list stays accurate. `git subtree` is installed from `contrib/`. There are no man pages or shell completion: use `git <command> -h`.
 
-To bump in `Dockerfile.git`: `VERSION` and `SHA256` for git; `ZLIB_NG_VERSION`, `ZLIB_NG_COMMIT`, and `ZLIB_NG_SHA256` together for zlib-ng; `SIGNER` only if git's maintainer changes signing keys. The smoke tests check Git's version against the main Dockerfile's image tag and zlib-ng's against `ZLIB_NG_VERSION` in the recipe shipped inside that artifact. The artifact carries its original recipe and producer commit for [source attribution](legal.md#compiled-components).
+To bump in `git.Dockerfile`: `VERSION` and `SHA256` for git; `ZLIB_NG_VERSION`, `ZLIB_NG_COMMIT`, and `ZLIB_NG_SHA256` together for zlib-ng; `SIGNER` only if git's maintainer changes signing keys. The smoke tests check Git's version against the main Dockerfile's image tag and zlib-ng's against `ZLIB_NG_VERSION` in the recipe shipped inside that artifact. The artifact carries its original recipe and producer commit for [source attribution](legal.md#compiled-components).
 
 ## Filesystem
 

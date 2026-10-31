@@ -21,7 +21,7 @@ esac
 EOF
 chmod +x "$work/bin/docker"
 export PATH="$work/bin:$PATH"
-CHECKSUM=$(awk -F= 'NF == 2 && $1 == "ARG SHA256" { print $2 }' Dockerfile.git)
+CHECKSUM=$(awk -F= 'NF == 2 && $1 == "ARG SHA256" { print $2 }' git.Dockerfile)
 export CHECKSUM
 for scenario in same changed missing notfound; do
 	result=$(SCENARIO=$scenario bash scripts/git-image-changes.sh)

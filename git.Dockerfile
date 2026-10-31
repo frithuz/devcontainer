@@ -24,7 +24,7 @@ RUN --mount=type=cache,id=apt-lists-$TARGETARCH,target=/var/lib/apt/lists,sharin
     --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/run.sh \
     --mount=type=bind,source=scripts/build/apt-bootstrap.sh,target=/mnt/src/scripts/build/apt-bootstrap.sh \
     --mount=type=bind,source=scripts/build/git.sh,target=/mnt/src/scripts/build/git.sh \
-    --mount=type=bind,source=Dockerfile.git,target=/mnt/src/Dockerfile.git \
+    --mount=type=bind,source=git.Dockerfile,target=/mnt/src/git.Dockerfile \
     --mount=type=bind,source=scripts/build/git-artifact.sh,target=/mnt/src/scripts/build/git-artifact.sh \
     bash /mnt/src/scripts/build/run.sh /mnt/src/scripts/build/apt-bootstrap.sh /mnt/src/scripts/build/git.sh /mnt/src/scripts/build/git-artifact.sh
 

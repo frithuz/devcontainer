@@ -202,8 +202,11 @@ lookup() {
 	check "git grep -P" bash -c '
 		repo=$(mktemp -d) && cd "$repo" && git init -q && echo needle >f && git add f &&
 			git grep -qP "ne{2}dle"; status=$?; rm -rf "$repo"; exit $status'
+	# The first published artifact predates the recipe rename; keep its immutable pin usable.
+	local git_recipe=/legal/attribution/git/build/git.Dockerfile
+	[[ -f $git_recipe ]] || git_recipe=/legal/attribution/git/build/Dockerfile.git
 	expect "git compresses with the pinned zlib-ng" \
-		"zlib-ng: $(awk -F= '$1 == "ARG ZLIB_NG_VERSION" { print $2; exit }' /legal/attribution/git/build/Dockerfile.git)" \
+		"zlib-ng: $(awk -F= '$1 == "ARG ZLIB_NG_VERSION" { print $2; exit }' "$git_recipe")" \
 		"$(git version --build-options | grep -E '^zlib(-ng)?: ')"
 	check "git hashes with OpenSSL where collision detection isn't needed" bash -c \
 		'git version --build-options | grep -qx "non-collision-detecting-SHA-1: SHA1_OPENSSL_UNSAFE"'

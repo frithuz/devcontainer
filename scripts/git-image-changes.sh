@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Emit workflow outputs. Only a missing tag permits building after a failed lookup.
 set -euo pipefail
-version=$(awk -F= 'NF == 2 && $1 == "ARG VERSION" { print $2 }' Dockerfile.git)
-checksum=$(awk -F= 'NF == 2 && $1 == "ARG SHA256" { print $2 }' Dockerfile.git)
+version=$(awk -F= 'NF == 2 && $1 == "ARG VERSION" { print $2 }' git.Dockerfile)
+checksum=$(awk -F= 'NF == 2 && $1 == "ARG SHA256" { print $2 }' git.Dockerfile)
 if [[ ! $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ || ! $checksum =~ ^[0-9a-f]{64}$ ]]; then
-	echo 'Dockerfile.git must pin one VERSION and SHA256' >&2
+	echo 'git.Dockerfile must pin one VERSION and SHA256' >&2
 	exit 1
 fi
 echo "version=$version"

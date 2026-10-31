@@ -5,7 +5,7 @@ group "default" {
 }
 target "git" {
   context = "."
-  dockerfile = "Dockerfile.git"
+  dockerfile = "git.Dockerfile"
   target = "artifact"
   platforms = ["linux/amd64", "linux/arm64"]
   args = {

@@ -6,7 +6,7 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 mkdir -p "$work/legal/attribution/git/build/scripts/build" "$work/config"
 recipe=$work/legal/attribution/git/build
-printf 'artifact recipe\n' >"$recipe/Dockerfile.git"
+printf 'artifact recipe\n' >"$recipe/git.Dockerfile"
 printf 'artifact script\n' >"$recipe/scripts/build/git.sh"
 producer=1111111111111111111111111111111111111111
 consumer=2222222222222222222222222222222222222222
@@ -25,7 +25,7 @@ collect() {
 		"${TEST_IMAGE:-devcontainer:local}" /collector.sh /config
 }
 collect
-grep -Fq "https://example.com/producer/blob/$producer/Dockerfile.git" "$work/legal/source.tsv"
+grep -Fq "https://example.com/producer/blob/$producer/git.Dockerfile" "$work/legal/source.tsv"
 grep -Fq "https://example.com/producer/blob/$producer/scripts/build/git.sh" "$work/legal/source.tsv"
 if grep -Fq "$consumer" "$work/legal/source.tsv"; then
 	echo 'Artifact source incorrectly points at the consumer revision' >&2

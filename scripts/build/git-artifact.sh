@@ -11,7 +11,7 @@ fi
 # git.sh authenticates the source before compiling. Check the separately pinned archive
 # checksum before publishing, and preserve the exact recipe independently of later builds.
 mkdir -p "$legal/build/scripts/build"
-cp /mnt/src/Dockerfile.git "$legal/build/"
+cp /mnt/src/git.Dockerfile "$legal/build/"
 cp /mnt/src/scripts/build/{run,apt-bootstrap,git,git-artifact}.sh "$legal/build/scripts/build/"
 printf 'revision: %s\nrepository: %s\n' "${REVISION:-local}" "${REPOSITORY_URL:-local}" >"$legal/build/ORIGIN"
 

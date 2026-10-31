@@ -4,8 +4,8 @@ on:
   push:
     branches: [main]
     paths:
-      - Dockerfile.git
-      - Dockerfile.git.dockerignore
+      - git.Dockerfile
+      - git.Dockerfile.dockerignore
       - docker-bake.git.hcl
       - scripts/build/git.sh
       - scripts/build/git-artifact.sh
