@@ -1,6 +1,6 @@
 # Publishes the sandbox kits as OCI images, each to its own repository: claude-kit and codex-kit, on
 # GHCR first, then signed there with the OpenBao-held cosign key and promoted with the signature to
-# Quay and registry.frithuz.dev (docs/maintenance.md#publishing-the-kits). A kit carries every
+# Quay (docs/maintenance.md#publishing-the-kits). A kit carries every
 # layer of the image it pins, with its /legal/source.tsv, and adds no copyleft components of its
 # own: its agent comes from Docker's mixin without copyleft parts (docs/legal.md#sandbox-kits).
 name: publish-kits
@@ -17,7 +17,7 @@ on:
   workflow_dispatch:
     inputs:
       latest:
-        description: Also tag the kits as latest, and promote them to Quay and registry.frithuz.dev
+        description: Also tag the kits as latest, and promote them to Quay
         type: boolean
         default: false
 
@@ -107,12 +107,12 @@ jobs:
           } >>"$GITHUB_STEP_SUMMARY"
 
   # As in publish.yml's sign: signs each kit's index digest on GHCR with the OpenBao-held cosign
-  # key, so the one signature covers the kit and its SBOM, and the promote jobs copy it with the
+  # key, so the one signature covers the kit and its SBOM, and the promote job copies it with the
   # other referrers (docs/integrations/openbao.md).
   sign:
     name: Sign ${{ matrix.kit }}-kit on GHCR
     needs: ghcr
-    # Under the same condition as the promote jobs, which need the signature.
+    # Under the same condition as the promote job, which needs the signature.
     if: ${{ !cancelled() && needs.ghcr.result == 'success' && (github.event_name != 'workflow_dispatch' || inputs.latest) }}
     runs-on: ubuntu-26.04
     # OpenBao's cosign-sign role trusts only this environment's OIDC subject
@@ -282,66 +282,4 @@ jobs:
             echo "## Promoted $KIT-kit to Quay"
             echo
             echo "- Kit: \`$QUAY_REPOSITORY:build-$GITHUB_RUN_ID@$DIGEST\`"
-          } >>"$GITHUB_STEP_SUMMARY"
-
-  promote-frithuz:
-    name: Promote ${{ matrix.kit }}-kit to registry.frithuz.dev
-    needs: [ghcr, sign]
-    # Runs alongside promote, under the same condition.
-    if: ${{ !cancelled() && needs.ghcr.result == 'success' && needs.sign.result == 'success' && (github.event_name != 'workflow_dispatch' || inputs.latest) }}
-    runs-on: ubuntu-26.04
-    # The environment holds PNPR_TOKEN, and only main can deploy to it
-    # (docs/integrations/registry-frithuz.md).
-    environment: registry.frithuz.dev
-    strategy:
-      fail-fast: false
-      matrix:
-        kit: [claude, codex]
-    permissions:
-      contents: read
-      packages: read # copy from GHCR
-    defaults:
-      run:
-        shell: bash
-    env:
-      KIT: ${{ matrix.kit }}
-      REGISTRY_HOST: registry.frithuz.dev
-      REGISTRY_REPOSITORY: registry.frithuz.dev/frithuz/${{ matrix.kit }}-kit
-    steps:
-      - name: Set up ORAS
-        uses: oras-project/setup-oras@005458ad77f1c8facd38a094e4af2e69e5607ff4 # v2.0.2
-        with:
-          url: ${{ env.ORAS_URL }}
-          checksum: ${{ env.ORAS_CHECKSUM }}
-
-      - name: Log in to GHCR
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: printf '%s' "$GH_TOKEN" | oras login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
-
-      - name: Resolve the kit on GHCR
-        run: |
-          repository=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/$KIT-kit
-          digest=$(oras manifest fetch --descriptor "$repository:build-$GITHUB_RUN_ID" | jq -er .digest)
-          {
-            echo "GHCR_REPOSITORY=$repository"
-            echo "DIGEST=$digest"
-          } >>"$GITHUB_ENV"
-
-      # As in publish.yml's promote-frithuz: one login with the ci-frithuz token, which oras
-      # refreshes as it goes. Referrers carry the signature and attestations.
-      - name: Copy and tag the kit
-        env:
-          PNPR_TOKEN: ${{ secrets.PNPR_TOKEN }}
-        run: |
-          printf '%s' "$PNPR_TOKEN" | oras login "$REGISTRY_HOST" --username ci-frithuz --password-stdin
-          oras cp -r --to-distribution-spec v1.1-referrers-api "$GHCR_REPOSITORY@$DIGEST" "$REGISTRY_REPOSITORY@$DIGEST"
-          oras tag "$REGISTRY_REPOSITORY@$DIGEST" "build-$GITHUB_RUN_ID" latest
-
-      - name: Summary
-        run: |
-          {
-            echo "## Promoted $KIT-kit to registry.frithuz.dev"
-            echo
-            echo "- Kit: \`$REGISTRY_REPOSITORY:build-$GITHUB_RUN_ID@$DIGEST\`"
           } >>"$GITHUB_STEP_SUMMARY"

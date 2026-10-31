@@ -5,7 +5,7 @@
 # nothing is pushed. A build pushes to GHCR under the recovery tag build-<run id>. Pushes to main,
 # scheduled refreshes, and manual runs that ask for it also tag :latest, are signed on GHCR with
 # the OpenBao-held cosign key (docs/integrations/openbao.md), and are promoted with the signature
-# to Quay and registry.frithuz.dev.
+# to Quay.
 # Not yet implemented: automatic public tags (:main, :YYYYMMDD) and verify, the smoke tests
 # against the published digest (docs/maintenance.md#publishing). After a promotion that tags
 # latest, kits.yml opens a PR that points the sandbox kits at the image.
@@ -31,7 +31,7 @@ on:
         type: boolean
         default: false
       latest:
-        description: Also tag the built image as latest, and promote it to Quay and registry.frithuz.dev
+        description: Also tag the built image as latest, and promote it to Quay
         type: boolean
         default: false
       force:
@@ -293,12 +293,12 @@ jobs:
   # Signs the index digest on GHCR with the cosign key OpenBao holds, before anything is promoted.
   # The index lists the attestation manifests by digest, so the one signature covers the image, its
   # SBOM, and its provenance. GHCR has no Referrers API, so cosign stores the signature under the
-  # index's sha256-<digest> fallback tag, and the promote jobs copy it with the other referrers
+  # index's sha256-<digest> fallback tag, and the promote job copies it with the other referrers
   # (docs/integrations/openbao.md). bake.yml's keyless signatures stay as they are.
   sign:
     name: Sign on GHCR
     needs: build
-    # Under the same condition as the promote jobs, which need the signature: only runs that tag
+    # Under the same condition as the promote job, which needs the signature: only runs that tag
     # latest are signed.
     if: >-
       !cancelled() && needs.build.result == 'success'
@@ -470,64 +470,6 @@ jobs:
             echo "- Image: \`$QUAY_REPOSITORY:build-$GITHUB_RUN_ID@$DIGEST\`"
           } >>"$GITHUB_STEP_SUMMARY"
 
-  promote-frithuz:
-    name: Promote to registry.frithuz.dev
-    needs: [build, sign]
-    # Runs alongside promote, under the same condition. Keep the two in step with the build's latest
-    # tag.
-    if: >-
-      !cancelled() && needs.build.result == 'success' && needs.sign.result == 'success'
-      && (github.event_name != 'workflow_dispatch' || inputs.latest)
-    runs-on: ubuntu-26.04
-    # The environment holds PNPR_TOKEN, and only main can deploy to it
-    # (docs/integrations/registry-frithuz.md).
-    environment: registry.frithuz.dev
-    permissions:
-      contents: read
-      packages: read # copy from GHCR
-    defaults:
-      run:
-        shell: bash
-    env:
-      DIGEST: ${{ needs.build.outputs.digest }}
-      REGISTRY_HOST: registry.frithuz.dev
-      REGISTRY_REPOSITORY: registry.frithuz.dev/frithuz/devcontainer
-    steps:
-      - name: Set up ORAS
-        uses: oras-project/setup-oras@005458ad77f1c8facd38a094e4af2e69e5607ff4 # v2.0.2
-        with:
-          url: ${{ env.ORAS_URL }}
-          checksum: ${{ env.ORAS_CHECKSUM }}
-
-      - name: Set the GHCR repository
-        run: echo "GHCR_REPOSITORY=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/devcontainer" >>"$GITHUB_ENV"
-
-      - name: Log in to GHCR
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: printf '%s' "$GH_TOKEN" | oras login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
-
-      # pnpr takes a long-lived token for ci-frithuz, which may push to frithuz/* only. oras swaps it
-      # at /v2/token for short repository-scoped tokens and refreshes them itself, so a long copy
-      # doesn't outlive its login. Copied by digest, untagged, with the referrers that carry the
-      # signatures and attestations.
-      - name: Copy and tag the image
-        env:
-          PNPR_TOKEN: ${{ secrets.PNPR_TOKEN }}
-          TAGS: build-${{ github.run_id }} latest
-        run: |
-          printf '%s' "$PNPR_TOKEN" | oras login "$REGISTRY_HOST" --username ci-frithuz --password-stdin
-          oras cp -r --to-distribution-spec v1.1-referrers-api "$GHCR_REPOSITORY@$DIGEST" "$REGISTRY_REPOSITORY@$DIGEST"
-          read -ra tags <<<"$TAGS"
-          oras tag "$REGISTRY_REPOSITORY@$DIGEST" "${tags[@]}"
-
-      - name: Summary
-        run: |
-          {
-            echo "## Promoted to registry.frithuz.dev"
-            echo
-            echo "- Image: \`$REGISTRY_REPOSITORY:build-$GITHUB_RUN_ID@$DIGEST\`"
-          } >>"$GITHUB_STEP_SUMMARY"
 
   # Hands the image to kits.yml, which opens or updates the kits PR. Only after Quay has tagged
   # it latest (docs/maintenance.md#sandbox-kits).

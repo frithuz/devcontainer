@@ -63,10 +63,7 @@ with `force`. The source signature is verified before compilation; the pinned
 archive checksum is also checked before the artifact can be exported.
 
 The workflow publishes to GHCR, signs with the existing OpenBao key, then copies
-the image and referrers to `quay.io/frithuz/git:<Git version>` and
-`registry.frithuz.dev/frithuz/git:<Git version>`. When Quay already has the
-matching artifact, the workflow mirrors it to registry.frithuz.dev without
-recompiling. A forced rebuild can move that tag; the main Dockerfile pins its
+the image and referrers to `quay.io/frithuz/git:<Git version>`. A forced rebuild can move that tag; the main Dockerfile pins its
 digest too. After publishing a Git release, update that pin to consume it.
 
 Git is compiled from source in `git.Dockerfile` using `scripts/build/git.sh`.

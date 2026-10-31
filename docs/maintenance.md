@@ -62,13 +62,12 @@ docker run --rm --network none \
 
 ## Publishing (`publish.yml`)
 
-A run publishes only a [material change](#material-changes) from Quay's `latest`. Every push to `main` starts a run, and one that doesn't touch the build's inputs, such as docs or kits alone, stops after the comparison. Pushes and scheduled refreshes that publish tag `latest`. For a manual run, select **Run workflow** and enable **Also tag the built image as latest, and promote it to Quay and registry.frithuz.dev** (`latest`, off by default), and **force** to publish without a material change. A run that tags `latest` pushes both `build-<run id>` and `latest` to the same image digest, `sign` signs that digest on GHCR with the cosign key held in OpenBao ([integrations/openbao.md](integrations/openbao.md)), and then `promote` and `promote-frithuz` copy the image, with the signature, to Quay and `registry.frithuz.dev` with both tags. Manual runs without `latest` stay on GHCR. On GHCR the `latest` tag is applied during the build. On Quay it's applied only after the image is copied. The `refresh` input remains independent.
+A run publishes only a [material change](#material-changes) from Quay's `latest`. Every push to `main` starts a run, and one that doesn't touch the build's inputs, such as docs or kits alone, stops after the comparison. Pushes and scheduled refreshes that publish tag `latest`. For a manual run, select **Run workflow** and enable **Also tag the built image as latest, and promote it to Quay** (`latest`, off by default), and **force** to publish without a material change. A run that tags `latest` pushes both `build-<run id>` and `latest` to the same image digest, `sign` signs that digest on GHCR with the cosign key held in OpenBao ([integrations/openbao.md](integrations/openbao.md)), and then `promote` copies the image, with the signature, to Quay with both tags. Manual runs without `latest` stay on GHCR. On GHCR the `latest` tag is applied during the build. On Quay it's applied only after the image is copied. The `refresh` input remains independent.
 
-The image goes to three registries with the same tags, digests, signatures, and source:
+The image goes to two registries with the same tags, digests, signatures, and source:
 
 - **`quay.io/frithuz/devcontainer`**, the default distribution registry.
 - **`ghcr.io/<owner>/devcontainer`**, the build destination and mirror. `bake.yml` can push there with the automatic `GITHUB_TOKEN`, and Actions consumers get in-network pulls ([integrations/ghcr.md](integrations/ghcr.md)).
-- **`registry.frithuz.dev/frithuz/devcontainer`**, the self-hosted pnpr registry ([integrations/registry-frithuz.md](integrations/registry-frithuz.md)). The kits are published there too.
 
 There are no versioned releases:
 
@@ -78,7 +77,7 @@ There are no versioned releases:
 | `:latest` | Every scheduled build | Most recent scheduled build |
 | `:YYYYMMDD` | Every scheduled build | Immutable snapshot, dated by the original run's creation, so reruns keep the date |
 
-**Two secrets are stored in GitHub: `DOCKERHUB_TOKEN`, and `PNPR_TOKEN` in the `registry.frithuz.dev` environment.** GHCR uses `GITHUB_TOKEN`, Quay uses OIDC robot federation, registry.frithuz.dev takes the `ci-frithuz` pnpr token, and OpenBao exchanges the job's OIDC token for a ten-minute signing token.
+**One secret is stored in GitHub: `DOCKERHUB_TOKEN`.** GHCR uses `GITHUB_TOKEN`, Quay uses OIDC robot federation, and OpenBao exchanges the job's OIDC token for a ten-minute signing token.
 
 ### Workflow
 
@@ -90,7 +89,6 @@ flowchart LR
   build --> taggh[Tag on GHCR]
   build --> sign[Sign the index on GHCR with the OpenBao key, then verify]
   sign --> promote[Copy image and referrers to Quay, then tag]
-  sign --> promotefrz[Copy image and referrers to registry.frithuz.dev, then tag]
 ```
 
 The rules behind that shape:
@@ -121,12 +119,10 @@ Recovery of an interrupted publication is described in [integrations/ghcr.md](in
 
 - **GHCR** is a public package linked to this repository, written with `GITHUB_TOKEN`. Grant the Admin Actions role only once retention deletion exists ([integrations/ghcr.md](integrations/ghcr.md)).
 - **Quay** has one robot, `frithuz+promote`, with Write on `devcontainer`, `claude-kit`, and `codex-kit` only, logging in exclusively through federation pinned to the `quay` environment, which only `main` can deploy to ([integrations/quayio.md](integrations/quayio.md)). Create each repository as public before its first promote. A push that creates a repository creates it private.
-- **registry.frithuz.dev** runs pnpr. The promote jobs log in as `ci-frithuz`, which may push to `frithuz/*` only, with `PNPR_TOKEN`, stored in the `registry.frithuz.dev` environment, which only `main` can deploy to. pnpr stores the signatures as referrers but doesn't verify them; `sign`'s `cosign verify` is the check ([integrations/registry-frithuz.md](integrations/registry-frithuz.md)).
-- **dhi.io**, where the base is pulled from, is read with `garbee`'s read-only Docker personal access token, `DOCKERHUB_TOKEN`. It's stored twice, as a repository Actions secret and as a Dependabot secret, because Dependabot's runs read only Dependabot's secrets. It's one of two exceptions to the 1Password policy: `bake.yml` needs the login too, and can't receive credentials loaded in a job ([integrations/1password.md](integrations/1password.md#policy)). Docker Hub's OIDC connections would remove it, but need a Docker Team or Business plan, which `frithuz` doesn't have. Rotate it by replacing both copies.
-- **`PNPR_TOKEN`**, the `ci-frithuz` token for registry.frithuz.dev, is the other exception. It's an environment secret of `registry.frithuz.dev`, so only `main` runs that enter the environment can read it ([integrations/registry-frithuz.md](integrations/registry-frithuz.md#2-the-pnpr-account)).
+- **dhi.io**, where the base is pulled from, is read with `garbee`'s read-only Docker personal access token, `DOCKERHUB_TOKEN`. It's stored twice, as a repository Actions secret and as a Dependabot secret, because Dependabot's runs read only Dependabot's secrets. It's the one exception to the 1Password policy: `bake.yml` needs the login too, and can't receive credentials loaded in a job ([integrations/1password.md](integrations/1password.md#policy)). Docker Hub's OIDC connections would remove it, but need a Docker Team or Business plan, which `frithuz` doesn't have. Rotate it by replacing both copies.
 - **Other credentials**, if ever needed, come from 1Password Workload Identity, never GitHub secrets ([integrations/1password.md](integrations/1password.md)).
 - **Attestations and signing:** `bake.yml` attaches an SBOM and SLSA provenance and signs keylessly with cosign on GHCR. The signing identity is `bake.yml` itself.
-- **The cosign key:** `sign` also signs the index digest with the non-exportable transit key `cosign` in OpenBao, logging in from the `registry.frithuz.dev` environment, and verifies the signature against [`cosign.pub`](../cosign.pub) before anything is promoted. The index lists the attestation manifests, so that signature covers them too ([integrations/openbao.md](integrations/openbao.md)). `promote` and `promote-frithuz` copy every signature with the image, so `cosign verify --key cosign.pub <image>@<digest>` works the same against any of the three registries.
+- **The cosign key:** `sign` also signs the index digest with the non-exportable transit key `cosign` in OpenBao, logging in from the `registry.frithuz.dev` environment, and verifies the signature against [`cosign.pub`](../cosign.pub) before anything is promoted. The index lists the attestation manifests, so that signature covers them too ([integrations/openbao.md](integrations/openbao.md)). `promote` copies every signature with the image, so `cosign verify --key cosign.pub <image>@<digest>` works the same against both registries.
 
 ### Tags and schedule
 
@@ -153,12 +149,12 @@ If anything changed, it builds the kits with the kit frontend, which validates e
 
 ### Publishing the kits
 
-`publish-kits.yml` publishes each kit to its own repository: `claude-kit` and `codex-kit`, on GHCR and then Quay and `registry.frithuz.dev`. It runs on pushes to `main` that change `sandboxes/`, which includes a merged kits PR, and by hand.
+`publish-kits.yml` publishes each kit to its own repository: `claude-kit` and `codex-kit`, on GHCR and then Quay. It runs on pushes to `main` that change `sandboxes/`, which includes a merged kits PR, and by hand.
 
 1. **`ghcr`**, once per kit, builds both platforms on one runner with `docker buildx build` and an SBOM, and pushes the kit by digest, untagged. It doesn't use `bake.yml`, whose finalize step rebuilds the index and drops the index annotations the kit frontend writes, the kit descriptor among them. A kit build runs nothing on the target platform, so it needs no emulation.
 2. It tags the kit `build-<run id>`, plus `latest` on pushes and on manual runs that ask for it. The kit carries its image's `/legal/source.tsv` ([legal.md](legal.md#sandbox-kits)).
 3. **`sign`**, once per kit, signs the kit's index digest on GHCR with the OpenBao-held cosign key and verifies it against `cosign.pub`, as for the image ([integrations/openbao.md](integrations/openbao.md)). Only runs that tag `latest` are signed.
-4. **`promote`** and **`promote-frithuz`** wait for both kits to be signed, then copy each kit with its referrers, the signature among them, to Quay and `registry.frithuz.dev` and tag it there. Only runs that tag `latest` are promoted, as for the image.
+4. **`promote`** waits for both kits to be signed, then copies each kit with its referrers, the signature among them, to Quay and tags it there. Only runs that tag `latest` are promoted, as for the image.
 
 The kits have no keyless signature: they aren't built with `bake.yml`.
 
