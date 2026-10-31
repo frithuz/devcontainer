@@ -253,3 +253,93 @@ jobs:
             echo
             echo "- Image: \`$QUAY_REPOSITORY:$VERSION@$DIGEST\`"
           } >>"$GITHUB_STEP_SUMMARY"
+
+  promote-frithuz:
+    name: Promote to registry.frithuz.dev
+    needs: [changes, build, sign]
+    # If Git is already on Quay, mirror that signed artifact without rebuilding it.
+    if: >-
+      !cancelled() && needs.changes.result == 'success'
+      && ((needs.build.result == 'success' && needs.sign.result == 'success')
+          || needs.changes.outputs.build == 'false')
+    runs-on: ubuntu-26.04
+    # zot trusts only this environment's OIDC subject, and only main can deploy to it
+    # (docs/integrations/zot.md).
+    environment: registry.frithuz.dev
+    permissions:
+      contents: read
+      packages: read # copy from GHCR
+      id-token: write # zot OIDC workload identity
+    defaults:
+      run:
+        shell: bash
+    env:
+      DIGEST: ${{ needs.build.outputs.digest }}
+      VERSION: ${{ needs.changes.outputs.version }}
+      ZOT_AUDIENCE: registry.frithuz.dev
+      ZOT_REGISTRY: registry.frithuz.dev
+      ZOT_REPOSITORY: registry.frithuz.dev/frithuz/git
+    steps:
+      - name: Set up ORAS
+        uses: oras-project/setup-oras@005458ad77f1c8facd38a094e4af2e69e5607ff4 # v2.0.2
+        with:
+          url: ${{ env.ORAS_URL }}
+          checksum: ${{ env.ORAS_CHECKSUM }}
+
+      - name: Set the GHCR repository
+        run: echo "GHCR_REPOSITORY=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/git" >>"$GITHUB_ENV"
+
+      - name: Log in to GHCR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$GH_TOKEN" | oras login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+
+      - name: Select the signed source
+        run: |
+          if [[ -n $DIGEST ]]; then
+            echo "SOURCE_REPOSITORY=$GHCR_REPOSITORY" >>"$GITHUB_ENV"
+          else
+            digest=$(oras resolve "quay.io/frithuz/git:$VERSION")
+            echo "DIGEST=$digest" >>"$GITHUB_ENV"
+            echo "SOURCE_REPOSITORY=quay.io/frithuz/git" >>"$GITHUB_ENV"
+          fi
+
+      # zot checks the job's OIDC token itself and hands it back as the registry token, so no
+      # credential is stored. GitHub's tokens last five minutes and zot can't refresh them, so a copy
+      # can outlive its login: each attempt logs in with a fresh token, and skips the blobs an earlier
+      # attempt copied. Copied by digest, untagged, with the referrers that carry the signatures and
+      # attestations. The audience must be one of the OIDC audiences in zot's config.
+      - name: Copy and tag the image
+        env:
+          TAGS: ${{ needs.changes.outputs.version }}
+        run: |
+          login() {
+            local oidc
+            oidc=$(curl -fsS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$ZOT_AUDIENCE" | jq -er .value)
+            echo "::add-mask::$oidc"
+            printf '%s' "$oidc" | oras login "$ZOT_REGISTRY" --username oidc --password-stdin
+          }
+          copied=false
+          for attempt in 1 2 3; do
+            login
+            if oras cp -r --to-distribution-spec v1.1-referrers-api "$SOURCE_REPOSITORY@$DIGEST" "$ZOT_REPOSITORY@$DIGEST"; then
+              copied=true
+              break
+            fi
+            echo "::warning::Copy attempt $attempt failed"
+          done
+          if [[ $copied != true ]]; then
+            echo "::error::Couldn't copy the image to $ZOT_REPOSITORY"
+            exit 1
+          fi
+          login
+          read -ra tags <<<"$TAGS"
+          oras tag "$ZOT_REPOSITORY@$DIGEST" "${tags[@]}"
+
+      - name: Summary
+        run: |
+          {
+            echo "## Promoted to registry.frithuz.dev"
+            echo
+            echo "- Image: \`$ZOT_REPOSITORY:$VERSION@$DIGEST\`"
+          } >>"$GITHUB_STEP_SUMMARY"

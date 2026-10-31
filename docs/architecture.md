@@ -63,7 +63,10 @@ with `force`. The source signature is verified before compilation; the pinned
 archive checksum is also checked before the artifact can be exported.
 
 The workflow publishes to GHCR, signs with the existing OpenBao key, then copies
-the image and referrers to `quay.io/frithuz/git:<Git version>`. A forced rebuild
+the image and referrers to `quay.io/frithuz/git:<Git version>` and
+`registry.frithuz.dev/frithuz/git:<Git version>`. When Quay already has the
+matching artifact, the workflow mirrors it to registry.frithuz.dev without
+recompiling. A forced rebuild
 can move that tag; consumers must pin its digest too. The first rollout commit
 uses `[skip main image]` in its commit message to skip `publish.yml`'s main-image
 build for that push only. Schedules and manual runs remain enabled. After the

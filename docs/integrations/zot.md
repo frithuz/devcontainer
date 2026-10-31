@@ -65,6 +65,14 @@ Under `http` in zot's config:
         }
       ]
     },
+    "frithuz/git": {
+      "policies": [
+        {
+          "users": ["repo:frithuz@306324456/devcontainer@1433350495:environment:registry.frithuz.dev"],
+          "actions": ["read", "create", "update"]
+        }
+      ]
+    },
     "frithuz/claude-kit": {
       "policies": [
         {
@@ -103,12 +111,18 @@ Each `promote-frithuz` names `environment: registry.frithuz.dev` and has `id-tok
 - **Login:** push to `main`, or run `publish.yml` manually on `main` with **Also tag the built image as latest, and promote it to Quay and registry.frithuz.dev** ticked. The step should print `Login Succeeded`. Run it the same way from another branch: `promote-frithuz` should fail before it starts because the environment's branch rule refuses it.
 - **Promotion:** after a run, `registry.frithuz.dev/frithuz/devcontainer`'s tags point at the same digests as GHCR's, and the signatures verify against the zot reference. After a `publish-kits` run, each kit's tags there point at the same digests as on GHCR.
 
+The standalone Git workflow also publishes `registry.frithuz.dev/frithuz/git`,
+using the Git version as its tag and the same signed digest as Quay. Add the
+`frithuz/git` policy before its first promotion. A run that skips compilation
+can still copy the existing Quay artifact here, so a registry configuration
+repair does not require rebuilding Git.
+
 ## Troubleshooting
 
 | Symptom | Likely cause |
 | --- | --- |
 | Login returns 401 | The audience doesn't match (`ZOT_AUDIENCE` against `audiences`), or the subject validation fails: a job without the environment, or the mutable instead of the immutable prefix. Decode the token (it's a JWT) and compare its `aud` and `sub` claims with zot's config |
 | Login fails without reaching `/zot/auth/token` | `bearer.realm` isn't set, or isn't reachable at `https://registry.frithuz.dev/zot/auth/token` |
-| Login succeeds, then the push returns 403 | The identity isn't in `accessControl` for that repository (`frithuz/devcontainer`, `frithuz/claude-kit`, or `frithuz/codex-kit`), or lacks `create` or `update` |
+| Login succeeds, then the push returns 403 | The identity isn't in `accessControl` for that repository (`frithuz/devcontainer`, `frithuz/git`, `frithuz/claude-kit`, or `frithuz/codex-kit`), or lacks `create` or `update` |
 | `ACTIONS_ID_TOKEN_REQUEST_URL` is empty | The job is missing `permissions: id-token: write` |
 | Every copy attempt fails with 401 partway through | Each attempt outlives its five-minute token before copying any new blob. Copy the platforms one at a time, or raise the attempts |
