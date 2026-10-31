@@ -46,6 +46,30 @@ Copied binaries have to run on the base's glibc (Debian 13's):
 
 ## git
 
+The standalone `Dockerfile.git` is the first stage of separating Git's release
+from the devcontainer. It uses the same pinned hardened Debian builder and Rust
+toolchain, then copies only `/out` into a scratch artifact. That tree contains
+Git, its helpers and templates, attribution, and the exact build recipe. It is
+intended for `COPY --from`, not execution as a container: the consumer supplies
+the compatible Debian shared libraries and shell. The main Dockerfile still
+builds Git itself until the Quay artifact has been deployed and verified.
+
+`publish-git.yml` watches the standalone recipe and its scripts. It compares
+`VERSION` and the release archive's `SHA256` in `Dockerfile.git` with the version
+tag's source-checksum annotation on Quay. A missing tag or changed checksum
+builds both architectures; matching inputs skip compilation. Registry errors
+fail the run. Recipe, toolchain, and zlib-ng changes alone require a manual run
+with `force`. The source signature is verified before compilation; the pinned
+archive checksum is also checked before the artifact can be exported.
+
+The workflow publishes to GHCR, signs with the existing OpenBao key, then copies
+the image and referrers to `quay.io/frithuz/git:<Git version>`. A forced rebuild
+can move that tag; consumers must pin its digest too. The first rollout commit
+uses `[skip main image]` in its commit message to skip `publish.yml`'s main-image
+build for that push only. Schedules and manual runs remain enabled. After the
+artifact is verified, a separate change will replace the main Dockerfile's Git
+builder and adapt its version checks and source attribution to the artifact.
+
 git is compiled from source in the `git` stage (`scripts/build/git.sh`), so the image runs a current release built for how it's used, not the distribution's. The stage starts from `debian`, the base the image runs on, so git links against exactly the libraries the image installs. It installs under `/usr/local` with its built-in commands as symlinks rather than hard links, so the `files` stage copies it as one tree.
 
 **Verified before use.** The release tarball's signature must verify against the maintainer's key, pinned by fingerprint (`SIGNER`). The keyserver's answer must be that key alone, and gpg's `VALIDSIG` must name it as the signing key's primary: a good signature by any other key fails. zlib-ng publishes no signatures (lightweight tags, unsigned commits), so its archive is pinned by commit and SHA-256 instead, and its header must report the pinned version.

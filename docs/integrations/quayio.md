@@ -10,7 +10,7 @@ In **Organizations → frithuz → Settings**:
 
 | Setting | Value | Why |
 | --- | --- | --- |
-| **Default Permissions** | None for any robot or team | Default permissions grant access to *every new repository*. The robot must only ever reach `devcontainer`, `claude-kit`, and `codex-kit` |
+| **Default Permissions** | None for any robot or team | Default permissions grant access to *every new repository*. The robot must only ever reach `devcontainer`, `claude-kit`, `codex-kit`, and `git` |
 | **Teams** | `frithuz+promote` isn't a member of any team | Team membership would grant whatever the team can reach |
 
 ## 2. Repository `frithuz/devcontainer`
@@ -30,6 +30,14 @@ Create the repository before the first promote. If a push creates it, Quay makes
 
 Create each the same way, **Public**, with `frithuz+promote` as its only robot, with **Write**. Each description says which agent the kit runs, how to run it with `sbx` ([usage.md](../usage.md#agent-sandboxes-sbx)), and the same directions for fetching copyleft source: a kit carries every layer of the image it pins.
 
+### Git artifact repository `frithuz/git`
+
+Create this repository **Public** too and grant `frithuz+promote` **Write**.
+`publish-git.yml` uses the existing `quay` environment and federation to promote
+the signed GHCR artifact under its Git version tag. No new credential or
+federation entry is needed. This scratch image carries `/out`, including Git's
+source records and build recipe under `/out/legal/attribution/git`.
+
 ## 3. Robot account `frithuz+promote`
 
 Create it under **Organizations → frithuz → Robot Accounts → Create Robot Account**. The wizard asks for a name and description, then offers optional steps: add to a team, add to repositories, and default permissions. Set them exactly as below and leave every other optional step empty. Federation only works for robots that belong to an **organization**, not to a user (as of Quay 3.16).
@@ -37,16 +45,16 @@ Create it under **Organizations → frithuz → Robot Accounts → Create Robot 
 | Field | Value |
 | --- | --- |
 | Name | `promote` (full name `frithuz+promote`) |
-| Description | `publish.yml and publish-kits.yml promote jobs: copy images and referrers from the GHCR mirror, apply tags. OIDC federation only.` |
+| Description | `publish.yml, publish-kits.yml, and publish-git.yml promote jobs: copy images and referrers from the GHCR mirror, apply tags. OIDC federation only.` |
 | Add to team | None |
-| Repository permissions | `devcontainer`, `claude-kit`, and `codex-kit`: **Write** (push manifests and referrers, create and move tags) |
+| Repository permissions | `devcontainer`, `claude-kit`, `codex-kit`, and `git`: **Write** (push manifests and referrers, create and move tags) |
 | Default permissions | None |
 | Robot federation | Issuer `https://token.actions.githubusercontent.com`, subject `repo:frithuz@306324456/devcontainer@1433350495:environment:quay`, OIDC audiences `quay` (see [section 4](#4-oidc-federation)) |
 | Robot token | **Never copied or stored.** It exists but isn't used. If it's ever exposed, regenerate it to invalidate it. Federation keeps working |
 
 Steps:
 1. Create the robot with the name and description above.
-2. In **Add to repository**, select `devcontainer`, `claude-kit`, and `codex-kit`, each with **Write**. Skip the team and default-permission steps.
+2. In **Add to repository**, select `devcontainer`, `claude-kit`, `codex-kit`, and `git`, each with **Write**. Skip the team and default-permission steps.
 3. Set up federation as described in [section 4](#4-oidc-federation).
 
 The robot doesn't need **Admin**. That would let it change visibility, permissions, and repository settings.
