@@ -101,6 +101,16 @@ components:
     notices: [/legal/attribution/task/LICENSE]
     paths: [/usr/local/bin/task]
 
+  - name: sampo
+    stage: sampo
+    install: release
+    # Its Rust dependencies are permissive except option-ext (MPL-2.0), compiled in upstream.
+    license: MIT
+    version: sampo --version
+    notices: [/legal/attribution/sampo/LICENSE]
+    paths: [/usr/local/bin/sampo]
+    purl: pkg:cargo/sampo@{version}
+
   - name: dnslookup
     stage: dnslookup
     install: go-install

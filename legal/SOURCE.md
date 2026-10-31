@@ -23,4 +23,5 @@ carry this same file: the agents they add bring no copyleft code.
 The MPL-2.0 Go modules are compiled into binaries their upstream projects built and publish with
 their source (betterleaks, dbmate, yq, Task, and Docker's packages), and are unmodified.
 `manifest.tsv` lists each module (`go-module:` rows) with its exact version and its archive on the Go module
-proxy, `https://proxy.golang.org`.
+proxy, `https://proxy.golang.org`. Sampo's release binary likewise carries one unmodified MPL-2.0
+Rust crate, `option-ext`, published on `https://crates.io`.

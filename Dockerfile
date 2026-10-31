@@ -59,6 +59,21 @@ RUN --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/
     --mount=type=bind,source=scripts/build/task.sh,target=/mnt/src/scripts/build/task.sh \
     bash /mnt/src/scripts/build/run.sh /mnt/src/scripts/build/task.sh
 
+# Sampo, the changeset-based release tool: no upstream image, and its releases publish no checksums.
+# Its release archive, pinned by SHA-256 per architecture like Task's: its Rust dependencies include
+# an MPL-2.0 crate (option-ext), which upstream's binary carries the obligation for. The archive has
+# no LICENSE, so it comes from the release tag, pinned too. Bumped by hand: VERSION and every
+# SHA256_ value together. The binary links against glibc (2.39 or newer at 0.23.0).
+FROM go AS sampo
+ARG VERSION=0.23.0
+ARG SHA256_AMD64=d526913cd5283ec18ac280b515916f44cd0c51a3a22dd780ddce791235354ed6
+ARG SHA256_ARM64=b7acca5cf6f9591e50ca6bc71c63bf3d63e5c84cd849152c625c350c20cfef7c
+ARG SHA256_LICENSE=5af9a8bbcab03013b58c08124e6a23451664d0e9542be98b7672685cdbcb4c4d
+ARG TARGETARCH
+RUN --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/run.sh \
+    --mount=type=bind,source=scripts/build/sampo.sh,target=/mnt/src/scripts/build/sampo.sh \
+    bash /mnt/src/scripts/build/run.sh /mnt/src/scripts/build/sampo.sh
+
 # dnslookup, the DNS client (in place of dig, which is MPL-2.0): no upstream image either. Without
 # the linker flag it reports its version as "master".
 FROM go AS dnslookup
@@ -113,6 +128,7 @@ COPY --link --chown=0:0 --chmod=0755 --from=jq /jq /out/usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=yq /usr/bin/yq /out/usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=jv /opt/jv/jv /out/usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=task /opt/task/task /out/usr/local/bin/
+COPY --link --chown=0:0 --chmod=0755 --from=sampo /opt/sampo/sampo /out/usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=dnslookup /opt/dnslookup/dnslookup /out/usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=git-cliff /usr/local/bin/git-cliff /out/usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=betterleaks /usr/bin/betterleaks /out/usr/local/bin/
@@ -129,6 +145,7 @@ COPY --link --from=python /usr/local/lib/python3.15/LICENSE.txt /out/legal/attri
 COPY --link --from=jq /COPYING /out/legal/attribution/jq/
 COPY --link --from=jv /opt/jv/LICENSE /out/legal/attribution/jv/
 COPY --link --from=task /opt/task/LICENSE /opt/task/SOURCE /out/legal/attribution/task/
+COPY --link --from=sampo /opt/sampo/LICENSE /opt/sampo/SOURCE /out/legal/attribution/sampo/
 COPY --link --from=dnslookup /opt/dnslookup/LICENSE /out/legal/attribution/dnslookup/
 COPY --link --from=gh-stack /opt/gh-stack/LICENSE /out/legal/attribution/gh-stack/
 RUN --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/run.sh \
