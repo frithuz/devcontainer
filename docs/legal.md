@@ -66,7 +66,7 @@ The image conveys GPL (v2 and v3), LGPL, and MPL-2.0 components: git (GPLv2, com
 `scripts/collect-source.sh` writes it in the `/legal` step, after `collect-legal.sh`, from that platform's `manifest.tsv`. Columns: source, version, URL, digest (`<algorithm>:<hex>`), and the `manifest.tsv` components the file covers. A copyleft component whose source can't be found fails the build.
 
 - **apt packages:** every package whose license is copyleft, or `NOASSERTION` (a copyright file that isn't machine-readable, which can't rule it out), gets its source package at the exact source version installed: the `.dsc` and every archive it lists. apt resolves them from the `deb-src` repositories in `scripts/source-apt.yaml`, with a private configuration that leaves the image's own apt sources and lists alone, and checks the indexes against the repositories' signing keys. The digests are the strongest hash the signed index lists, SHA-512 for both repositories. The lists persist in a build cache mount, so a build fetches only what changed. Docker's apt repository publishes no source packages, and none of its packages is copyleft.
-- **Compiled components** (`install: source-build`: git): the archive it was compiled from, the archives of the libraries compiled into it, and the build script, as a permalink at the build's commit when the build passes `REVISION` and `REPOSITORY_URL` (CI does), or its repository path otherwise.
+- **Compiled components** (`install: source-build`: git): the archive it was compiled from, the archives of the libraries compiled into it, and the build recipe. For a copied artifact, permalinks use its recorded producer commit and repository, regardless of the consuming image's revision. Locally compiled components use `REVISION` and `REPOSITORY_URL`, or repository paths when those are absent.
 - **Everything else** that's copyleft must be covered by an election, or the build fails.
 
 The repositories the source comes from:
@@ -76,11 +76,13 @@ The repositories the source comes from:
 
 ### Compiled components
 
-A component compiled in the Dockerfile (`install: source-build`: git) records the source it was compiled from and the script that controlled the build, which a copyleft one owes. Its stage records both in `/legal/attribution/<name>/SOURCE`, and `collect-legal.sh` copies them into its manifest row:
+A component compiled here or in a separate artifact (`install: source-build`: git) records the source it was compiled from and the script that controlled the build, which a copyleft one owes. Its stage records both in `/legal/attribution/<name>/SOURCE`, and `collect-legal.sh` copies them into its manifest row:
 
 - **The archive**, by URL and SHA-256: git's signed release tarball.
 - **The build script**, by repository path and SHA-256 (`build-script:`): `scripts/build/git.sh`.
 - **Libraries compiled in** (`embedded:`), each with a row of its own marked `embedded-in:<component>`: zlib-ng, under the Zlib license. A permissive license owes no source by itself, but a library compiled into a GPL binary is part of that binary's Corresponding Source, so `source.tsv` lists the archive of every library embedded in a copyleft component.
+
+Git's artifact also carries `build/ORIGIN` and the exact Dockerfile, runner, and build scripts under `/legal/attribution/git/build/`. `source.tsv` lists each recipe file at the producer commit, with its checksum; `manifest.tsv` records the pinned artifact reference. Missing or invalid artifact origin fails collection.
 
 The Rust standard library is also compiled into git. It's Apache-2.0 OR MIT, so it owes no source, and its notices ship in `/legal/attribution/git/rust/`.
 

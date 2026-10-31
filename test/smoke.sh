@@ -189,7 +189,7 @@ lookup() {
 		fi
 	done
 
-	# git is compiled in its own stage: its helpers must find their libraries, the system config
+	# git comes from a separate artifact: its helpers must find their libraries, the system config
 	# is /etc/gitconfig, and grep -P has PCRE.
 	check "git's helpers resolve their libraries" bash -c '
 		for helper in "$(git --exec-path)"/git-remote-http "$(git --exec-path)"/git-http-fetch; do
@@ -203,7 +203,7 @@ lookup() {
 		repo=$(mktemp -d) && cd "$repo" && git init -q && echo needle >f && git add f &&
 			git grep -qP "ne{2}dle"; status=$?; rm -rf "$repo"; exit $status'
 	expect "git compresses with the pinned zlib-ng" \
-		"zlib-ng: $(awk -F= '$1 == "ARG ZLIB_NG_VERSION" { print $2; exit }' "$dockerfile")" \
+		"zlib-ng: $(awk -F= '$1 == "ARG ZLIB_NG_VERSION" { print $2; exit }' /legal/attribution/git/build/Dockerfile.git)" \
 		"$(git version --build-options | grep -E '^zlib(-ng)?: ')"
 	check "git hashes with OpenSSL where collision detection isn't needed" bash -c \
 		'git version --build-options | grep -qx "non-collision-detecting-SHA-1: SHA1_OPENSSL_UNSAFE"'

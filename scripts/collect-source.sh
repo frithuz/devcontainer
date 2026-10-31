@@ -6,7 +6,7 @@
 #   apt resolves it from the deb-src repositories in scripts/source-apt.yaml, verified against
 #   their signed indexes;
 # - compiled here: the archive a component was compiled from, the archives of the libraries
-#   compiled into it, and the script that controlled the build, at this build's commit.
+#   compiled into it, and the recipe that controlled the build, at the producer's commit.
 # Every other copyleft component must be covered by a license election, or the build fails. Go
 # modules' licenses aren't in manifest.tsv; scripts/collect-legal.sh keeps copyleft ones out of
 # the binaries built here.
@@ -107,10 +107,20 @@ fi
 # "build-script:<path> sha256:<hex>"; the libraries compiled into them, "embedded-in:<component>
 # source:<url> sha256:<hex>". Every other copyleft component must be elected.
 script_url() {
-	if [[ -n ${REVISION:-} && -n ${REPOSITORY_URL:-} ]]; then
-		echo "$REPOSITORY_URL/blob/$REVISION/$1"
+	local comp=$1 path=$2 revision=${REVISION:-} repository=${REPOSITORY_URL:-}
+	local origin=$legal/attribution/$comp/build/ORIGIN
+	if [[ -f $origin ]]; then
+		revision=$(awk '$1 == "revision:" { print $2 }' "$origin")
+		repository=$(awk '$1 == "repository:" { print $2 }' "$origin")
+		if [[ ! $revision =~ ^[0-9a-f]{40}$ || ! $repository =~ ^https://[^[:space:]]+$ ]]; then
+			echo "$comp: invalid artifact build origin in $origin" >&2
+			return 1
+		fi
+	fi
+	if [[ -n $revision && -n $repository ]]; then
+		echo "$repository/blob/$revision/$path"
 	else
-		echo "$1"
+		echo "$path"
 	fi
 }
 
@@ -124,7 +134,24 @@ while IFS=$'\t' read -r -u 3 comp version license source; do
 	fi
 	row "$comp" "$version" "${BASH_REMATCH[2]}" "sha256:${BASH_REMATCH[3]}" "$comp"
 	if [[ $source =~ build-script:([^ ]+)\ sha256:([0-9a-f]{64}) ]]; then
-		row "$comp" "$version" "$(script_url "${BASH_REMATCH[1]}")" "sha256:${BASH_REMATCH[2]}" "$comp"
+		script_path=${BASH_REMATCH[1]} script_sha=${BASH_REMATCH[2]}
+		if ! url=$(script_url "$comp" "$script_path"); then
+			error "$comp: cannot resolve the build script's source"
+			continue
+		fi
+		row "$comp" "$version" "$url" "sha256:$script_sha" "$comp"
+	fi
+	# Artifacts carry the complete recipe, including the Dockerfile and runner. Use the
+	# producer's revision for every file, even when this consumer is built at a newer commit.
+	recipe=$legal/attribution/$comp/build
+	if [[ -f $recipe/ORIGIN ]]; then
+		while IFS= read -r file; do
+			if ! url=$(script_url "$comp" "${file#"$recipe/"}"); then
+				error "$comp: cannot resolve recipe file $file"
+				continue
+			fi
+			row "$comp" "$version" "$url" "sha256:$(sha256sum "$file" | cut -d' ' -f1)" "$comp"
+		done < <(find "$recipe" -type f ! -name ORIGIN | sort)
 	fi
 	# Libraries compiled into it are part of its source, whatever their own license.
 	while IFS=$'\t' read -r e_comp e_source; do

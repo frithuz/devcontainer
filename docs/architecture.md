@@ -18,7 +18,7 @@ The Dockerfile has four kinds of stages. The comments in the file cover the deta
 
 The base is one of them: the `debian` stage pins [Docker Hardened Images](https://docs.docker.com/dhi/)' Debian 13 base, the `-dev` variant (it runs as root and ships apt), pulled from `dhi.io`, which needs a Docker login. The final stage and the stages that compile for it start from it, so they link against the same libraries.
 
-**Builder stages** hold anything fetched or built by script that doesn't belong in a user's home: `gh`, `jv`, `task`, `dnslookup`, git, and the apt signing key. That keeps `gnupg`, compilers, and other fetch and build tooling out of the final image. Most start from `go`; the `git` stage starts from `debian` instead ([git](#git)). The `config` stage validates `scripts/*.yaml` against their schemas and converts them to JSON. The scripts read only that output, so a malformed data file fails the build before anything uses it.
+**Builder stages** hold anything fetched or built by script that doesn't belong in a user's home: `gh`, `jv`, `task`, `dnslookup`, and the apt signing key. That keeps `gnupg`, compilers, and other fetch and build tooling out of the final image. Most start from `go`; Git comes from an independently published artifact ([git](#git)). The `config` stage validates `scripts/*.yaml` against their schemas and converts them to JSON. The scripts read only that output, so a malformed data file fails the build before anything uses it.
 
 **The `files` stage** lays out, under `/out`, every file the image copies in: the toolchains and standalone tools, git's `/usr/local` tree, the pnpm hard links, the `/usr/local/bin` symlinks, the apt signing key, `rootfs/`, and the notices `/legal` starts from. Hard links survive because they're copied within one `COPY`.
 
@@ -46,13 +46,13 @@ Copied binaries have to run on the base's glibc (Debian 13's):
 
 ## git
 
-The standalone `Dockerfile.git` is the first stage of separating Git's release
-from the devcontainer. It uses the same pinned hardened Debian builder and Rust
+The standalone `Dockerfile.git` separates Git's release from the devcontainer.
+It uses a pinned hardened Debian builder and Rust
 toolchain, then copies only `/out` into a scratch artifact. That tree contains
 Git, its helpers and templates, attribution, and the exact build recipe. It is
 intended for `COPY --from`, not execution as a container: the consumer supplies
-the compatible Debian shared libraries and shell. The main Dockerfile still
-builds Git itself until the Quay artifact has been deployed and verified.
+the compatible Debian shared libraries and shell. The main Dockerfile pins
+`quay.io/frithuz/git` by version and digest and copies its `/out` tree.
 
 `publish-git.yml` watches the standalone recipe and its scripts. It compares
 `VERSION` and the release archive's `SHA256` in `Dockerfile.git` with the version
@@ -66,14 +66,13 @@ The workflow publishes to GHCR, signs with the existing OpenBao key, then copies
 the image and referrers to `quay.io/frithuz/git:<Git version>` and
 `registry.frithuz.dev/frithuz/git:<Git version>`. When Quay already has the
 matching artifact, the workflow mirrors it to registry.frithuz.dev without
-recompiling. A forced rebuild
-can move that tag; consumers must pin its digest too. The first rollout commit
-uses `[skip main image]` in its commit message to skip `publish.yml`'s main-image
-build for that push only. Schedules and manual runs remain enabled. After the
-artifact is verified, a separate change will replace the main Dockerfile's Git
-builder and adapt its version checks and source attribution to the artifact.
+recompiling. A forced rebuild can move that tag; the main Dockerfile pins its
+digest too. After publishing a Git release, update that pin to consume it.
 
-git is compiled from source in the `git` stage (`scripts/build/git.sh`), so the image runs a current release built for how it's used, not the distribution's. The stage starts from `debian`, the base the image runs on, so git links against exactly the libraries the image installs. It installs under `/usr/local` with its built-in commands as symlinks rather than hard links, so the `files` stage copies it as one tree.
+Git is compiled from source in `Dockerfile.git` using `scripts/build/git.sh`.
+The builder uses the same hardened Debian release as the devcontainer, so its
+shared libraries are compatible. Git installs under `/usr/local` with its
+built-in commands as symlinks, so the `files` stage copies it as one tree.
 
 **Verified before use.** The release tarball's signature must verify against the maintainer's key, pinned by fingerprint (`SIGNER`). The keyserver's answer must be that key alone, and gpg's `VALIDSIG` must name it as the signing key's primary: a good signature by any other key fails. zlib-ng publishes no signatures (lightweight tags, unsigned commits), so its archive is pinned by commit and SHA-256 instead, and its header must report the pinned version.
 
@@ -91,7 +90,7 @@ git is compiled from source in the `git` stage (`scripts/build/git.sh`), so the 
 
 **Client only.** The daemon, `http-backend`, `git-shell`, `imap-send`, `instaweb`, and the scripts that would only report a missing Perl or Python are removed after install. A release that stops shipping one fails the build, so the list stays accurate. `git subtree` is installed from `contrib/`. There are no man pages or shell completion: use `git <command> -h`.
 
-To bump: `VERSION` for git; `ZLIB_NG_VERSION`, `ZLIB_NG_COMMIT`, and `ZLIB_NG_SHA256` together for zlib-ng; `SIGNER` only if git's maintainer changes signing keys. The smoke tests check git's version against `VERSION` and zlib-ng's against `ZLIB_NG_VERSION`. Changing `git.sh` changes git's [source image](legal.md#compiled-components), which carries the script.
+To bump in `Dockerfile.git`: `VERSION` and `SHA256` for git; `ZLIB_NG_VERSION`, `ZLIB_NG_COMMIT`, and `ZLIB_NG_SHA256` together for zlib-ng; `SIGNER` only if git's maintainer changes signing keys. The smoke tests check Git's version against the main Dockerfile's image tag and zlib-ng's against `ZLIB_NG_VERSION` in the recipe shipped inside that artifact. The artifact carries its original recipe and producer commit for [source attribution](legal.md#compiled-components).
 
 ## Filesystem
 

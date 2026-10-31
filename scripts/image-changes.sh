@@ -33,6 +33,9 @@ done <.dockerignore
 inputs+=(
 	':(exclude)scripts/copy-manifests.sh' ':(exclude)scripts/image-changes.sh'
 	':(exclude)scripts/update-kits.sh' ':(exclude)test/'
+	# Git compilation has its own release workflow; the main Dockerfile pins the artifact.
+	':(exclude)scripts/build/git.sh' ':(exclude)scripts/build/git-artifact.sh'
+	':(exclude)scripts/git-image-changes.sh'
 )
 
 usage() {

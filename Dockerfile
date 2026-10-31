@@ -32,29 +32,8 @@ RUN --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/
     --mount=type=bind,source=scripts/build/apt-keys.sh,target=/mnt/src/scripts/build/apt-keys.sh \
     bash /mnt/src/scripts/build/run.sh /mnt/src/scripts/build/apt-keys.sh
 
-# git, compiled from its release tarball after checking the tarball's signature against the
-# maintainer's pinned key (SIGNER), with zlib-ng compiled in for faster compression. zlib-ng
-# releases aren't signed, so its archive is pinned by commit and SHA-256. Built on the image's own
-# base, so it links against the libraries the image installs, with the Rust toolchain from the
-# pinned rust stage for git's Rust code. Bumped by hand: VERSION, the three ZLIB_NG_ values
-# together, and SIGNER only if the signing key changes.
-FROM debian AS git
-ARG VERSION=2.56.0
-ARG SIGNER=96E07AF25771955980DAD10020D04E5A713660A7
-ARG ZLIB_NG_VERSION=2.3.3
-ARG ZLIB_NG_COMMIT=12731092979c6d07f42da27da673a9f6c7b13586
-ARG ZLIB_NG_SHA256=a0d2a5d122c84b56a793a1553a9c3327fb2eb7469bf7a86b79e3c7be5d92e8d6
-ARG TARGETARCH
-COPY --link --from=rust /usr/local/rustup /usr/local/rustup
-COPY --link --from=rust /usr/local/cargo /usr/local/cargo
-ENV RUSTUP_HOME=/usr/local/rustup
-ENV CARGO_HOME=/usr/local/cargo
-ENV PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-RUN --mount=type=cache,id=apt-lists-$TARGETARCH,target=/var/lib/apt/lists,sharing=locked \
-    --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/run.sh \
-    --mount=type=bind,source=scripts/build/apt-bootstrap.sh,target=/mnt/src/scripts/build/apt-bootstrap.sh \
-    --mount=type=bind,source=scripts/build/git.sh,target=/mnt/src/scripts/build/git.sh \
-    bash /mnt/src/scripts/build/run.sh /mnt/src/scripts/build/apt-bootstrap.sh /mnt/src/scripts/build/git.sh
+# Independently built Git artifact; update the version and digest after publish-git succeeds.
+FROM quay.io/frithuz/git:2.56.0@sha256:e086987497cf2ed1f1777347d5fdc1e85000b1183a5b8d3f919a058f23d6e5dc AS git
 
 # jv, a JSON Schema validator: for the data files below, and shipped in the image. No upstream
 # image publishes it, so it's built at a pinned version (bumped by hand); Go verifies the module

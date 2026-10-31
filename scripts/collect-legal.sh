@@ -219,7 +219,7 @@ while IFS=$'\t' read -r -u 3 comp stage install license version_cmd notice_globs
 			compiled_bins[$(basename "$bin_path")]=$comp
 		done
 	elif [[ $install == source-build ]]; then
-		# Compiled in its own stage, which records the archive it built in its SOURCE file.
+		# Compiled here or in a pinned artifact, which carries its original SOURCE record.
 		awk -v s="$stage" 'toupper($1) == "FROM" && toupper($3) == "AS" && $4 == s { found = 1 } END { exit !found }' "$dockerfile" ||
 			error "$comp: no stage '$stage' in the Dockerfile"
 		# The build script that compiled it is part of its source too.
@@ -229,6 +229,11 @@ while IFS=$'\t' read -r -u 3 comp stage install license version_cmd notice_globs
 		[[ -n ${build_script:-} && ${build_sha:-} == sha256:* ]] || error "$comp: $attribution/$comp/SOURCE records no build script"
 		provenance="source:${src_url:-} sha256:${src_sha:-} build-script:${build_script:-} ${build_sha:-} stage:$stage"
 		distribution=-
+		if [[ ${stage_ref[$stage]:-} == *@sha256:* ]]; then
+			provenance+=" image:${stage_ref[$stage]}"
+			distribution=${stage_ref[$stage]%%@*}
+			[[ -f $attribution/$comp/build/ORIGIN ]] || error "$comp: source artifact records no build origin"
+		fi
 	elif [[ $install == release ]]; then
 		# Unpacked from upstream's release archive in its own stage, which records the archive in
 		# its SOURCE file.

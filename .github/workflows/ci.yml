@@ -105,6 +105,9 @@ jobs:
           done < <(grep '^not ok' out/preflight/smoke.txt || true)
           exit "$status"
 
+      - name: Check artifact source provenance
+        run: bash test/source-artifact.sh
+
       # Anonymous volumes, removed with the container, so the daemon's data is exclusive to it.
       # Runs even when the smoke tests fail, as long as the image built.
       - name: Run the DinD checks
