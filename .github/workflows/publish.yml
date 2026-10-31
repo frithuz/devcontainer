@@ -479,21 +479,19 @@ jobs:
       !cancelled() && needs.build.result == 'success' && needs.sign.result == 'success'
       && (github.event_name != 'workflow_dispatch' || inputs.latest)
     runs-on: ubuntu-26.04
-    # zot trusts only this environment's OIDC subject, and only main can deploy to it
-    # (docs/integrations/zot.md).
+    # The environment holds PNPR_TOKEN, and only main can deploy to it
+    # (docs/integrations/registry-frithuz.md).
     environment: registry.frithuz.dev
     permissions:
       contents: read
       packages: read # copy from GHCR
-      id-token: write # zot OIDC workload identity
     defaults:
       run:
         shell: bash
     env:
       DIGEST: ${{ needs.build.outputs.digest }}
-      ZOT_AUDIENCE: registry.frithuz.dev
-      ZOT_REGISTRY: registry.frithuz.dev
-      ZOT_REPOSITORY: registry.frithuz.dev/frithuz/devcontainer
+      REGISTRY_HOST: registry.frithuz.dev
+      REGISTRY_REPOSITORY: registry.frithuz.dev/frithuz/devcontainer
     steps:
       - name: Set up ORAS
         uses: oras-project/setup-oras@005458ad77f1c8facd38a094e4af2e69e5607ff4 # v2.0.2
@@ -509,44 +507,26 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: printf '%s' "$GH_TOKEN" | oras login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
 
-      # zot checks the job's OIDC token itself and hands it back as the registry token, so no
-      # credential is stored. GitHub's tokens last five minutes and zot can't refresh them, so a copy
-      # can outlive its login: each attempt logs in with a fresh token, and skips the blobs an earlier
-      # attempt copied. Copied by digest, untagged, with the referrers that carry the signatures and
-      # attestations. The audience must be one of the OIDC audiences in zot's config.
+      # pnpr takes a long-lived token for ci-frithuz, which may push to frithuz/* only. oras swaps it
+      # at /v2/token for short repository-scoped tokens and refreshes them itself, so a long copy
+      # doesn't outlive its login. Copied by digest, untagged, with the referrers that carry the
+      # signatures and attestations.
       - name: Copy and tag the image
         env:
+          PNPR_TOKEN: ${{ secrets.PNPR_TOKEN }}
           TAGS: build-${{ github.run_id }} latest
         run: |
-          login() {
-            local oidc
-            oidc=$(curl -fsS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$ZOT_AUDIENCE" | jq -er .value)
-            echo "::add-mask::$oidc"
-            printf '%s' "$oidc" | oras login "$ZOT_REGISTRY" --username oidc --password-stdin
-          }
-          copied=false
-          for attempt in 1 2 3; do
-            login
-            if oras cp -r --to-distribution-spec v1.1-referrers-api "$GHCR_REPOSITORY@$DIGEST" "$ZOT_REPOSITORY@$DIGEST"; then
-              copied=true
-              break
-            fi
-            echo "::warning::Copy attempt $attempt failed"
-          done
-          if [[ $copied != true ]]; then
-            echo "::error::Couldn't copy the image to $ZOT_REPOSITORY"
-            exit 1
-          fi
-          login
+          printf '%s' "$PNPR_TOKEN" | oras login "$REGISTRY_HOST" --username ci-frithuz --password-stdin
+          oras cp -r --to-distribution-spec v1.1-referrers-api "$GHCR_REPOSITORY@$DIGEST" "$REGISTRY_REPOSITORY@$DIGEST"
           read -ra tags <<<"$TAGS"
-          oras tag "$ZOT_REPOSITORY@$DIGEST" "${tags[@]}"
+          oras tag "$REGISTRY_REPOSITORY@$DIGEST" "${tags[@]}"
 
       - name: Summary
         run: |
           {
             echo "## Promoted to registry.frithuz.dev"
             echo
-            echo "- Image: \`$ZOT_REPOSITORY:build-$GITHUB_RUN_ID@$DIGEST\`"
+            echo "- Image: \`$REGISTRY_REPOSITORY:build-$GITHUB_RUN_ID@$DIGEST\`"
           } >>"$GITHUB_STEP_SUMMARY"
 
   # Hands the image to kits.yml, which opens or updates the kits PR. Only after Quay has tagged

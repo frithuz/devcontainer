@@ -32,7 +32,7 @@ for prerequisites and hook behavior.
 | [`docs/maintenance.md`](docs/maintenance.md) | Dependabot, CI, releases, contributor expectations |
 | [`docs/legal.md`](docs/legal.md) | Project license, third-party notices, and copyleft source publication |
 | [`docs/data-model.md`](docs/data-model.md) | Draft design of inventories and registry-backed publication records |
-| [`docs/integrations/`](docs/integrations/) | Setup for external services: [Quay.io](docs/integrations/quayio.md), [GHCR mirror](docs/integrations/ghcr.md), [registry.frithuz.dev (zot)](docs/integrations/zot.md), [1Password](docs/integrations/1password.md) |
+| [`docs/integrations/`](docs/integrations/) | Setup for external services: [Quay.io](docs/integrations/quayio.md), [GHCR mirror](docs/integrations/ghcr.md), [registry.frithuz.dev (pnpr)](docs/integrations/registry-frithuz.md), [1Password](docs/integrations/1password.md) |
 
 ## License
 

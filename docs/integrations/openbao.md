@@ -12,10 +12,10 @@ The JWT auth mount **`jwt-github`** trusts GitHub's OIDC issuer, and its role **
 
 | Claim | Value | Why |
 | --- | --- | --- |
-| `aud` | `vault.frithuz.dev` | The job asks for this audience when it requests the token (`OPENBAO_AUDIENCE`). A token minted for Quay or zot can't be replayed here |
+| `aud` | `vault.frithuz.dev` | The job asks for this audience when it requests the token (`OPENBAO_AUDIENCE`). A token minted for Quay can't be replayed here |
 | `sub` | `repo:frithuz@306324456/devcontainer@1433350495:environment:registry.frithuz.dev` | The repository's immutable prefix ([quayio.md](quayio.md#the-repositorys-immutable-subject)) and the environment. Any other job, branch, or repository gets a different subject and HTTP 400 |
 
-The subject names the environment, so the environment decides which runs may sign: **`registry.frithuz.dev`**, which only `main` can deploy to ([zot.md](zot.md#1-the-registryfrithuzdev-environment)). The `sign` jobs share it with `promote-frithuz`, so they also share its subject: OpenBao and zot each admit both kinds of job. Neither job uses the other's service. If they should be told apart, give `sign` its own environment and bind the role to that subject.
+The subject names the environment, so the environment decides which runs may sign: **`registry.frithuz.dev`**, which only `main` can deploy to ([registry-frithuz.md](registry-frithuz.md#1-the-registryfrithuzdev-environment)). The `sign` jobs share it with `promote-frithuz`, so OpenBao would admit a `promote-frithuz` job too, and `sign` could read `PNPR_TOKEN`. Neither job uses the other's service. If they should be told apart, give `sign` its own environment and bind the role to that subject.
 
 ## 2. What the token can do
 
@@ -39,7 +39,7 @@ It can't export, rotate, or delete the key, read any other key, or reach anythin
 `promote` and `promote-frithuz` need `sign` and run only when it succeeds.
 
 - **One signature covers the attestations.** The index lists each platform's image manifest and its buildx attestation manifest (SBOM and provenance) by digest. Signing the index signs all of them, so nothing is attested separately.
-- **Where the signature is stored.** cosign v3 writes a Sigstore bundle (`application/vnd.dev.sigstore.bundle.v0.3+json`) as an OCI referrer of the index. GHCR has no Referrers API, so it lands under the index's `sha256-<digest>` fallback tag ([ghcr.md](ghcr.md#how-ghcr-differs-from-quay)). cosign appends to that tag's index and never deletes, so it works within GHCR's lack of `DELETE`. `oras cp -r --to-distribution-spec v1.1-referrers-api` reads the fallback tag and writes the bundle to Quay and zot as a real referrer.
+- **Where the signature is stored.** cosign v3 writes a Sigstore bundle (`application/vnd.dev.sigstore.bundle.v0.3+json`) as an OCI referrer of the index. GHCR has no Referrers API, so it lands under the index's `sha256-<digest>` fallback tag ([ghcr.md](ghcr.md#how-ghcr-differs-from-quay)). cosign appends to that tag's index and never deletes, so it works within GHCR's lack of `DELETE`. `oras cp -r --to-distribution-spec v1.1-referrers-api` reads the fallback tag and writes the bundle to Quay and registry.frithuz.dev as a real referrer.
 - **Rekor.** cosign also records each signature in the public [Rekor](https://docs.sigstore.dev/logging/overview/) transparency log, which timestamps it. The entry holds the digest, the signature, and the public key, all public anyway. It stays on. If it's ever turned off, verifying a signature made without it needs `--insecure-ignore-tlog`.
 - **Reruns add a signature.** Rerunning a `sign` job signs again, and the index then carries two bundles from the same key. Both verify, and the promote jobs copy both.
 
@@ -51,7 +51,7 @@ With `cosign.pub` from this repository (cosign v3 or later):
 cosign verify --key cosign.pub quay.io/frithuz/devcontainer@sha256:<digest>
 ```
 
-The same works against `ghcr.io/frithuz/devcontainer`, `registry.frithuz.dev/frithuz/devcontainer`, and each registry's `claude-kit` and `codex-kit`. Verify by digest: a tag can move after you've checked it. cosign checks the Rekor entry too, so it needs network access to Sigstore's public infrastructure. `registry.frithuz.dev` needs a login to read ([zot.md](zot.md#2-zot-configuration)).
+The same works against `ghcr.io/frithuz/devcontainer`, `registry.frithuz.dev/frithuz/devcontainer`, and each registry's `claude-kit` and `codex-kit`. Verify by digest: a tag can move after you've checked it. cosign checks the Rekor entry too, so it needs network access to Sigstore's public infrastructure. `registry.frithuz.dev` needs a login to read ([registry-frithuz.md](registry-frithuz.md#4-pulling)).
 
 The signature covers the index, so the SBOM and provenance are covered too, as long as you reach them through the verified digest, for example `docker buildx imagetools inspect <image>@<digest> --format '{{json .Provenance}}'`.
 
@@ -69,5 +69,5 @@ The signature covers the index, so the SBOM and provenance are covered too, as l
 | `ACTIONS_ID_TOKEN_REQUEST_URL` is empty | The job is missing `permissions: id-token: write` |
 | `cosign sign` returns 403 from OpenBao | The token expired (more than ten minutes since the login), or the policy no longer allows `transit/sign/cosign` |
 | `cosign sign` fails pushing to GHCR | The job is missing `packages: write`, or the package doesn't grant this repository Write ([ghcr.md](ghcr.md#setup-once)) |
-| `cosign verify` reports `no signatures found` on Quay or zot | The copy ran without the signature: check that `promote` and `promote-frithuz` ran after `sign`, and that the GHCR index has its `sha256-<digest>` tag |
+| `cosign verify` reports `no signatures found` on Quay or registry.frithuz.dev | The copy ran without the signature: check that `promote` and `promote-frithuz` ran after `sign`, and that the GHCR index has its `sha256-<digest>` tag |
 | `cosign verify` fails with a key mismatch | `cosign.pub` doesn't match the transit key. Compare it with `bao read transit/keys/cosign` |

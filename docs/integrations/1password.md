@@ -4,7 +4,7 @@
 
 ## Policy
 
-Credentials for workflows are never stored as GitHub secrets, with one exception: `DOCKERHUB_TOKEN`, which pulls the base from `dhi.io` and must reach `bake.yml` ([maintenance.md](../maintenance.md#registry-and-signing)). In order of preference:
+Credentials for workflows are never stored as GitHub secrets, with two exceptions: `DOCKERHUB_TOKEN`, which pulls the base from `dhi.io` and must reach `bake.yml`, and `PNPR_TOKEN`, an environment secret of `registry.frithuz.dev` for pushing there ([maintenance.md](../maintenance.md#registry-and-signing)). In order of preference:
 
 1. **The service's own OIDC federation**, e.g. Quay robot federation or cloud workload identity. Nothing is stored anywhere.
 2. **GitHub's automatic `GITHUB_TOKEN`**, for GitHub-hosted services such as GHCR.

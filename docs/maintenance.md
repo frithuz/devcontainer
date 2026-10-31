@@ -67,7 +67,7 @@ The image goes to three registries with the same tags, digests, signatures, and 
 
 - **`quay.io/frithuz/devcontainer`**, the default distribution registry.
 - **`ghcr.io/<owner>/devcontainer`**, the build destination and mirror. `bake.yml` can push there with the automatic `GITHUB_TOKEN`, and Actions consumers get in-network pulls ([integrations/ghcr.md](integrations/ghcr.md)).
-- **`registry.frithuz.dev/frithuz/devcontainer`**, the self-hosted [zot](https://zotregistry.dev) registry ([integrations/zot.md](integrations/zot.md)). The kits are published there too.
+- **`registry.frithuz.dev/frithuz/devcontainer`**, the self-hosted pnpr registry ([integrations/registry-frithuz.md](integrations/registry-frithuz.md)). The kits are published there too.
 
 There are no versioned releases:
 
@@ -77,7 +77,7 @@ There are no versioned releases:
 | `:latest` | Every scheduled build | Most recent scheduled build |
 | `:YYYYMMDD` | Every scheduled build | Immutable snapshot, dated by the original run's creation, so reruns keep the date |
 
-**One secret is stored in GitHub: `DOCKERHUB_TOKEN`.** GHCR uses `GITHUB_TOKEN`, Quay uses OIDC robot federation, zot verifies the job's OIDC token itself, and OpenBao exchanges it for a ten-minute signing token.
+**Two secrets are stored in GitHub: `DOCKERHUB_TOKEN`, and `PNPR_TOKEN` in the `registry.frithuz.dev` environment.** GHCR uses `GITHUB_TOKEN`, Quay uses OIDC robot federation, registry.frithuz.dev takes the `ci-frithuz` pnpr token, and OpenBao exchanges the job's OIDC token for a ten-minute signing token.
 
 ### Workflow
 
@@ -120,8 +120,9 @@ Recovery of an interrupted publication is described in [integrations/ghcr.md](in
 
 - **GHCR** is a public package linked to this repository, written with `GITHUB_TOKEN`. Grant the Admin Actions role only once retention deletion exists ([integrations/ghcr.md](integrations/ghcr.md)).
 - **Quay** has one robot, `frithuz+promote`, with Write on `devcontainer`, `claude-kit`, and `codex-kit` only, logging in exclusively through federation pinned to the `quay` environment, which only `main` can deploy to ([integrations/quayio.md](integrations/quayio.md)). Create each repository as public before its first promote. A push that creates a repository creates it private.
-- **registry.frithuz.dev** runs zot, which accepts only the OIDC subject of the `registry.frithuz.dev` environment, which only `main` can deploy to ([integrations/zot.md](integrations/zot.md)).
-- **dhi.io**, where the base is pulled from, is read with `garbee`'s read-only Docker personal access token, `DOCKERHUB_TOKEN`. It's stored twice, as a repository Actions secret and as a Dependabot secret, because Dependabot's runs read only Dependabot's secrets. It's the one exception to the 1Password policy: `bake.yml` needs the login too, and can't receive credentials loaded in a job ([integrations/1password.md](integrations/1password.md#policy)). Docker Hub's OIDC connections would remove it, but need a Docker Team or Business plan, which `frithuz` doesn't have. Rotate it by replacing both copies.
+- **registry.frithuz.dev** runs pnpr. The promote jobs log in as `ci-frithuz`, which may push to `frithuz/*` only, with `PNPR_TOKEN`, stored in the `registry.frithuz.dev` environment, which only `main` can deploy to. pnpr stores the signatures as referrers but doesn't verify them; `sign`'s `cosign verify` is the check ([integrations/registry-frithuz.md](integrations/registry-frithuz.md)).
+- **dhi.io**, where the base is pulled from, is read with `garbee`'s read-only Docker personal access token, `DOCKERHUB_TOKEN`. It's stored twice, as a repository Actions secret and as a Dependabot secret, because Dependabot's runs read only Dependabot's secrets. It's one of two exceptions to the 1Password policy: `bake.yml` needs the login too, and can't receive credentials loaded in a job ([integrations/1password.md](integrations/1password.md#policy)). Docker Hub's OIDC connections would remove it, but need a Docker Team or Business plan, which `frithuz` doesn't have. Rotate it by replacing both copies.
+- **`PNPR_TOKEN`**, the `ci-frithuz` token for registry.frithuz.dev, is the other exception. It's an environment secret of `registry.frithuz.dev`, so only `main` runs that enter the environment can read it ([integrations/registry-frithuz.md](integrations/registry-frithuz.md#2-the-pnpr-account)).
 - **Other credentials**, if ever needed, come from 1Password Workload Identity, never GitHub secrets ([integrations/1password.md](integrations/1password.md)).
 - **Attestations and signing:** `bake.yml` attaches an SBOM and SLSA provenance and signs keylessly with cosign on GHCR. The signing identity is `bake.yml` itself.
 - **The cosign key:** `sign` also signs the index digest with the non-exportable transit key `cosign` in OpenBao, logging in from the `registry.frithuz.dev` environment, and verifies the signature against [`cosign.pub`](../cosign.pub) before anything is promoted. The index lists the attestation manifests, so that signature covers them too ([integrations/openbao.md](integrations/openbao.md)). `promote` and `promote-frithuz` copy every signature with the image, so `cosign verify --key cosign.pub <image>@<digest>` works the same against any of the three registries.
