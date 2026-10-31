@@ -6,7 +6,7 @@ Only the **`promote-frithuz`** jobs write to it: `publish.yml`'s for the image, 
 
 ## 1. The `registry.frithuz.dev` environment
 
-When a job names an environment, GitHub's OIDC subject names the environment instead of the ref, so zot trusts the environment and the environment decides which runs may use it. The subject uses the repository's immutable prefix ([quayio.md](quayio.md#the-repositorys-immutable-subject)):
+When a job names an environment, GitHub's OIDC subject names the environment instead of the ref, so zot trusts the environment and the environment decides which runs may use it. The `sign` jobs run in it too, because [OpenBao](openbao.md#1-what-openbao-trusts) trusts the same subject. The subject uses the repository's immutable prefix ([quayio.md](quayio.md#the-repositorys-immutable-subject)):
 
 ```text
 repo:frithuz@306324456/devcontainer@1433350495:environment:registry.frithuz.dev

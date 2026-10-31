@@ -1,5 +1,6 @@
 # Publishes the sandbox kits as OCI images, each to its own repository: claude-kit and codex-kit, on
-# GHCR first, then promoted to Quay and registry.frithuz.dev (docs/maintenance.md#publishing-the-kits). A kit carries every
+# GHCR first, then signed there with the OpenBao-held cosign key and promoted with the signature to
+# Quay and registry.frithuz.dev (docs/maintenance.md#publishing-the-kits). A kit carries every
 # layer of the image it pins, with its /legal/source.tsv, and adds no copyleft components of its
 # own: its agent comes from Docker's mixin without copyleft parts (docs/legal.md#sandbox-kits).
 name: publish-kits
@@ -105,11 +106,115 @@ jobs:
             echo "- Kit: \`$REPOSITORY:build-$GITHUB_RUN_ID@$DIGEST\`"
           } >>"$GITHUB_STEP_SUMMARY"
 
+  # As in publish.yml's sign: signs each kit's index digest on GHCR with the OpenBao-held cosign
+  # key, so the one signature covers the kit and its SBOM, and the promote jobs copy it with the
+  # other referrers (docs/integrations/openbao.md).
+  sign:
+    name: Sign ${{ matrix.kit }}-kit on GHCR
+    needs: ghcr
+    # Under the same condition as the promote jobs, which need the signature.
+    if: ${{ !cancelled() && needs.ghcr.result == 'success' && (github.event_name != 'workflow_dispatch' || inputs.latest) }}
+    runs-on: ubuntu-26.04
+    # OpenBao's cosign-sign role trusts only this environment's OIDC subject
+    # (docs/integrations/openbao.md).
+    environment: registry.frithuz.dev
+    strategy:
+      fail-fast: false
+      matrix:
+        kit: [claude, codex]
+    permissions:
+      contents: read
+      packages: write # push the signature to GHCR
+      id-token: write # OpenBao JWT login
+    defaults:
+      run:
+        shell: bash
+    env:
+      KIT: ${{ matrix.kit }}
+      OPENBAO_ADDR: https://vault.frithuz.dev
+      OPENBAO_AUDIENCE: vault.frithuz.dev
+      OPENBAO_ROLE: cosign-sign
+    steps:
+      - name: Check out the public key
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: cosign.pub
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Set up ORAS
+        uses: oras-project/setup-oras@005458ad77f1c8facd38a094e4af2e69e5607ff4 # v2.0.2
+        with:
+          url: ${{ env.ORAS_URL }}
+          checksum: ${{ env.ORAS_CHECKSUM }}
+
+      # Keep in step with publish.yml.
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.4
+
+      # oras and cosign both read the login from Docker's config.
+      - name: Log in to GHCR
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve the kit on GHCR
+        run: |
+          repository=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/$KIT-kit
+          digest=$(oras manifest fetch --descriptor "$repository:build-$GITHUB_RUN_ID" | jq -er .digest)
+          {
+            echo "GHCR_REPOSITORY=$repository"
+            echo "DIGEST=$digest"
+          } >>"$GITHUB_ENV"
+
+      # As in publish.yml: a ten-minute batch token that can only sign with the cosign key,
+      # requested right before signing. A rejected login reports OpenBao's status and body.
+      - name: Log in to OpenBao
+        run: |
+          oidc=$(curl -fsS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$OPENBAO_AUDIENCE" | jq -er .value)
+          echo "::add-mask::$oidc"
+          response=$(jq -n --arg role "$OPENBAO_ROLE" --arg jwt "$oidc" '{role: $role, jwt: $jwt}' |
+            curl -sS -X POST --data @- -w '\n%{http_code}' "$OPENBAO_ADDR/v1/auth/jwt-github/login")
+          status=${response##*$'\n'}
+          body=${response%$'\n'*}
+          if [[ $status != 200 ]]; then
+            echo "::error::OpenBao login returned HTTP $status: $body"
+            exit 1
+          fi
+          token=$(jq -er .auth.client_token <<<"$body")
+          echo "::add-mask::$token"
+          # cosign's hashivault KMS reads these. TRANSIT_SECRET_ENGINE_PATH defaults to "transit".
+          {
+            echo "VAULT_ADDR=$OPENBAO_ADDR"
+            echo "VAULT_TOKEN=$token"
+          } >>"$GITHUB_ENV"
+
+      # cosign also records the signature in the public Rekor log, for a trusted timestamp.
+      - name: Sign the kit
+        run: cosign sign --yes --key hashivault://cosign "$GHCR_REPOSITORY@$DIGEST"
+
+      # A signature that wouldn't verify fails the run before anything is promoted.
+      - name: Verify the signature
+        run: cosign verify --key cosign.pub "$GHCR_REPOSITORY@$DIGEST" >/dev/null
+
+      - name: Summary
+        run: |
+          {
+            echo "## Signed $KIT-kit on GHCR"
+            echo
+            echo "- Kit: \`$GHCR_REPOSITORY:build-$GITHUB_RUN_ID@$DIGEST\`"
+            echo "- Verify: \`cosign verify --key cosign.pub <kit>@$DIGEST\`"
+          } >>"$GITHUB_STEP_SUMMARY"
+
   promote:
     name: Promote ${{ matrix.kit }}-kit to Quay
-    needs: ghcr
-    # Only runs that tag latest go to Quay, as for the image.
-    if: ${{ !cancelled() && needs.ghcr.result == 'success' && (github.event_name != 'workflow_dispatch' || inputs.latest) }}
+    needs: [ghcr, sign]
+    # Only runs that tag latest go to Quay, as for the image, and only once both kits are signed.
+    if: ${{ !cancelled() && needs.ghcr.result == 'success' && needs.sign.result == 'success' && (github.event_name != 'workflow_dispatch' || inputs.latest) }}
     runs-on: ubuntu-26.04
     # Quay's robot federation trusts only this environment's OIDC subject (docs/integrations/quayio.md).
     environment: quay
@@ -164,7 +269,7 @@ jobs:
           echo "::add-mask::$token"
           printf '%s' "$token" | oras login quay.io --username "$QUAY_ROBOT" --password-stdin
 
-      # Referrers carry the attestations.
+      # Referrers carry the signature and attestations.
       - name: Copy the kit with its referrers
         run: oras cp -r --to-distribution-spec v1.1-referrers-api "$GHCR_REPOSITORY@$DIGEST" "$QUAY_REPOSITORY@$DIGEST"
 
@@ -181,9 +286,9 @@ jobs:
 
   promote-frithuz:
     name: Promote ${{ matrix.kit }}-kit to registry.frithuz.dev
-    needs: ghcr
+    needs: [ghcr, sign]
     # Runs alongside promote, under the same condition.
-    if: ${{ !cancelled() && needs.ghcr.result == 'success' && (github.event_name != 'workflow_dispatch' || inputs.latest) }}
+    if: ${{ !cancelled() && needs.ghcr.result == 'success' && needs.sign.result == 'success' && (github.event_name != 'workflow_dispatch' || inputs.latest) }}
     runs-on: ubuntu-26.04
     # zot trusts only this environment's OIDC subject (docs/integrations/zot.md).
     environment: registry.frithuz.dev
@@ -226,7 +331,7 @@ jobs:
 
       # As in publish.yml's promote-frithuz: zot uses the job's five-minute OIDC token as the
       # registry token, so each attempt logs in with a fresh one and skips the blobs an earlier
-      # attempt copied. Referrers carry the attestations.
+      # attempt copied. Referrers carry the signature and attestations.
       - name: Copy and tag the kit
         run: |
           login() {

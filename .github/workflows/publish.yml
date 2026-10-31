@@ -3,11 +3,12 @@
 # A run builds only when the image would materially change from Quay's latest: its build inputs
 # changed, or a refresh changed its inventory (docs/maintenance.md#material-changes). Otherwise
 # nothing is pushed. A build pushes to GHCR under the recovery tag build-<run id>. Pushes to main,
-# scheduled refreshes, and manual runs that ask for it also tag :latest and are promoted to Quay
-# and registry.frithuz.dev.
-# Not yet implemented: automatic public tags (:main, :YYYYMMDD) and verify
-# (docs/maintenance.md#publishing). After a promotion that tags latest, kits.yml opens a PR that points
-# the sandbox kits at the image.
+# scheduled refreshes, and manual runs that ask for it also tag :latest, are signed on GHCR with
+# the OpenBao-held cosign key (docs/integrations/openbao.md), and are promoted with the signature
+# to Quay and registry.frithuz.dev.
+# Not yet implemented: automatic public tags (:main, :YYYYMMDD) and verify, the smoke tests
+# against the published digest (docs/maintenance.md#publishing). After a promotion that tags
+# latest, kits.yml opens a PR that points the sandbox kits at the image.
 name: publish
 run-name: >-
   ${{ github.event_name == 'push'
@@ -287,13 +288,108 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-  promote:
-    name: Promote to Quay
+  # Signs the index digest on GHCR with the cosign key OpenBao holds, before anything is promoted.
+  # The index lists the attestation manifests by digest, so the one signature covers the image, its
+  # SBOM, and its provenance. GHCR has no Referrers API, so cosign stores the signature under the
+  # index's sha256-<digest> fallback tag, and the promote jobs copy it with the other referrers
+  # (docs/integrations/openbao.md). bake.yml's keyless signatures stay as they are.
+  sign:
+    name: Sign on GHCR
     needs: build
-    # Only runs that tag latest go to Quay. Every other run stays on GHCR. Keep this in step with
-    # the build's latest tag.
+    # Under the same condition as the promote jobs, which need the signature: only runs that tag
+    # latest are signed.
     if: >-
       !cancelled() && needs.build.result == 'success'
+      && (github.event_name != 'workflow_dispatch' || inputs.latest)
+    runs-on: ubuntu-26.04
+    # OpenBao's cosign-sign role trusts only this environment's OIDC subject, and only main can
+    # deploy to it (docs/integrations/openbao.md).
+    environment: registry.frithuz.dev
+    permissions:
+      contents: read
+      packages: write # push the signature to GHCR
+      id-token: write # OpenBao JWT login
+    defaults:
+      run:
+        shell: bash
+    env:
+      DIGEST: ${{ needs.build.outputs.digest }}
+      OPENBAO_ADDR: https://vault.frithuz.dev
+      OPENBAO_AUDIENCE: vault.frithuz.dev
+      OPENBAO_ROLE: cosign-sign
+    steps:
+      - name: Check out the public key
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: cosign.pub
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      # The installer checks the release it installs against its own pinned bootstrap release.
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.4
+
+      - name: Set the GHCR repository
+        run: echo "GHCR_REPOSITORY=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/devcontainer" >>"$GITHUB_ENV"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Exchanges the job's OIDC token for an OpenBao batch token that can only sign with the cosign
+      # key, and lasts ten minutes without renewal, so it's requested right before signing. A
+      # rejected login reports OpenBao's status and body, which carry no secrets.
+      - name: Log in to OpenBao
+        run: |
+          oidc=$(curl -fsS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$OPENBAO_AUDIENCE" | jq -er .value)
+          echo "::add-mask::$oidc"
+          response=$(jq -n --arg role "$OPENBAO_ROLE" --arg jwt "$oidc" '{role: $role, jwt: $jwt}' |
+            curl -sS -X POST --data @- -w '\n%{http_code}' "$OPENBAO_ADDR/v1/auth/jwt-github/login")
+          status=${response##*$'\n'}
+          body=${response%$'\n'*}
+          if [[ $status != 200 ]]; then
+            echo "::error::OpenBao login returned HTTP $status: $body"
+            exit 1
+          fi
+          token=$(jq -er .auth.client_token <<<"$body")
+          echo "::add-mask::$token"
+          # cosign's hashivault KMS reads these. TRANSIT_SECRET_ENGINE_PATH defaults to "transit".
+          {
+            echo "VAULT_ADDR=$OPENBAO_ADDR"
+            echo "VAULT_TOKEN=$token"
+          } >>"$GITHUB_ENV"
+
+      # The signing key never leaves OpenBao: cosign sends it the digest to sign. cosign also
+      # records the signature in the public Rekor log, which gives it a trusted timestamp.
+      - name: Sign the image
+        run: cosign sign --yes --key hashivault://cosign "$GHCR_REPOSITORY@$DIGEST"
+
+      # Against the committed public key, so a signature that wouldn't verify fails the run before
+      # anything is promoted.
+      - name: Verify the signature
+        run: cosign verify --key cosign.pub "$GHCR_REPOSITORY@$DIGEST" >/dev/null
+
+      - name: Summary
+        run: |
+          {
+            echo "## Signed on GHCR"
+            echo
+            echo "- Image: \`$GHCR_REPOSITORY:build-$GITHUB_RUN_ID@$DIGEST\`"
+            echo "- Verify: \`cosign verify --key cosign.pub <image>@$DIGEST\`"
+          } >>"$GITHUB_STEP_SUMMARY"
+
+  promote:
+    name: Promote to Quay
+    needs: [build, sign]
+    # Only runs that tag latest go to Quay. Every other run stays on GHCR. Keep this in step with
+    # the build's latest tag. The signature has to be on GHCR first, since the copy carries it.
+    if: >-
+      !cancelled() && needs.build.result == 'success' && needs.sign.result == 'success'
       && (github.event_name != 'workflow_dispatch' || inputs.latest)
     runs-on: ubuntu-26.04
     # Quay's robot federation trusts only this environment's OIDC subject, and only main can
@@ -374,11 +470,11 @@ jobs:
 
   promote-frithuz:
     name: Promote to registry.frithuz.dev
-    needs: build
+    needs: [build, sign]
     # Runs alongside promote, under the same condition. Keep the two in step with the build's latest
     # tag.
     if: >-
-      !cancelled() && needs.build.result == 'success'
+      !cancelled() && needs.build.result == 'success' && needs.sign.result == 'success'
       && (github.event_name != 'workflow_dispatch' || inputs.latest)
     runs-on: ubuntu-26.04
     # zot trusts only this environment's OIDC subject, and only main can deploy to it

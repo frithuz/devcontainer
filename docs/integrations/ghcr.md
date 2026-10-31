@@ -10,7 +10,7 @@ The mirror exists for two reasons:
 ## How GHCR differs from Quay
 
 - **No Referrers API.** Signatures live in fallback indexes under `sha256-<digest>` tags, which show up in the package's version list. These are real tags: any cleanup has to keep them as long as their subject image.
-- **No registry `DELETE`** (it returns 405). Deletion goes through the GitHub Packages REST API only. Adding a second referrer to a subject rewrites its fallback index, and the client then tries to delete the old one, which fails, so a subject can take only one referrer. `bake.yml`'s signatures attach to the attestation manifests, which are different subjects.
+- **No registry `DELETE`** (it returns 405). Deletion goes through the GitHub Packages REST API only. Adding a second referrer to a subject rewrites its fallback index, and a client that then deletes the old one, as `oras` does, fails, so with such a client a subject can take only one referrer. `bake.yml`'s signatures attach to the attestation manifests, which are different subjects. cosign rewrites the fallback index without deleting the old one, so the index's `sha256-<digest>` tag can carry the [OpenBao-key signatures](openbao.md#3-the-workflows), reruns included.
 - **Tagged earlier.** GHCR gets public tags right after `build`. Quay gets them after `promote`.
 - **Descriptions come from the index.** For a multi-platform image, GHCR shows the image index's `org.opencontainers.image.description` annotation, not the config label. `publish.yml` sets the image's through `bake.yml`'s `meta-annotations`.
 
@@ -28,6 +28,7 @@ Do this for each package: `devcontainer`, `claude-kit`, and `codex-kit`.
 | --- | --- | --- |
 | `build` (`bake.yml`) | `contents: read`, `packages: write`, `id-token: write` (signing) | `registry-auths` with `github.actor` and `GITHUB_TOKEN`, and `dhi.io` with `DOCKERHUB_TOKEN` for the base |
 | `tag-ghcr` | `contents: read`, `packages: write` | `oras` login with `GITHUB_TOKEN` |
+| `sign` (environment `registry.frithuz.dev`) | `contents: read`, `packages: write` (push the signature), `id-token: write` (OpenBao login) | `docker/login-action` with `GITHUB_TOKEN` |
 | `verify` | `contents: read`, `packages: read` | none (public) |
 | `promote` (environment `quay`) | `contents: read`, `packages: read`, `id-token: write` (Quay federation) | `oras` login with `GITHUB_TOKEN` |
 | `promote-frithuz` (environment `registry.frithuz.dev`) | `contents: read`, `packages: read`, `id-token: write` (zot OIDC) | `oras` login with `GITHUB_TOKEN` |
