@@ -92,10 +92,10 @@ pinned_version() {
 }
 
 lookup() {
-	local name stage version_cmd cmd path out version expected words
+	local name stage version_cmd version_after cmd path out version expected words
 	# Every copied component from scripts/legal-components.yaml. Image tools resolve from
 	# /usr/local/bin; the base stage's files stay where Ubuntu put them.
-	while IFS=$'\t' read -r -u 3 name stage version_cmd; do
+	while IFS=$'\t' read -r -u 3 name stage version_cmd version_after; do
 		read -ra words <<<"$version_cmd"
 		cmd=${words[0]}
 		if ! path=$(command -v "$cmd"); then
@@ -111,6 +111,15 @@ lookup() {
 			sed 's/^/#   /' <<<"$out"
 			continue
 		fi
+		# Some commands print another version first; the component's follows version-after.
+		if [[ $version_after != - ]]; then
+			if [[ $out != *"$version_after"* ]]; then
+				fail "$name: '$version_cmd' printed no '$version_after'"
+				sed 's/^/#   /' <<<"$out"
+				continue
+			fi
+			out=${out#*"$version_after"}
+		fi
 		version=$(version_in "$out")
 		# Other components copied from the same stage (pip from python) have their own versions.
 		if [[ $name != "$stage" ]]; then
@@ -125,7 +134,7 @@ lookup() {
 		else
 			fail "$name: '$version_cmd' reports '${version:-no version}', but stage $stage pins $expected"
 		fi
-	done 3< <(yq -r '.components[] | [.name, .stage, .version] | @tsv' "$components")
+	done 3< <(yq -r '.components[] | [.name, .stage, .version, .["version-after"] // "-"] | @tsv' "$components")
 
 	# Everything else the image provides: apt packages, aliases, and unpinned installs.
 	local -a commands=(
@@ -164,6 +173,8 @@ lookup() {
 		'gh --version'
 		'ps --version'
 		'bwrap --version'
+		'sqlite3 --version'
+		'btop --version'
 		'gofmt -l /usr/local/go/src/errors'
 		'python --version'
 		'pip --version'
@@ -219,6 +230,12 @@ lookup() {
 			pass "git-$name isn't installed"
 		fi
 	done
+
+	# protoc finds the well-known types in /usr/local/include, its default import path, and
+	# compiles every one.
+	check "protoc compiles the well-known types" bash -c '
+		cd /usr/local/include && files=(google/protobuf/*.proto google/protobuf/compiler/*.proto) &&
+			cd / && protoc --include_imports --descriptor_set_out=/dev/null "${files[@]}"'
 
 	# A missing shared library shows up only on import (docs/architecture.md#binary-compatibility).
 	check "python imports every lib-dynload module" python3 - <<'EOF'

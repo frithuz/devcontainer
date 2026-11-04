@@ -40,6 +40,11 @@
           "type": "string",
           "minLength": 1
         },
+        "version-after": {
+          "description": "Text in the version command's output that the version follows, for commands that print another version first: the first x.y[.z] after its first occurrence is used.",
+          "type": "string",
+          "minLength": 1
+        },
         "notices": {
           "description": "Notice files in the image (globs). At least one must exist.",
           "type": "array",

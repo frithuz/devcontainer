@@ -51,13 +51,13 @@ To inspect the attestation locally, export an OCI layout: `docker buildx bake im
 
 ## Copyleft components
 
-The image conveys GPL (v2 and v3), LGPL, and MPL-2.0 components: git (GPLv2, compiled here), MPL-2.0 Go modules in several tools and in Docker's binaries, an MPL-2.0 Rust crate in Sampo, and most of the Debian base and its packages, including Bash and coreutils. Being unmodified or installed with apt doesn't remove the redistribution obligations ([GNU FAQ](https://www.gnu.org/licenses/gpl-faq.en.html#UnchangedJustBinary)).
+The image conveys GPL (v2 and v3), LGPL, and MPL-2.0 components: git (GPLv2, compiled here), MPL-2.0 Go modules in several tools and in Docker's binaries, MPL-2.0 Rust crates in Sampo, ast-grep, and hyperfine, and most of the Debian base and its packages, including Bash and coreutils. Being unmodified or installed with apt doesn't remove the redistribution obligations ([GNU FAQ](https://www.gnu.org/licenses/gpl-faq.en.html#UnchangedJustBinary)).
 
 **Policy: record, at build time, where the complete source of every GPL and LGPL component was published, and ship that list in the image as `/legal/source.tsv`.** Each file is listed by URL and digest, so a copy from anywhere else can be checked against it. The URLs point at upstream's servers, not ours ([`legal/SOURCE.md`](../legal/SOURCE.md)).
 
 - **GPLv3 and LGPLv3** (§6(d)) accept Corresponding Source on a third-party server, with clear directions next to the object code, as long as the distributor makes sure it stays available for as long as the object code is offered.
 - **GPLv2 and LGPL-2.x** accept equivalent access "from the same place" as the binary, and have no provision for a third-party server. A list of upstream's URLs is weaker than that, and that's a deliberate trade-off ([open questions](#open-questions)).
-- **MPL-2.0** is file-level: it owes only the covered files' source. Every MPL-2.0 module in the image is compiled into a binary upstream built: betterleaks, dbmate, yq, and Task's release binaries, and Docker's packages. Redistributing those unchanged typically owes nothing more, as long as upstream complied ([MPL FAQ Q7](https://www.mozilla.org/en-US/MPL/2.0/FAQ/)), so `source.tsv` doesn't list them. `manifest.tsv` still records each Go module's exact version and Go proxy archive. Sampo's release binary carries one MPL-2.0 Rust crate, `option-ext`, and `manifest.tsv` records only the release archive it came in. A binary compiled here would owe its MPL modules' source from us (Q8), so `collect-legal.sh` fails the build on a copyleft module in a `go install` component, and a Go tool with one is downloaded as upstream's release instead ([tooling.md](tooling.md#install-methods)).
+- **MPL-2.0** is file-level: it owes only the covered files' source. Every MPL-2.0 module in the image is compiled into a binary upstream built: betterleaks, dbmate, yq, and Task's release binaries, and Docker's packages. Redistributing those unchanged typically owes nothing more, as long as upstream complied ([MPL FAQ Q7](https://www.mozilla.org/en-US/MPL/2.0/FAQ/)), so `source.tsv` doesn't list them. `manifest.tsv` still records each Go module's exact version and Go proxy archive. The release binaries of Sampo and ast-grep each carry one MPL-2.0 Rust crate, `option-ext`, and hyperfine's carries `colored`; `manifest.tsv` records only the release archive each came in. A binary compiled here would owe its MPL modules' source from us (Q8), so `collect-legal.sh` fails the build on a copyleft module in a `go install` component, and a Go tool with one is downloaded as upstream's release instead ([tooling.md](tooling.md#install-methods)).
 
 **What's owed:** a GPL or LGPL binary owes its *whole* Corresponding Source, including permissive libraries compiled into it. An MPL module owes only itself. A dual license with a permissive option owes nothing once that option is elected, and elections are recorded in `scripts/license-elections.yaml`.
 
@@ -76,15 +76,17 @@ The repositories the source comes from:
 
 ### Compiled components
 
-A component compiled here or in a separate artifact (`install: source-build`: git) records the source it was compiled from and the script that controlled the build, which a copyleft one owes. Its stage records both in `/legal/attribution/<name>/SOURCE`, and `collect-legal.sh` copies them into its manifest row:
+A component compiled here or in a separate artifact (`install: source-build`: git, and protoc) records the source it was compiled from and the script that controlled the build, which a copyleft one owes. Its stage records both in `/legal/attribution/<name>/SOURCE`, and `collect-legal.sh` copies them into its manifest row:
 
-- **The archive**, by URL and SHA-256: git's signed release tarball.
-- **The build script**, by repository path and SHA-256 (`build-script:`): `scripts/build/git.sh`.
-- **Libraries compiled in** (`embedded:`), each with a row of its own marked `embedded-in:<component>`: zlib-ng, under the Zlib license. A permissive license owes no source by itself, but a library compiled into a GPL binary is part of that binary's Corresponding Source, so `source.tsv` lists the archive of every library embedded in a copyleft component.
+- **The archive**, by URL and SHA-256: git's signed release tarball, protobuf's release source tarball.
+- **The build script**, by repository path and SHA-256 (`build-script:`): `scripts/build/git.sh`, `scripts/build/protoc.sh`.
+- **Libraries compiled in** (`embedded:`), each with a row of its own marked `embedded-in:<component>`: zlib-ng in git, under the Zlib license, and Abseil in protoc, under Apache-2.0. A permissive license owes no source by itself, but a library compiled into a GPL binary is part of that binary's Corresponding Source, so `source.tsv` lists the archive of every library embedded in a copyleft component.
 
 Git's artifact also carries `build/ORIGIN` and the exact Dockerfile, runner, and build scripts under `/legal/attribution/git/build/`. `source.tsv` lists each recipe file at the producer commit, with its checksum; `manifest.tsv` records the pinned artifact reference. Missing or invalid artifact origin fails collection.
 
 The Rust standard library is also compiled into git. It's Apache-2.0 OR MIT, so it owes no source, and its notices ship in `/legal/attribution/git/rust/`.
+
+protoc is compiled in its own stage of the main Dockerfile, not a separate artifact, and nothing in it is copyleft, so `source.tsv` lists none of it. It links dynamically against the base's glibc and libstdc++, which the image already conveys. Upstream's Linux release binary links glibc statically, which would add LGPL code of uncertain source. utf8_range, which ships inside protobuf's tarball, is compiled in too (MIT, notices in `/legal/attribution/protoc/utf8_range/`).
 
 ### Sandbox kits
 

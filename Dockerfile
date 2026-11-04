@@ -17,6 +17,7 @@ FROM orhunp/git-cliff:2.14.2@sha256:1e696a381a1b0366bb6ccbb6bd4e50e73473fda88eab
 FROM dhi.io/debian-base:trixie-debian13-dev@sha256:7995f6739e5ad75cbd57d9356f7d7c83d43dd957682b6a000f32ff95b441a9b6 AS debian
 FROM ghcr.io/betterleaks/betterleaks:v1.9.0@sha256:e3b95b0db6c2735db17165c009b0ad6d9cef34fb4578659232b98f69d7346cac AS betterleaks
 FROM ghcr.io/amacneil/dbmate:2.37.0@sha256:0101fcc9999596f4a6930e5627296cd91f3bfa225e3e8c1699fc00881e439cc6 AS dbmate
+FROM bufbuild/buf:1.75.0@sha256:adf82c7170be6629ec81dc907921ac1699407cd11c4f7fd7521b13c74152f849 AS buf
 
 # GitHub CLI: no official image. Installs the latest release, verified against its
 # published checksums; REFRESH makes scheduled builds pick up new releases.
@@ -98,6 +99,83 @@ RUN --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/
     --mount=type=bind,source=scripts/build/go-install.sh,target=/mnt/src/scripts/build/go-install.sh \
     bash /mnt/src/scripts/build/run.sh /mnt/src/scripts/build/go-install.sh
 
+# Go's language server, debugger, linter, and vulnerability scanner: no upstream images, so each is
+# built from its pinned module like jv.
+FROM go AS gopls
+ARG MODULE=golang.org/x/tools/gopls@v0.24.0
+ARG PACKAGE=.
+ARG OUT=/opt/gopls
+RUN --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/run.sh \
+    --mount=type=bind,source=scripts/build/go-install.sh,target=/mnt/src/scripts/build/go-install.sh \
+    bash /mnt/src/scripts/build/run.sh /mnt/src/scripts/build/go-install.sh
+
+FROM go AS delve
+ARG MODULE=github.com/go-delve/delve@v1.27.2
+ARG PACKAGE=cmd/dlv
+ARG OUT=/opt/delve
+RUN --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/run.sh \
+    --mount=type=bind,source=scripts/build/go-install.sh,target=/mnt/src/scripts/build/go-install.sh \
+    bash /mnt/src/scripts/build/run.sh /mnt/src/scripts/build/go-install.sh
+
+# staticcheck is pinned by its module version, not its release name: release 2026.2.2 is v0.8.2.
+FROM go AS staticcheck
+ARG MODULE=honnef.co/go/tools@v0.8.2
+ARG PACKAGE=cmd/staticcheck
+ARG OUT=/opt/staticcheck
+RUN --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/run.sh \
+    --mount=type=bind,source=scripts/build/go-install.sh,target=/mnt/src/scripts/build/go-install.sh \
+    bash /mnt/src/scripts/build/run.sh /mnt/src/scripts/build/go-install.sh
+
+FROM go AS govulncheck
+ARG MODULE=golang.org/x/vuln@v1.9.0
+ARG PACKAGE=cmd/govulncheck
+ARG OUT=/opt/govulncheck
+RUN --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/run.sh \
+    --mount=type=bind,source=scripts/build/go-install.sh,target=/mnt/src/scripts/build/go-install.sh \
+    bash /mnt/src/scripts/build/run.sh /mnt/src/scripts/build/go-install.sh
+
+# ast-grep and hyperfine: no upstream images, and their releases publish no checksums. Their release
+# archives, pinned by SHA-256 per architecture like Sampo's, because each one's Rust dependencies
+# include an MPL-2.0 crate (option-ext in ast-grep, colored in hyperfine), which upstream's binary
+# carries the obligation for. ast-grep's archive has no LICENSE, so it comes from the release tag,
+# pinned too. Bumped by hand: VERSION and every SHA256_ value together. Both link against glibc
+# (2.34 or newer for ast-grep at 0.51.1, 2.18 for hyperfine at 2.0.0).
+FROM go AS ast-grep
+ARG VERSION=0.51.1
+ARG SHA256_AMD64=42514f77ae0c8a25d7d32154d31d3e7e16f3ab894f8ce76ce417de234ee49157
+ARG SHA256_ARM64=db02fae2d8eace5fc40c55242068882452dd03eab38a1d950d5fd981cf112926
+ARG SHA256_LICENSE=81471889c77b2161a3e4dcdb1b2e6ca382e485766132d92d5fe1d7497e7dd2d9
+ARG TARGETARCH
+RUN --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/run.sh \
+    --mount=type=bind,source=scripts/build/ast-grep.sh,target=/mnt/src/scripts/build/ast-grep.sh \
+    bash /mnt/src/scripts/build/run.sh /mnt/src/scripts/build/ast-grep.sh
+
+FROM go AS hyperfine
+ARG VERSION=2.0.0
+ARG SHA256_AMD64=ae2beda2ac99c098427e4f755244552daf20e514422889cca6d44421e2d93c87
+ARG SHA256_ARM64=f8244d1e17f8da23ee6b3ae2cdc04a6a185a450f6b74e09bff12e498038fcbc9
+ARG TARGETARCH
+RUN --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/run.sh \
+    --mount=type=bind,source=scripts/build/hyperfine.sh,target=/mnt/src/scripts/build/hyperfine.sh \
+    bash /mnt/src/scripts/build/run.sh /mnt/src/scripts/build/hyperfine.sh
+
+# protoc, compiled from protobuf's release source tarball on the image's base, so it links against
+# the image's glibc: upstream's Linux release binary links glibc (LGPL) statically. Abseil, the
+# release protobuf pins, is compiled in. Bumped by hand: VERSION and SHA256 together, and
+# ABSEIL_VERSION and ABSEIL_SHA256 when protobuf's cmake/dependencies.cmake moves Abseil (the
+# build fails until they match).
+FROM debian AS protoc
+ARG VERSION=36.2
+ARG SHA256=3d9642a662d10e68ebae5e53f14dcce5105684212d5078f8e0d47d1ab3ae6b64
+ARG ABSEIL_VERSION=20250512.1
+ARG ABSEIL_SHA256=9b7a064305e9fd94d124ffa6cc358592eb42b5da588fb4e07d09254aa40086db
+ARG TARGETARCH
+RUN --mount=type=cache,id=apt-lists-$TARGETARCH,target=/var/lib/apt/lists,sharing=locked \
+    --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/run.sh \
+    --mount=type=bind,source=scripts/build/apt-bootstrap.sh,target=/mnt/src/scripts/build/apt-bootstrap.sh \
+    --mount=type=bind,source=scripts/build/protoc.sh,target=/mnt/src/scripts/build/protoc.sh \
+    bash /mnt/src/scripts/build/run.sh /mnt/src/scripts/build/apt-bootstrap.sh /mnt/src/scripts/build/protoc.sh
+
 # The scripts' data files (scripts/*.yaml): each validated against scripts/schemas/<name>.schema.json,
 # checked for duplicate names, and converted to <name>.json. The scripts read only this output,
 # never the YAML. `docker buildx bake config` runs it on its own and exports out/config/.
@@ -135,7 +213,15 @@ COPY --link --chown=0:0 --chmod=0755 --from=betterleaks /usr/bin/betterleaks /ou
 COPY --link --chown=0:0 --chmod=0755 --from=dbmate /usr/local/bin/dbmate /out/usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=gh /opt/gh/gh /out/usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=gh-stack /opt/gh-stack/gh-stack /out/usr/local/bin/
+COPY --link --chown=0:0 --chmod=0755 --from=gopls /opt/gopls/gopls /out/usr/local/bin/
+COPY --link --chown=0:0 --chmod=0755 --from=delve /opt/delve/dlv /out/usr/local/bin/
+COPY --link --chown=0:0 --chmod=0755 --from=staticcheck /opt/staticcheck/staticcheck /out/usr/local/bin/
+COPY --link --chown=0:0 --chmod=0755 --from=govulncheck /opt/govulncheck/govulncheck /out/usr/local/bin/
+COPY --link --chown=0:0 --chmod=0755 --from=buf /usr/local/bin/buf /out/usr/local/bin/
+COPY --link --chown=0:0 --chmod=0755 --from=ast-grep /opt/ast-grep/ast-grep /out/usr/local/bin/
+COPY --link --chown=0:0 --chmod=0755 --from=hyperfine /opt/hyperfine/hyperfine /out/usr/local/bin/
 COPY --link --from=git /out/ /out/
+COPY --link --from=protoc /out/ /out/
 COPY --link --from=apt-keys /keys/ /out/etc/apt/keyrings/
 COPY --link rootfs/ /out/
 COPY --link LICENSE /out/legal/LICENSE
@@ -148,6 +234,12 @@ COPY --link --from=task /opt/task/LICENSE /opt/task/SOURCE /out/legal/attributio
 COPY --link --from=sampo /opt/sampo/LICENSE /opt/sampo/SOURCE /out/legal/attribution/sampo/
 COPY --link --from=dnslookup /opt/dnslookup/LICENSE /out/legal/attribution/dnslookup/
 COPY --link --from=gh-stack /opt/gh-stack/LICENSE /out/legal/attribution/gh-stack/
+COPY --link --from=gopls /opt/gopls/LICENSE /out/legal/attribution/gopls/
+COPY --link --from=delve /opt/delve/LICENSE /out/legal/attribution/delve/
+COPY --link --from=staticcheck /opt/staticcheck/LICENSE /out/legal/attribution/staticcheck/
+COPY --link --from=govulncheck /opt/govulncheck/LICENSE /out/legal/attribution/govulncheck/
+COPY --link --from=ast-grep /opt/ast-grep/LICENSE /opt/ast-grep/SOURCE /out/legal/attribution/ast-grep/
+COPY --link --from=hyperfine /opt/hyperfine/LICENSE-APACHE /opt/hyperfine/LICENSE-MIT /opt/hyperfine/SOURCE /out/legal/attribution/hyperfine/
 RUN --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/run.sh \
     --mount=type=bind,source=scripts/build/files.sh,target=/mnt/src/scripts/build/files.sh \
     bash /mnt/src/scripts/build/run.sh /mnt/src/scripts/build/files.sh
@@ -167,7 +259,8 @@ ARG REFRESH
 COPY --link --from=files /out/ /
 
 # 2. The system, in one step.
-# Runtime packages, plus the shared libraries the copied Node and Python link against.
+# Runtime packages, plus the shared libraries the copied Node, Python, protoc, and Rust tools link
+# against.
 # apt lists live in a cache mount: never in a layer, and apt-get update only fetches what
 # changed since the last build.
 # The base image's apt sources use plain HTTP; every apt source is HTTPS instead.

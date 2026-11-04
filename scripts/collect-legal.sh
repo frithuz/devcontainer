@@ -83,9 +83,20 @@ dep5_copyright() {
 	} >"/usr/share/doc/$pkg/copyright"
 }
 
-# First dotted version number in a command's output.
+# First dotted version number in a command's output, or after the first occurrence of <after>.
+# version_of <command> [after]
 version_of() {
-	bash -c "$1" 2>/dev/null | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1
+	local out status=0
+	out=$(bash -c "$1" 2>/dev/null) || status=$?
+	if [[ -n ${2:-} ]]; then
+		if [[ $out == *"$2"* ]]; then
+			out=${out#*"$2"}
+		else
+			out=
+		fi
+	fi
+	grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' <<<"$out" | head -1 || return
+	return "$status"
 }
 
 # Expand notice globs; print the existing paths, space-separated.
@@ -206,7 +217,7 @@ done 3< <(dpkg-query -W -f '${db:Status-Abbrev}\t${binary:Package}\t${Package}\t
 declare -A compiled_bins
 # One line per component on fd 3 (lists space-separated, absent fields "-"), so the version
 # commands can't consume it.
-while IFS=$'\t' read -r -u 3 comp stage install license version_cmd notice_globs paths upstream purl; do
+while IFS=$'\t' read -r -u 3 comp stage install license version_cmd version_after notice_globs paths upstream purl; do
 	if [[ $install == go-install ]]; then
 		# Built in its own stage: the module, version, and go.sum hash are in the binary.
 		awk -v s="$stage" 'toupper($1) == "FROM" && toupper($3) == "AS" && $4 == s { found = 1 } END { exit !found }' "$dockerfile" ||
@@ -250,8 +261,9 @@ while IFS=$'\t' read -r -u 3 comp stage install license version_cmd notice_globs
 		provenance="image:$ref"
 		distribution=${ref%%@*}
 	fi
-	version=$(version_of "$version_cmd")
-	[[ -n $version ]] || error "$comp: '$version_cmd' printed no version"
+	[[ $version_after == - ]] && version_after=
+	version=$(version_of "$version_cmd" "$version_after")
+	[[ -n $version ]] || error "$comp: '$version_cmd' printed no version (version-after: ${version_after:-none})"
 	if [[ $upstream != - ]]; then
 		# shellcheck disable=SC2086 # "<repo> <tag> <files...>" splits into fetch's arguments.
 		set -- ${upstream//\{version\}/$version}
@@ -278,7 +290,7 @@ while IFS=$'\t' read -r -u 3 comp stage install license version_cmd notice_globs
 	if [[ $purl != - ]]; then
 		sbom application "$comp" "$version" "${purl//\{version\}/$version}" "$license" "${paths%% *}" - "$distribution" -
 	fi
-done 3< <(jq -r '.components[] | [.name, .stage, .install // "image", .license, .version, (.notices | join(" ")), (.paths | join(" ")),
+done 3< <(jq -r '.components[] | [.name, .stage, .install // "image", .license, .version, .["version-after"] // "-", (.notices | join(" ")), (.paths | join(" ")),
 	(if .upstream then [.upstream.repository, .upstream.tag] + .upstream.files | join(" ") else "-" end), .purl // "-"] | @tsv' "$components")
 
 # --- GitHub CLI release tarball -----------------------------------------------------------

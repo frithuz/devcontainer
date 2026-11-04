@@ -9,10 +9,10 @@ apt-get upgrade -y
 apt-get install -y --no-install-recommends \
 	bash ca-certificates curl less locales neovim openssh-client passwd sudo-rs \
 	media-types netbase tzdata \
-	bat fd-find file fzf lsd ripgrep tmux unzip xz-utils zip \
+	bat btop fd-find file fzf lsd ripgrep sqlite3 tmux unzip xz-utils zip \
 	lsof netcat-openbsd openssl procps socat toybox trippy \
 	bubblewrap \
-	libatomic1 \
+	libatomic1 libgcc-s1 libstdc++6 \
 	libcurl4t64 libpcre2-8-0 \
 	libbz2-1.0 libdb5.3t64 libffi8 libgdbm6t64 liblzma5 libmpdec4 libncursesw6 \
 	libreadline8t64 libsqlite3-0 libssl3t64 libtinfo6 libuuid1 libzstd1 zlib1g

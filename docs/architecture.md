@@ -18,7 +18,7 @@ The Dockerfile has four kinds of stages. The comments in the file cover the deta
 
 The base is one of them: the `debian` stage pins [Docker Hardened Images](https://docs.docker.com/dhi/)' Debian 13 base, the `-dev` variant (it runs as root and ships apt), pulled from `dhi.io`, which needs a Docker login. The final stage and the stages that compile for it start from it, so they link against the same libraries.
 
-**Builder stages** hold anything fetched or built by script that doesn't belong in a user's home: `gh`, `jv`, `task`, `dnslookup`, and the apt signing key. That keeps `gnupg`, compilers, and other fetch and build tooling out of the final image. Most start from `go`; Git comes from an independently published artifact ([git](#git)). The `config` stage validates `scripts/*.yaml` against their schemas and converts them to JSON. The scripts read only that output, so a malformed data file fails the build before anything uses it.
+**Builder stages** hold anything fetched or built by script that doesn't belong in a user's home: `gh`, `jv`, `task`, `dnslookup`, the Go developer tools, `ast-grep`, `hyperfine`, `protoc`, and the apt signing key. That keeps `gnupg`, compilers, and other fetch and build tooling out of the final image. Most start from `go`; `protoc` compiles on the `debian` base, so it links against the image's libraries; Git comes from an independently published artifact ([git](#git)). The `config` stage validates `scripts/*.yaml` against their schemas and converts them to JSON. The scripts read only that output, so a malformed data file fails the build before anything uses it.
 
 **The `files` stage** lays out, under `/out`, every file the image copies in: the toolchains and standalone tools, git's `/usr/local` tree, the pnpm hard links, the `/usr/local/bin` symlinks, the apt signing key, `rootfs/`, and the notices `/legal` starts from. Hard links survive because they're copied within one `COPY`.
 
@@ -42,6 +42,7 @@ Copied binaries have to run on the base's glibc (Debian 13's):
 
 - Prefer statically linked binaries. Most of the Go tools and uv are.
 - Copy dynamically linked tools (Node, Python, git-cliff, pnpm) only from glibc (Debian-based) images whose glibc is no newer than the base's. Never copy them from Alpine/musl images.
+- Release binaries that link against glibc (Sampo, ast-grep, hyperfine) must need no newer glibc than the base's, and their other shared libraries (`libgcc_s`) come from apt. protoc is compiled on the base and needs `libstdc++` and `libgcc_s`, which the setup step installs explicitly rather than relying on another package to pull them in.
 - **Python** needs the most care. The official image links CPython against Debian's shared libraries, so the final stage installs the same packages. A missing library doesn't break `python3 --version`. It shows up only when the matching stdlib module is imported, which is why the smoke tests import each of them.
 
 ## git

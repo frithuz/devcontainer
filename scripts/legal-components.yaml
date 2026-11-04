@@ -127,6 +127,84 @@ components:
     notices: [/legal/attribution/gh-stack/LICENSE]
     paths: [/usr/local/bin/gh-stack]
 
+  - name: gopls
+    stage: gopls
+    install: go-install
+    license: BSD-3-Clause
+    version: gopls version
+    notices: [/legal/attribution/gopls/LICENSE]
+    paths: [/usr/local/bin/gopls]
+
+  - name: delve
+    stage: delve
+    install: go-install
+    license: MIT
+    version: dlv version
+    notices: [/legal/attribution/delve/LICENSE]
+    paths: [/usr/local/bin/dlv]
+
+  - name: staticcheck
+    stage: staticcheck
+    install: go-install
+    license: MIT
+    # Prints its release name first: "staticcheck 2026.2.2 (0.8.2)".
+    version: staticcheck -version
+    version-after: "("
+    notices: [/legal/attribution/staticcheck/LICENSE]
+    paths: [/usr/local/bin/staticcheck]
+
+  - name: govulncheck
+    stage: govulncheck
+    install: go-install
+    license: BSD-3-Clause
+    # Prints the Go toolchain's version first.
+    version: govulncheck -version
+    version-after: govulncheck@
+    notices: [/legal/attribution/govulncheck/LICENSE]
+    paths: [/usr/local/bin/govulncheck]
+
+  - name: buf
+    stage: buf
+    # A static Go build (CGO_ENABLED=0), so copying it from upstream's Alpine image is safe.
+    license: Apache-2.0
+    version: buf --version
+    notices: [/legal/attribution/buf/LICENSE]
+    paths: [/usr/local/bin/buf]
+    upstream:
+      repository: bufbuild/buf
+      tag: v{version}
+      files: [LICENSE]
+
+  - name: protoc
+    stage: protoc
+    install: source-build
+    # protobuf (BSD-3-Clause) with its bundled utf8_range (MIT); Abseil is recorded as embedded.
+    license: BSD-3-Clause AND MIT
+    version: protoc --version
+    notices: [/legal/attribution/protoc/LICENSE, /legal/attribution/protoc/utf8_range/LICENSE]
+    paths: [/usr/local/bin/protoc, /usr/local/include/google/protobuf]
+    purl: pkg:generic/protobuf@{version}
+
+  - name: ast-grep
+    stage: ast-grep
+    install: release
+    # Its Rust dependencies are permissive except option-ext (MPL-2.0), compiled in upstream.
+    license: MIT
+    version: ast-grep --version
+    notices: [/legal/attribution/ast-grep/LICENSE]
+    paths: [/usr/local/bin/ast-grep]
+    purl: pkg:cargo/ast-grep@{version}
+
+  - name: hyperfine
+    stage: hyperfine
+    install: release
+    # Its Rust dependencies are permissive except colored (MPL-2.0), compiled in upstream.
+    license: MIT OR Apache-2.0
+    version: hyperfine --version
+    notices: [/legal/attribution/hyperfine/LICENSE-*]
+    paths: [/usr/local/bin/hyperfine]
+    purl: pkg:cargo/hyperfine@{version}
+
   - name: git-cliff
     stage: git-cliff
     license: MIT OR Apache-2.0
