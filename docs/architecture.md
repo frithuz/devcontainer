@@ -47,48 +47,11 @@ Copied binaries have to run on the base's glibc (Debian 13's):
 
 ## git
 
-The standalone `git.Dockerfile` separates Git's release from the devcontainer.
-It uses a pinned Debian builder and Rust
-toolchain, then copies only `/out` into a scratch artifact. That tree contains
-Git, its helpers and templates, attribution, and the exact build recipe. It is
-intended for `COPY --from`, not execution as a container: the consumer supplies
-the compatible Debian shared libraries and shell. The main Dockerfile pins
-`quay.io/frithuz/git` by version and digest and copies its `/out` tree.
+Git comes from a scratch artifact, built and published outside this repository: its recipe now lives in [frithuz/git](https://github.com/frithuz/git). The main Dockerfile's `git` stage pins `quay.io/frithuz/git` by version and digest, and the `files` stage copies its `/out` tree: Git, its helpers and templates under `/usr/local`, its notices and source records, and the exact recipe that built it, under `/legal/attribution/git/`. The artifact is for `COPY --from`, not execution as a container: the image supplies the Debian shared libraries it links against (libcurl, PCRE2, OpenSSL) and the shell.
 
-`publish-git.yml` watches the standalone recipe and its scripts. It compares
-`VERSION` and the release archive's `SHA256` in `git.Dockerfile` with the version
-tag's source-checksum annotation on Quay. A missing tag or changed checksum
-builds both architectures; matching inputs skip compilation. Registry errors
-fail the run. Recipe, toolchain, and zlib-ng changes alone require a manual run
-with `force`. The source signature is verified before compilation; the pinned
-archive checksum is also checked before the artifact can be exported.
+The pinned artifact is the last one this repository built: a client-only build from Git's signed release tarball, with zlib-ng compiled in statically, `sysconfdir=/etc` so the system config stays `/etc/gitconfig`, PCRE2 for `git grep -P`, and no Perl, Python, Tcl/Tk, translations, servers, man pages, or completion. Its recipe and producer commit ship inside it (`/legal/attribution/git/build/`) for [source attribution](legal.md#compiled-components), and the smoke tests check Git's version against the pinned tag and zlib-ng's against the recipe in the artifact.
 
-The workflow publishes to GHCR, signs with the existing OpenBao key, then copies
-the image and referrers to `quay.io/frithuz/git:<Git version>`. A forced rebuild can move that tag; the main Dockerfile pins its
-digest too. After publishing a Git release, update that pin to consume it.
-
-Git is compiled from source in `git.Dockerfile` using `scripts/build/git.sh`.
-The builder uses the same Debian base as the devcontainer, so its
-shared libraries are compatible. Git installs under `/usr/local` with its
-built-in commands as symlinks, so the `files` stage copies it as one tree.
-
-**Verified before use.** The release tarball's signature must verify against the maintainer's key, pinned by fingerprint (`SIGNER`). The keyserver's answer must be that key alone, and gpg's `VALIDSIG` must name it as the signing key's primary: a good signature by any other key fails. zlib-ng publishes no signatures (lightweight tags, unsigned commits), so its archive is pinned by commit and SHA-256 instead, and its header must report the pinned version.
-
-**Compiled in.** [zlib-ng](https://github.com/zlib-ng/zlib-ng), statically, in place of zlib: faster compression for clone, fetch, gc, and reading objects. It picks its CPU-specific code at run time, so one build suits every host. git's Rust code is compiled with the toolchain copied from the pinned `rust` stage; it has no crate dependencies, so cargo runs offline.
-
-**Build options:**
-
-- Debian's hardening flags and link-time optimization, from `dpkg-buildflags`. The base drops dpkg's default vendor, and without one `dpkg-buildflags` prints nothing, so the script sets `DEB_VENDOR=Debian`, fails if the flags lack the stack protector or LTO, and checks the linked binary for full RELRO and a stack protector.
-- `sysconfdir=/etc`, so the system config stays `/etc/gitconfig`, where `git config --system` (the kits' commit signing) and other tools expect it.
-- OpenSSL's accelerated SHA-1 only where git doesn't need collision detection (checksums of files it writes itself); object IDs keep the collision-detecting SHA-1. OpenSSL also provides SHA-256.
-- PCRE2 for `git grep -P`; HTTPS through the image's libcurl.
-- No Perl, Python, Tcl/Tk, translations, or expat: no `send-email`, `svn`, `p4`, `gitk`, `git-gui`, or WebDAV `http-push`.
-
-**Not tested at build.** git's own test suite and `git subtree`'s don't run: they took too long for every bump. The stage's inputs are pinned, so rebuilding it gives the same git, and a release that misbehaves is tracked down by running its suite locally. zlib-ng's suite, which is quick, still runs before git links it, and a failure fails the stage. The smoke tests check the installed git as they check every tool.
-
-**Client only.** The daemon, `http-backend`, `git-shell`, `imap-send`, `instaweb`, and the scripts that would only report a missing Perl or Python are removed after install. A release that stops shipping one fails the build, so the list stays accurate. `git subtree` is installed from `contrib/`. There are no man pages or shell completion: use `git <command> -h`.
-
-To bump in `git.Dockerfile`: `VERSION` and `SHA256` for git; `ZLIB_NG_VERSION`, `ZLIB_NG_COMMIT`, and `ZLIB_NG_SHA256` together for zlib-ng; `SIGNER` only if git's maintainer changes signing keys. The smoke tests check Git's version against the main Dockerfile's image tag and zlib-ng's against `ZLIB_NG_VERSION` in the recipe shipped inside that artifact. The artifact carries its original recipe and producer commit for [source attribution](legal.md#compiled-components).
+frithuz/git publishes to `ghcr.io/frithuz/git`, with Git under `/usr` instead of `/usr/local`. Moving to one of its releases means updating the pin, the Git paths in `scripts/legal-components.yaml`, and any `/usr/local` Git assumptions ([its README](https://github.com/frithuz/git#use-in-dockerfiles)).
 
 ## Filesystem
 

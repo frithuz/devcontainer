@@ -32,11 +32,11 @@ Create each the same way, **Public**, with `frithuz+promote` as its only robot, 
 
 ### Git artifact repository `frithuz/git`
 
-Create this repository **Public** too and grant `frithuz+promote` **Write**.
-`publish-git.yml` uses the existing `quay` environment and federation to promote
-the signed GHCR artifact under its Git version tag. No new credential or
-federation entry is needed. This scratch image carries `/out`, including Git's
-source records and build recipe under `/out/legal/attribution/git`.
+This repository holds the Git artifacts this repository used to build and publish; the main
+Dockerfile still pins one. Nothing here writes to it any more: Git is now built in
+[frithuz/git](https://github.com/frithuz/git), which publishes to GHCR. Keep the repository
+**Public** so the pinned artifact stays pullable. `frithuz+promote`'s **Write** on it is no longer
+needed.
 
 ## 3. Robot account `frithuz+promote`
 
@@ -45,7 +45,7 @@ Create it under **Organizations → frithuz → Robot Accounts → Create Robot 
 | Field | Value |
 | --- | --- |
 | Name | `promote` (full name `frithuz+promote`) |
-| Description | `publish.yml, publish-kits.yml, and publish-git.yml promote jobs: copy images and referrers from the GHCR mirror, apply tags. OIDC federation only.` |
+| Description | `publish.yml and publish-kits.yml promote jobs: copy images and referrers from the GHCR mirror, apply tags. OIDC federation only.` |
 | Add to team | None |
 | Repository permissions | `devcontainer`, `claude-kit`, `codex-kit`, and `git`: **Write** (push manifests and referrers, create and move tags) |
 | Default permissions | None |

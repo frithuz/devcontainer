@@ -5,7 +5,6 @@
 FROM golang:1.27-trixie@sha256:fbb7ae40b62ff8afe31662df570d39b4f5052ac32b90dae8e60d7657a20a74f4 AS go
 FROM node:26-trixie-slim@sha256:36793bcbb160a6a16cede1e62b93f84e26b78a972a8a4c0b879c1c12f22761ec AS node
 FROM python:3.15-slim-trixie@sha256:533b0b2f9b5d46fd097091cf826f27902f1d6c3bca714b6dc74551356aa97a51 AS python
-FROM rust:1.99-slim-trixie@sha256:1a939748a7cbab172de91a014e3804a97af1394a8c844faa67fce9401c4e40fb AS rust
 FROM ghcr.io/astral-sh/uv:0.13.6@sha256:af22a52f5eafef3d78e551599d405c02df61919d18028f0cea8eda93bc9986d0 AS uv
 FROM mvdan/shfmt:v3.14.1@sha256:8c06884a35683d8763fba6c0d9484d11a61a96da65f8d497d6f625825a6043f2 AS shfmt
 FROM ghcr.io/jqlang/jq:1.8.2@sha256:b9c68867e5766576263a222e91db3de422d802069c7af70440e667a95344e486 AS jq
@@ -43,7 +42,8 @@ RUN --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/
     --mount=type=bind,source=scripts/build/apt-keys.sh,target=/mnt/src/scripts/build/apt-keys.sh \
     bash /mnt/src/scripts/build/run.sh /mnt/src/scripts/build/apt-keys.sh
 
-# Independently built Git artifact; update the version and digest after publish-git succeeds.
+# Git, from a scratch artifact published separately (built in frithuz/git), pinned by version and
+# digest.
 FROM quay.io/frithuz/git:2.56.0@sha256:e086987497cf2ed1f1777347d5fdc1e85000b1183a5b8d3f919a058f23d6e5dc AS git
 
 # jv, a JSON Schema validator: for the data files below, and shipped in the image. No upstream
