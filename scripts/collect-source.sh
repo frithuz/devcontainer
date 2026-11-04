@@ -83,7 +83,7 @@ if [[ -s $apt_needed ]]; then
 	apt-get "${apt_opts[@]}" -qq update
 	while IFS=$'\t' read -r -u 3 pkg version covers; do
 		# Each file as "'<url>' <name> <size> <ALGORITHM>:<hex>", with the strongest hash the
-		# repository's signed index lists (SHA512 for Debian's and DHI's).
+		# repository's signed index lists (SHA512 for Debian's).
 		if ! uris=$(apt-get "${apt_opts[@]}" -qq --print-uris --only-source source "$pkg=$version" 2>"$work/apt.err"); then
 			error "$pkg $version ($covers): no source package in scripts/source-apt.yaml's repositories: $(tr '\n' ' ' <"$work/apt.err")"
 			continue

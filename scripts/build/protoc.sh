@@ -13,6 +13,11 @@ readonly script=${BASH_SOURCE[0]}
 readonly version=${VERSION:?VERSION must be set} abseil_version=${ABSEIL_VERSION:?ABSEIL_VERSION must be set}
 jobs=$(nproc)
 
+# The base's packages at the archive's current versions, as setup.sh brings the image's, so protoc
+# compiles against the same GCC runtime the image installs. SOURCE records the libstdc++ it was
+# built with; the stage stays cached across refreshes, so the image's can only be newer, which
+# libstdc++'s backward compatibility allows.
+apt-get upgrade -y
 apt-get install -y --no-install-recommends curl g++ make cmake dpkg-dev binutils
 
 work=$(mktemp -d)
@@ -143,6 +148,7 @@ component: protoc
 source: $protobuf_url
 sha256: $SHA256
 toolchain: $(g++ --version | head -1)
+runtime: libstdc++6=$(dpkg-query -W -f '${Version}' libstdc++6)
 build-script: ${script#/mnt/src/} sha256:$(sha256sum "$script" | cut -d' ' -f1)
 embedded: abseil-cpp $abseil_version Apache-2.0 $abseil_url sha256:$ABSEIL_SHA256
 SOURCE

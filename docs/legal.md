@@ -71,7 +71,6 @@ The image conveys GPL (v2 and v3), LGPL, and MPL-2.0 components: git (GPLv2, com
 
 The repositories the source comes from:
 
-- **`dhi.io`**, Docker's hardened rebuilds (`+dhi` versions), for most of the base. Its index keeps some earlier versions, but there's no published retention policy, so an old version's URL can stop working.
 - **Debian's archive** (`trixie` and `trixie-updates`) and **security archive** (`trixie-security`). A version leaves the archive when it's superseded, but [snapshot.debian.org](https://snapshot.debian.org) keeps every version Debian has published.
 
 ### Compiled components
@@ -111,7 +110,7 @@ The image doesn't carry Claude Code. The Claude kit adds it, unmodified, from Do
 1. **Distribution compliance review.** Before the first public release, confirm whether a list of upstream's source URLs is acceptable for the GPLv2 and LGPL-2.x components, which provide for neither a third-party server nor this list, or whether they need source published with the image or a written offer; that `source.tsv` counts as §6(d) directions under GPLv3; and that upstream's published source covers the MPL-2.0 modules in the binaries it built. Also confirm coverage for the actual license versions and the recorded elections, complete transitive notices, and the Claude Code terms for this distribution. The project's CC0 dedication resolves none of these.
 2. **Copyleft source gaps:**
    - **Unknown licenses:** the Rust crates in uv and in the kits' Codex, and whatever Claude Code bundles may add copyleft components.
-   - **Availability:** `source.tsv`'s URLs depend on upstream keeping old versions, which `dhi.io` doesn't promise ([`source.tsv`](#sourcetsv)).
+   - **Availability:** `source.tsv`'s URLs point at Debian's archive, which drops a version once it's superseded; snapshot.debian.org keeps it ([`source.tsv`](#sourcetsv)).
 3. **License gaps** reported by `collect-legal.sh`, which doesn't fail on them yet:
    - Six npm modules bundled with pnpm ship only a `license` field, no license text.
    - jq's `COPYING` doesn't cover its bundled oniguruma.

@@ -38,11 +38,8 @@ curl -fsSL --retry 3 -o "$work/ast-grep.zip" "$url"
 verify "$work/ast-grep.zip" "$url" "$expected"
 curl -fsSL --retry 3 -o "$work/LICENSE" "$license_url"
 verify "$work/LICENSE" "$license_url" "$SHA256_LICENSE"
-# The go stage has no unzip; Python's zipfile extracts without keeping modes, so the files stage
-# sets them.
-python3 -I -m zipfile -e "$work/ast-grep.zip" "$work/app"
 mkdir /opt/ast-grep
-mv "$work/app/ast-grep" /opt/ast-grep/ast-grep
+unzip -q "$work/ast-grep.zip" ast-grep -d /opt/ast-grep
 mv "$work/LICENSE" /opt/ast-grep/LICENSE
 rm -r "$work"
 cat >/opt/ast-grep/SOURCE <<SOURCE

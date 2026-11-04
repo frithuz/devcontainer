@@ -1,6 +1,6 @@
 # devcontainer
 
-A single container image on Docker Hardened Images' Debian 13 base, `quay.io/frithuz/devcontainer` (mirrored to `ghcr.io/<owner>/devcontainer` for GitHub Actions), that gives every place work happens the same platform and the same toolset:
+A single container image on Debian 13's official slim base, `quay.io/frithuz/devcontainer` (mirrored to `ghcr.io/<owner>/devcontainer` for GitHub Actions), that gives every place work happens the same platform and the same toolset:
 
 1. **Editor devcontainers.** Isolated development in any client that supports the [Dev Container spec](https://containers.dev).
 2. **GitHub Actions CI.** Jobs run inside the image, so CI uses the same tools developers do.

@@ -5,7 +5,9 @@ set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 arch=$(dpkg --print-architecture)
 
+# The base's packages at the archive's current versions, the ones the provenance below can record.
 apt-get upgrade -y
+
 apt-get install -y --no-install-recommends \
 	bash ca-certificates curl less locales neovim openssh-client passwd sudo-rs \
 	media-types netbase tzdata \
@@ -16,10 +18,6 @@ apt-get install -y --no-install-recommends \
 	libcurl4t64 libpcre2-8-0 \
 	libbz2-1.0 libdb5.3t64 libffi8 libgdbm6t64 liblzma5 libmpdec4 libncursesw6 \
 	libreadline8t64 libsqlite3-0 libssl3t64 libtinfo6 libuuid1 libzstd1 zlib1g
-
-# The base image keeps only root, nonroot, shadow, and nobody: add Debian's staff group
-# (base-passwd's GID) before Docker's packages add the docker group.
-groupadd --gid 50 staff
 
 # Docker Engine from Docker's repository.
 # shellcheck source=/dev/null
@@ -32,53 +30,27 @@ Components: stable
 Architectures: $arch
 Signed-By: /etc/apt/keyrings/docker.asc
 SOURCES
-# DHI's repository carries its own builds of these packages, versioned without Docker's
-# ~debian suffix, so they'd sort higher and win. They have no maintainer scripts, so the
-# docker group isn't created. Docker's repository takes precedence for them.
-cat >/etc/apt/preferences.d/docker <<'PREFERENCES'
-Package: docker-ce docker-ce-cli docker-buildx-plugin docker-compose-plugin containerd.io
-Pin: origin download.docker.com
-Pin-Priority: 900
-PREFERENCES
 apt-get update
 apt-get install -y --no-install-recommends \
 	docker-ce docker-ce-cli docker-buildx-plugin docker-compose-plugin containerd.io
 
-# DHI's base can carry packages at versions its repository no longer serves. DHI moved its builds
-# from +dhiN to +deb13u0+dhiN, which sorts lower, and rebuilt some of them, but the base still
-# shipped a few under the old names. Move each one to the repository's build of the same release,
-# allowing the downgrade, so the image holds only packages the provenance below can record. Once
-# the base matches its repository, this finds nothing.
+# Every installed version must be one a repository serves, or the provenance below can't record
+# it. After the upgrade above, only a package no repository carries any more would fail here.
 mapfile -t names < <(dpkg-query -W -f '${db:Status-Abbrev} ${Package}\n' | awk '$1 == "ii" { print $2 }')
 declare -A served=()
 while IFS='|' read -r name version _; do
 	served["${name// /}=${version// /}"]=1
 done < <(apt-cache madison "${names[@]}")
-moves=()
 unserved=()
 while read -r name version; do
-	if [[ -n ${served["$name=$version"]:-} ]]; then
-		continue
-	fi
-	if [[ $version =~ ^(.*)\+(dhi[0-9]+)$ && -n ${served["$name=${BASH_REMATCH[1]}+deb13u0+${BASH_REMATCH[2]}"]:-} ]]; then
-		moves+=("$name=${BASH_REMATCH[1]}+deb13u0+${BASH_REMATCH[2]}")
-	else
+	if [[ -z ${served["$name=$version"]:-} ]]; then
 		unserved+=("$name=$version")
 	fi
 done < <(dpkg-query -W -f '${db:Status-Abbrev} ${Package} ${Version}\n' | awk '$1 == "ii" { print $2, $3 }')
 if ((${#unserved[@]})); then
-	echo "No repository serves these installed versions, or a +deb13u0 build of them:" >&2
+	echo "No repository serves these installed versions:" >&2
 	printf '  %s\n' "${unserved[@]}" >&2
 	exit 1
-fi
-if ((${#moves[@]})); then
-	echo "Moving to the repository's builds: ${moves[*]}"
-	# Installing a package by name marks it manually installed, so restore the auto marks.
-	mapfile -t auto < <(apt-mark showauto "${moves[@]%%=*}")
-	apt-get install -y --no-install-recommends --allow-downgrades "${moves[@]}"
-	if ((${#auto[@]})); then
-		apt-mark auto "${auto[@]}"
-	fi
 fi
 
 # No apt installs follow, so record the exact .deb URL and checksum of every installed
@@ -113,8 +85,6 @@ go version
 # shell; passwordless sudo that keeps PATH. The base image has no user to rename.
 useradd --uid 1000 --user-group --create-home --home-dir /home/agent \
 	--groups docker,staff --shell /bin/bash agent
-# root's login shell is /bin/sh in the base image.
-usermod --shell /bin/bash root
 # Debian's sudo-rs installs only sudo-rs and visudo-rs, and ships no sudoers: link the upstream
 # names, and write a sudoers without secure_path.
 ln -s /usr/lib/cargo/bin/sudo /usr/bin/sudo

@@ -26,7 +26,7 @@ Do this for each package: `devcontainer`, `claude-kit`, and `codex-kit`.
 
 | Job | `permissions` | Login |
 | --- | --- | --- |
-| `build` (`bake.yml`) | `contents: read`, `packages: write`, `id-token: write` (signing) | `registry-auths` with `github.actor` and `GITHUB_TOKEN`, and `dhi.io` with `DOCKERHUB_TOKEN` for the base |
+| `build` (`bake.yml`) | `contents: read`, `packages: write`, `id-token: write` (signing) | `registry-auths` with `github.actor` and `GITHUB_TOKEN` |
 | `tag-ghcr` | `contents: read`, `packages: write` | `oras` login with `GITHUB_TOKEN` |
 | `sign` (environment `registry.frithuz.dev`) | `contents: read`, `packages: write` (push the signature), `id-token: write` (OpenBao login) | `docker/login-action` with `GITHUB_TOKEN` |
 | `verify` | `contents: read`, `packages: read` | none (public) |

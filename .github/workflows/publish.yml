@@ -171,8 +171,6 @@ jobs:
     with:
       target: preflight
       output: local
-      # Logs in to pull the base from dhi.io. By default bake.yml logs in only to push an image.
-      registry-login: "true"
       artifact-upload: true
       artifact-name: preflight
       sign: "false"
@@ -185,11 +183,6 @@ jobs:
         BASE_NAME=${{ needs.base.outputs.name }}
         BASE_DIGEST=${{ needs.base.outputs.digest }}
         REFRESH=${{ (github.event_name == 'schedule' || inputs.refresh) && github.run_id || '' }}
-    secrets:
-      registry-auths: |
-        - registry: dhi.io
-          username: garbee
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
   inventory:
     name: Compare the inventory
@@ -275,17 +268,14 @@ jobs:
       # labels, and the rest the same as docker-bake.hcl's.
       set-meta-annotations: true
       meta-annotations: |
-        org.opencontainers.image.description=Debian 13 (Docker Hardened Images) image with one pinned toolset for devcontainers, GitHub Actions CI, and agent sandboxes. Copyleft source locations are listed in /legal/source.tsv; see /legal/SOURCE.md.
+        org.opencontainers.image.description=Debian 13 image with one pinned toolset for devcontainers, GitHub Actions CI, and agent sandboxes. Copyleft source locations are listed in /legal/source.tsv; see /legal/SOURCE.md.
         org.opencontainers.image.vendor=frithuz
         org.opencontainers.image.documentation=${{ github.server_url }}/${{ github.repository }}/blob/${{ github.sha }}/docs/usage.md
         org.opencontainers.image.base.name=${{ needs.base.outputs.name }}
         org.opencontainers.image.base.digest=${{ needs.base.outputs.digest }}
     secrets:
-      # dhi.io for the base, GHCR for the push.
+      # GHCR for the push.
       registry-auths: |
-        - registry: dhi.io
-          username: garbee
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
         - registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}

@@ -12,23 +12,33 @@ FROM ghcr.io/jqlang/jq:1.8.2@sha256:b9c68867e5766576263a222e91db3de422d802069c7a
 FROM mikefarah/yq:4.54.1@sha256:4b3d9475d65571d28cbb19544d3820ec2945e4c8b2f18279394282b8dc3a592e AS yq
 FROM ghcr.io/pnpm/pnpm:12.17.0@sha256:172468925f0ca368313c09867081a43e298eaeb13dee8f7e4356bfad45dd8b15 AS pnpm
 FROM orhunp/git-cliff:2.14.2@sha256:1e696a381a1b0366bb6ccbb6bd4e50e73473fda88eab3a757b95e0d0d66c9531 AS git-cliff
-# Docker Hardened Images' Debian 13 base (pulling from dhi.io needs a Docker login). The dev
-# variant: it runs as root and ships apt. The image and the stages that compile for it start here.
-FROM dhi.io/debian-base:trixie-debian13-dev@sha256:7995f6739e5ad75cbd57d9356f7d7c83d43dd957682b6a000f32ff95b441a9b6 AS debian
+# Debian 13's official slim image: packages and security updates straight from Debian's archive. The
+# image and the stages that compile for it start here.
+FROM debian:trixie-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4 AS debian
 FROM ghcr.io/betterleaks/betterleaks:v1.9.0@sha256:e3b95b0db6c2735db17165c009b0ad6d9cef34fb4578659232b98f69d7346cac AS betterleaks
 FROM ghcr.io/amacneil/dbmate:2.37.0@sha256:0101fcc9999596f4a6930e5627296cd91f3bfa225e3e8c1699fc00881e439cc6 AS dbmate
 FROM bufbuild/buf:1.75.0@sha256:adf82c7170be6629ec81dc907921ac1699407cd11c4f7fd7521b13c74152f849 AS buf
 
+# The download tools on the image's base (curl, gpg, unzip), for the stages that fetch and verify
+# releases. Nothing from this stage reaches the image but the files those stages produce.
+FROM debian AS fetch
+ARG TARGETARCH
+RUN --mount=type=cache,id=apt-lists-$TARGETARCH,target=/var/lib/apt/lists,sharing=locked \
+    --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/run.sh \
+    --mount=type=bind,source=scripts/build/apt-bootstrap.sh,target=/mnt/src/scripts/build/apt-bootstrap.sh \
+    --mount=type=bind,source=scripts/build/fetch.sh,target=/mnt/src/scripts/build/fetch.sh \
+    bash /mnt/src/scripts/build/run.sh /mnt/src/scripts/build/apt-bootstrap.sh /mnt/src/scripts/build/fetch.sh
+
 # GitHub CLI: no official image. Installs the latest release, verified against its
 # published checksums; REFRESH makes scheduled builds pick up new releases.
-FROM go AS gh
+FROM fetch AS gh
 ARG TARGETARCH
 ARG REFRESH
 RUN --mount=type=bind,source=scripts/install-gh.sh,target=/tmp/install-gh.sh bash /tmp/install-gh.sh /opt/gh
 
 # apt signing key for Docker's repository, checked against its published fingerprint before the
 # final stage trusts it.
-FROM go AS apt-keys
+FROM fetch AS apt-keys
 RUN --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/run.sh \
     --mount=type=bind,source=scripts/build/apt-keys.sh,target=/mnt/src/scripts/build/apt-keys.sh \
     bash /mnt/src/scripts/build/run.sh /mnt/src/scripts/build/apt-keys.sh
@@ -51,7 +61,7 @@ RUN --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/
 # than a build here: a binary upstream built carries upstream's MPL-2.0 source obligation for the
 # modules compiled into it, where one compiled here would carry ours (docs/legal.md). Bumped by
 # hand: VERSION and both SHA256_ values together, from the release's task_checksums.txt.
-FROM go AS task
+FROM fetch AS task
 ARG VERSION=3.54.0
 ARG SHA256_AMD64=680859dbb4d881a9c72d4d9a8f510825450849af8567deacd7302c01124416fb
 ARG SHA256_ARM64=d7189d439d4a6058e39e1b2acd7c8b27acd4856691b408f23b242e4294e1df5b
@@ -65,7 +75,7 @@ RUN --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/
 # an MPL-2.0 crate (option-ext), which upstream's binary carries the obligation for. The archive has
 # no LICENSE, so it comes from the release tag, pinned too. Bumped by hand: VERSION and every
 # SHA256_ value together. The binary links against glibc (2.39 or newer at 0.23.0).
-FROM go AS sampo
+FROM fetch AS sampo
 ARG VERSION=0.23.0
 ARG SHA256_AMD64=d526913cd5283ec18ac280b515916f44cd0c51a3a22dd780ddce791235354ed6
 ARG SHA256_ARM64=b7acca5cf6f9591e50ca6bc71c63bf3d63e5c84cd849152c625c350c20cfef7c
@@ -140,7 +150,7 @@ RUN --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/
 # carries the obligation for. ast-grep's archive has no LICENSE, so it comes from the release tag,
 # pinned too. Bumped by hand: VERSION and every SHA256_ value together. Both link against glibc
 # (2.34 or newer for ast-grep at 0.51.1, 2.18 for hyperfine at 2.0.0).
-FROM go AS ast-grep
+FROM fetch AS ast-grep
 ARG VERSION=0.51.1
 ARG SHA256_AMD64=42514f77ae0c8a25d7d32154d31d3e7e16f3ab894f8ce76ce417de234ee49157
 ARG SHA256_ARM64=db02fae2d8eace5fc40c55242068882452dd03eab38a1d950d5fd981cf112926
@@ -150,7 +160,7 @@ RUN --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/
     --mount=type=bind,source=scripts/build/ast-grep.sh,target=/mnt/src/scripts/build/ast-grep.sh \
     bash /mnt/src/scripts/build/run.sh /mnt/src/scripts/build/ast-grep.sh
 
-FROM go AS hyperfine
+FROM fetch AS hyperfine
 ARG VERSION=2.0.0
 ARG SHA256_AMD64=ae2beda2ac99c098427e4f755244552daf20e514422889cca6d44421e2d93c87
 ARG SHA256_ARM64=f8244d1e17f8da23ee6b3ae2cdc04a6a185a450f6b74e09bff12e498038fcbc9
@@ -179,7 +189,7 @@ RUN --mount=type=cache,id=apt-lists-$TARGETARCH,target=/var/lib/apt/lists,sharin
 # The scripts' data files (scripts/*.yaml): each validated against scripts/schemas/<name>.schema.json,
 # checked for duplicate names, and converted to <name>.json. The scripts read only this output,
 # never the YAML. `docker buildx bake config` runs it on its own and exports out/config/.
-FROM go AS config-run
+FROM debian AS config-run
 COPY --link --from=jv /opt/jv/jv /usr/local/bin/jv
 COPY --link --from=yq /usr/bin/yq /usr/local/bin/yq
 COPY --link --from=jq /jq /usr/local/bin/jq
@@ -194,7 +204,7 @@ COPY --from=config-run /config/ /
 # Every file the image copies in, laid out under /out as it lands in the image: toolchains and
 # standalone tools, the apt signing keys, image files (rootfs/: the BASH_ENV script and
 # start-dockerd), and the notices /legal starts from. The image takes it as its first layer.
-FROM go AS files
+FROM debian AS files
 # Without Go's own tests (test/, testdata/, *_test.go), which only `go test std` needs.
 COPY --link --exclude=test --exclude=**/testdata --exclude=**/*_test.go --from=go /usr/local/go /out/usr/local/go
 COPY --link --from=python /usr/local/ /out/usr/local/
@@ -308,7 +318,7 @@ RUN --mount=type=bind,target=/mnt/legal-src --mount=type=bind,from=gh,source=/op
     bash /mnt/src/scripts/build/run.sh /mnt/src/scripts/build/legal.sh
 
 LABEL org.opencontainers.image.title="devcontainer" \
-      org.opencontainers.image.description="Debian 13 (Docker Hardened Images) image with one pinned toolset for devcontainers, GitHub Actions CI, and agent sandboxes. Copyleft source locations are listed in /legal/source.tsv; see /legal/SOURCE.md." \
+      org.opencontainers.image.description="Debian 13 image with one pinned toolset for devcontainers, GitHub Actions CI, and agent sandboxes. Copyleft source locations are listed in /legal/source.tsv; see /legal/SOURCE.md." \
       org.opencontainers.image.licenses="CC0-1.0" \
       org.opencontainers.image.vendor="frithuz" \
       devcontainer.metadata='[{"remoteUser":"agent"}]'

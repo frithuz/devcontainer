@@ -9,9 +9,8 @@ provenance.
 this image was built: one row per file, with its URL and digest, and the components it covers.
 
 - **Debian packages:** the source package (`.dsc` and archives) at the exact version installed,
-  from the repository it was installed from: Docker's hardened Debian rebuilds (`dhi.io`), or
-  Debian's archive. Debian also keeps every version it has published at
-  `https://snapshot.debian.org`.
+  from Debian's archive, which they were installed from. Debian also keeps every version it has
+  published at `https://snapshot.debian.org`.
 - **git:** the release tarball it was compiled from, the archive of zlib-ng, which is compiled
   into it, and the script that controlled the build, at the commit this image was built from.
 

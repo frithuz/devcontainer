@@ -11,7 +11,7 @@ Dependabot runs weekly on two ecosystems: `docker`, for every pinned `FROM` in `
 
 ## Updates Dependabot can't handle
 
-- **The base's Debian release.** The `debian` stage pins `dhi.io/debian-base:trixie-debian13-dev`. Dependabot reads `dhi.io` with `garbee`'s `DOCKERHUB_TOKEN` from its own secrets ([registry and signing](#registry-and-signing)) and proposes new digests for that tag, so Docker's fixes to the base arrive like any other digest bump. Moving to a new Debian release is a deliberate tag change. A main-image base digest change does not rebuild Git. A new Debian release requires checking Git artifact compatibility and, when needed, forcing its separate release workflow.
+- **The base's Debian release.** The `debian` stage pins `debian:trixie-slim`, the official image on Docker Hub. Dependabot proposes new digests for that tag, so Debian's fixes to the base arrive like any other digest bump; between bumps, the setup step's `apt-get upgrade` brings the base's packages current on every refresh. Moving to a new Debian release is a deliberate tag change. A main-image base digest change does not rebuild Git. A new Debian release requires checking Git artifact compatibility and, when needed, forcing its separate release workflow.
 - **apt packages** (base and Docker Engine) and **`gh`** aren't pinned. The weekly build's refresh argument reinstalls them ([architecture.md](architecture.md#dockerfile-structure)). Other builds may reuse cached layers, so a push build can be up to a week behind on these.
 - **`jv`, `dnslookup`, `gh-stack`, `gopls`, `delve`, `staticcheck`, and `govulncheck`** are pinned as Go module versions in their builder stages and bumped by hand. staticcheck is pinned by module version (`honnef.co/go/tools@v0.8.2`), not its release name (`2026.2.2`); `staticcheck -version` prints both, and the Go proxy's `@latest` gives the module version.
 - **`task`** is pinned in its stage and bumped by hand: `VERSION`, `SHA256_AMD64`, and `SHA256_ARM64` together, from the release's `task_checksums.txt`.
@@ -39,7 +39,7 @@ Both workflows build through [`docker/github-builder`](https://github.com/docker
 
 The GitHub Actions `container:` check needs an image in a registry, so it runs in `publish.yml` against the pushed digest.
 
-**Fork PRs skip the image checks.** The image job pulls the base from `dhi.io` with `DOCKERHUB_TOKEN`, which GitHub doesn't give a fork's PR. A maintainer runs them by pushing the PR's commits to a branch in this repository. Dependabot's PRs run them, with Dependabot's copy of the token.
+**Fork PRs run the image checks too.** Every image the build pulls is public, so the job needs no secrets.
 
 ### Preflight checks (`test/smoke.sh`)
 
@@ -79,7 +79,7 @@ There are no versioned releases:
 | `:latest` | Every scheduled build | Most recent scheduled build |
 | `:YYYYMMDD` | Every scheduled build | Immutable snapshot, dated by the original run's creation, so reruns keep the date |
 
-**One secret is stored in GitHub: `DOCKERHUB_TOKEN`.** GHCR uses `GITHUB_TOKEN`, Quay uses OIDC robot federation, and OpenBao exchanges the job's OIDC token for a ten-minute signing token.
+**No secrets are stored in GitHub.** GHCR uses `GITHUB_TOKEN`, Quay uses OIDC robot federation, and OpenBao exchanges the job's OIDC token for a ten-minute signing token.
 
 ### Workflow
 
@@ -121,7 +121,6 @@ Recovery of an interrupted publication is described in [integrations/ghcr.md](in
 
 - **GHCR** is a public package linked to this repository, written with `GITHUB_TOKEN`. Grant the Admin Actions role only once retention deletion exists ([integrations/ghcr.md](integrations/ghcr.md)).
 - **Quay** has one robot, `frithuz+promote`, with Write on `devcontainer`, `claude-kit`, `codex-kit`, and `git` only, logging in exclusively through federation pinned to the `quay` environment, which only `main` can deploy to ([integrations/quayio.md](integrations/quayio.md)). Create each repository as public before its first promote. A push that creates a repository creates it private.
-- **dhi.io**, where the base is pulled from, is read with `garbee`'s read-only Docker personal access token, `DOCKERHUB_TOKEN`. It's stored twice, as a repository Actions secret and as a Dependabot secret, because Dependabot's runs read only Dependabot's secrets. It's the one exception to the 1Password policy: `bake.yml` needs the login too, and can't receive credentials loaded in a job ([integrations/1password.md](integrations/1password.md#policy)). Docker Hub's OIDC connections would remove it, but need a Docker Team or Business plan, which `frithuz` doesn't have. Rotate it by replacing both copies.
 - **Other credentials**, if ever needed, come from 1Password Workload Identity, never GitHub secrets ([integrations/1password.md](integrations/1password.md)).
 - **Attestations and signing:** `bake.yml` attaches an SBOM and SLSA provenance and signs keylessly with cosign on GHCR. The signing identity is `bake.yml` itself.
 - **The cosign key:** `sign` also signs the index digest with the non-exportable transit key `cosign` in OpenBao, logging in from the `registry.frithuz.dev` environment, and verifies the signature against [`cosign.pub`](../cosign.pub) before anything is promoted. The index lists the attestation manifests, so that signature covers them too ([integrations/openbao.md](integrations/openbao.md)). `promote` copies every signature with the image, so `cosign verify --key cosign.pub <image>@<digest>` works the same against both registries.
@@ -170,7 +169,7 @@ prerequisites and sets repository-local `core.hooksPath` to `.githooks`; it is
 safe to repeat and does not install tools or change global Git configuration.
 It warns before replacing a different hook directory for this checkout.
 
-Building the image locally pulls the base from `dhi.io`, which needs a Docker login: `docker login dhi.io` with your Docker ID and a personal access token.
+Building the image locally needs no registry login: every base and tool image is public.
 
 The [commit-msg hook](../.githooks/commit-msg), its tests, and setup are copied
 from [frithuz/mdchk](https://github.com/frithuz/mdchk/tree/3cacdd9f70cfba8de46baddd4e35382f081e5adc/.githooks).

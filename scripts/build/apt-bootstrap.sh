@@ -1,9 +1,15 @@
 #!/usr/bin/env bash
-# Makes every apt source HTTPS: the base image's Debian and DHI sources use plain HTTP. It ships
-# ca-certificates, so the update trusts the installed store. Shared by the Dockerfile's git and
-# image stages.
+# Makes every apt source HTTPS: the base image's Debian sources use plain HTTP, and it ships no CA
+# store. So the first update and the ca-certificates install go over HTTP, which apt still checks
+# against the archive's signed InRelease files, and every later fetch uses HTTPS and trusts the
+# installed store. Shared by the Dockerfile's git, protoc, and image stages.
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
+
+if [[ ! -s /etc/ssl/certs/ca-certificates.crt ]]; then
+	apt-get update
+	apt-get install -y --no-install-recommends ca-certificates
+fi
 
 shopt -s nullglob
 deb822=(/etc/apt/sources.list.d/*.sources)

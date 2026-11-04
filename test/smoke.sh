@@ -236,6 +236,12 @@ lookup() {
 	check "protoc compiles the well-known types" bash -c '
 		cd /usr/local/include && files=(google/protobuf/*.proto google/protobuf/compiler/*.proto) &&
 			cd / && protoc --include_imports --descriptor_set_out=/dev/null "${files[@]}"'
+	# The image's libstdc++ is the build protoc was compiled against, or a newer one (protoc.sh).
+	check "protoc's libstdc++ is no older than the one it was compiled against" bash -c '
+		built=$(awk '\''$1 == "runtime:" { sub(/^libstdc\+\+6=/, "", $2); print $2 }'\'' /legal/attribution/protoc/SOURCE) &&
+			[[ -n $built ]] && installed=$(dpkg-query -W -f "\${Version}" libstdc++6) &&
+			echo "built against $built, installed $installed" &&
+			dpkg --compare-versions "$installed" ge "$built"'
 
 	# A missing shared library shows up only on import (docs/architecture.md#binary-compatibility).
 	check "python imports every lib-dynload module" python3 - <<'EOF'

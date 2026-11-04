@@ -81,9 +81,6 @@ jobs:
         dev.frithuz.git.source-sha256=${{ needs.changes.outputs.checksum }}
     secrets:
       registry-auths: |
-        - registry: dhi.io
-          username: garbee
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
         - registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
