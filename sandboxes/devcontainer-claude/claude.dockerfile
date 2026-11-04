@@ -2,7 +2,7 @@
 # Claude Code on the devcontainer image, which carries no agents. The agent is Docker's Claude
 # Code mixin (docker/sandbox-kit-spec, examples/claude-mixin), pinned by version and digest.
 # scripts/update-kits.sh rewrites both pins and the descriptor's provides together.
-ARG IMAGE=quay.io/frithuz/devcontainer:build-41219909340@sha256:6337f1a711045e12d58d0c9ae0c9dcf26b4c1b0b493abe219051f826c2313859
+ARG IMAGE=quay.io/frithuz/devcontainer:build-41838327252@sha256:3af6e30d1dad1796f76d07d2c32dc7ef74b05e2be103f3b73708c34ad96523ef
 ARG MIXIN=docker.io/docker/sbx-kit-claude-mixin:2.1.314@sha256:23c168d27d2a4779163bd2d7427e2ab6ce45adab5f99b2dd6da9cb6f2991cbbe
 
 FROM ${MIXIN} AS mixin
