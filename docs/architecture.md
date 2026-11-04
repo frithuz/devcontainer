@@ -72,6 +72,7 @@ Debian's own `python3` isn't installed, and nothing the image installs depends o
 `agent` (devcontainers, sandboxes) and root (CI) share `GOPATH` (`/go`), `PNPM_HOME` (`/usr/local/share/pnpm`), and `/usr/local/bin`, where `pnpm add -g` links bins. All three are `root:staff`, group-writable, and setgid, and `agent` is in `staff`:
 
 - With the default `022` umask, subdirectories created at runtime keep the `staff` group but aren't group-writable. That's fine, because each supported context runs as a single user.
+- In sandboxes, `GOPATH` stays group-writable anyway: each kit's install hook gives `/go` a default ACL (`setfacl -R -m g::rwX -m d:g::rwx /go`), so whatever is created under it gets group `rwx` regardless of the umask. The image can't carry the ACL itself, because BuildKit drops ACLs when it exports a layer. The image installs `acl` for the hook.
 - `/usr/local/bin` gets this **on the directory only**. Never run `chown -R` or `chmod -R` over copied toolchains: changing ownership in a later layer duplicates every affected file into a new layer. Set ownership at copy time with `COPY --chown` instead, in the `files` stage.
 - `agent` can overwrite image binaries in `/usr/local/bin` through a global install. That's accepted, since `agent` already has passwordless root.
 

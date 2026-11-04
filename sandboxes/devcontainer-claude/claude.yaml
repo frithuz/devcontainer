@@ -174,6 +174,18 @@ capabilities:
   - type: com.docker.sandbox/lifecycle@1
     config:
       install:
+        # GOPATH stays group-writable for staff whatever the umask: a default ACL, which the
+        # image can't carry because image layers drop ACLs (docs/architecture.md#shared-writable-directories).
+        # An image without setfacl only warns, so the sandbox still starts.
+        - command: |
+            if command -v setfacl >/dev/null; then
+              setfacl -R -m g::rwX -m d:g::rwx /go
+            else
+              echo "setfacl isn't installed; new files under /go won't be group-writable" >&2
+            fi
+          user: "0"
+          description: Keep GOPATH group-writable for staff
+
         # Written whole, with the onboarding and trust flags for the workspace, as root and then
         # handed to agent.
         - command: |
