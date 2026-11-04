@@ -412,9 +412,13 @@ done <"$go_mods"
 rm -f "$go_mods"
 
 go_downloads=$(mktemp)
+# A throwaway GOPATH: go keeps its checksum database cache in $GOPATH/pkg/sumdb, outside
+# GOMODCACHE, and the image's /go must stay as setup.sh made it, writable by staff.
+go_path=$(mktemp -d)
 mapfile -t go_wanted < <(printf '%s\n' "${!mod_bins[@]}" | grep -vE '@(\(devel\))?$' | sort)
 printf '%s\n' "${go_wanted[@]}" |
-	GOMODCACHE=$go_modcache GOFLAGS=-mod=mod GOTOOLCHAIN=local xargs -n 50 go mod download -json >"$go_downloads" 2>/dev/null || true
+	GOPATH=$go_path GOMODCACHE=$go_modcache GOFLAGS=-mod=mod GOTOOLCHAIN=local xargs -n 50 go mod download -json >"$go_downloads" 2>/dev/null || true
+rm -rf "$go_path"
 
 declare -A mod_dir mod_error
 # shellcheck disable=SC2016 # jq program, not shell.

@@ -2,6 +2,7 @@
 # Smoke tests (docs/maintenance.md#preflight-checks-testsmokesh). Runs inside the image as root,
 # and runs each part once as root and once as agent:
 #
+# - gopath: first, as root only, before any go command: /go holds only what setup.sh made.
 # - lookup: under `env -i` with only HOME and the default PATH, the way GitHub Actions sees the
 #   image. Every command must run, and each pinned tool must report the version its stage pins.
 # - environment: the image's ENV with only PATH reset. pnpm, Go, the shared directories, the
@@ -260,6 +261,12 @@ if not modules or failed:
 EOF
 }
 
+# GOPATH as the build leaves it, checked before any go command: every one creates
+# /go/pkg/mod/cache. A root-owned /go/pkg from the build would keep agent from the module cache.
+gopath() {
+	expect "GOPATH holds only bin and src" "bin src" "$(find /go -mindepth 1 -maxdepth 1 -printf '%f\n' | sort | xargs)"
+}
+
 environment() {
 	local home dir file out user
 	user=$(id -un)
@@ -356,6 +363,7 @@ done
 
 status=0
 as_agent=(setpriv --reuid=agent --regid=agent --init-groups)
+env -i HOME=/root PATH="$default_path" bash "$self" gopath root || status=1
 env -i HOME=/root PATH="$default_path" bash "$self" lookup root || status=1
 "${as_agent[@]}" env -i HOME=/home/agent PATH="$default_path" bash "$self" lookup agent || status=1
 env PATH="$default_path" bash "$self" environment root || status=1
