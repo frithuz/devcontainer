@@ -176,13 +176,16 @@ capabilities:
       install:
         # GOPATH stays group-writable for staff whatever the umask: a default ACL, which the
         # image can't carry because image layers drop ACLs (docs/architecture.md#shared-writable-directories).
-        # An image without setfacl only warns, so the sandbox still starts.
+        # Without setfacl, or on a filesystem without POSIX ACLs, it falls back to making what's
+        # there now group-writable and setgid, warns, and the sandbox still starts.
         - command: |
-            if command -v setfacl >/dev/null; then
-              setfacl -R -m g::rwX -m d:g::rwx /go
-            else
-              echo "setfacl isn't installed; new files under /go won't be group-writable" >&2
+            if command -v setfacl >/dev/null && setfacl -R -m g::rwX -m d:g::rwx /go 2>/dev/null; then
+              exit 0
             fi
+            chgrp -R staff /go
+            chmod -R g+rwX /go
+            find /go -type d -exec chmod g+s {} +
+            echo "no ACL support for /go; new files under it won't be group-writable under a 022 umask" >&2
           user: "0"
           description: Keep GOPATH group-writable for staff
 
