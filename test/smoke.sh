@@ -177,6 +177,13 @@ lookup() {
 		'sqlite3 --version'
 		'btop --version'
 		'gofmt -l /usr/local/go/src/errors'
+		'cargo --version'
+		'rustdoc --version'
+		'rustfmt --version'
+		'cargo fmt --version'
+		'cargo clippy --version'
+		'rust-analyzer --version'
+		'cc --version'
 		'python --version'
 		'pip --version'
 		'pnpx --version'
@@ -306,6 +313,16 @@ environment() {
 	printf 'package main\n\nfunc main() { println("ok") }\n' >"$module/main.go"
 	check "go install into GOPATH" bash -c "cd '$module' && go mod init example.com/smoke-$user && go install . && '$bin'"
 	rm -rf "$module" "$bin"
+
+	# Rust links with the system cc, and finds the copied sysroot without rustup.
+	expect "rustc's sysroot" /usr/local/rust "$(rustc --print sysroot 2>&1)"
+	local crate
+	crate=$(mktemp -d)
+	check "cargo builds, tests, formats, and lints a crate" bash -c "
+		cd '$crate' && cargo new -q --offline smoke && cd smoke &&
+			[[ \$(cargo run -q --offline) == 'Hello, world!' ]] && cargo test -q --offline &&
+			cargo fmt --check && cargo clippy -q --offline -- -D warnings"
+	rm -rf "$crate"
 
 	# The sandbox contract (docs/architecture.md#docker-sandboxes-contract).
 	expect "agent's passwd entry" agent:1000:1000:/home/agent "$(getent passwd agent | cut -d: -f1,3,4,6)"

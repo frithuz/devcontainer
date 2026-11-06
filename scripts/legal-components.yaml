@@ -15,6 +15,18 @@ components:
     notices: [/legal/attribution/go/LICENSE, /legal/attribution/go/PATENTS]
     paths: [/usr/local/go]
 
+  - name: rust
+    stage: rust
+    # rustc, cargo, the standard library, rustfmt, clippy, and rust-analyzer. LLVM is compiled into
+    # rustc; COPYRIGHT.html lists the other third-party code each one bundles.
+    license: (MIT OR Apache-2.0) AND Apache-2.0 WITH LLVM-exception
+    version: rustc --version
+    notices:
+      - /legal/attribution/rust/rust/COPYRIGHT.html
+      - /legal/attribution/rust/rust/licenses/*
+      - /legal/attribution/rust/*/LICENSE-*
+    paths: [/usr/local/rust]
+
   - name: node
     stage: node
     license: MIT

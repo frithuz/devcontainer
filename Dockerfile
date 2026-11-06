@@ -169,6 +169,14 @@ RUN --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/
     --mount=type=bind,source=scripts/build/hyperfine.sh,target=/mnt/src/scripts/build/hyperfine.sh \
     bash /mnt/src/scripts/build/run.sh /mnt/src/scripts/build/hyperfine.sh
 
+# Rust: the official image's toolchain, pinned to a minor line like Go, plus rustfmt, clippy,
+# rust-analyzer, and the standard library's source, which its minimal profile leaves out. The image
+# takes only the toolchain, at /usr/local/rust, without rustup (scripts/build/rust.sh).
+FROM rust:1.99-slim-trixie@sha256:7eab7ce19273ce785e0ca7578bdf7bc1fcbae621775a8197379a04c9f6e03cd5 AS rust
+RUN --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/run.sh \
+    --mount=type=bind,source=scripts/build/rust.sh,target=/mnt/src/scripts/build/rust.sh \
+    bash /mnt/src/scripts/build/run.sh /mnt/src/scripts/build/rust.sh
+
 # protoc, compiled from protobuf's release source tarball on the image's base, so it links against
 # the image's glibc: upstream's Linux release binary links glibc (LGPL) statically. Abseil, the
 # release protobuf pins, is compiled in. Bumped by hand: VERSION and SHA256 together, and
@@ -208,6 +216,7 @@ FROM debian AS files
 # Without Go's own tests (test/, testdata/, *_test.go), which only `go test std` needs.
 COPY --link --exclude=test --exclude=**/testdata --exclude=**/*_test.go --from=go /usr/local/go /out/usr/local/go
 COPY --link --from=python /usr/local/ /out/usr/local/
+COPY --link --from=rust /opt/rust /out/usr/local/rust
 COPY --link --from=node /usr/local/bin/node /out/usr/local/bin/node
 COPY --link --chown=0:0 --from=pnpm /opt/pnpm /out/opt/pnpm
 COPY --link --chown=0:0 --chmod=0755 --from=uv /uv /uvx /out/usr/local/bin/
@@ -238,6 +247,7 @@ COPY --link LICENSE /out/legal/LICENSE
 COPY --link legal/README.md legal/SOURCE.md /out/legal/
 COPY --link --from=go /usr/local/go/LICENSE /usr/local/go/PATENTS /out/legal/attribution/go/
 COPY --link --from=python /usr/local/lib/python3.15/LICENSE.txt /out/legal/attribution/python/
+COPY --link --from=rust /opt/rust-legal/ /out/legal/attribution/rust/
 COPY --link --from=jq /COPYING /out/legal/attribution/jq/
 COPY --link --from=jv /opt/jv/LICENSE /out/legal/attribution/jv/
 COPY --link --from=task /opt/task/LICENSE /opt/task/SOURCE /out/legal/attribution/task/
