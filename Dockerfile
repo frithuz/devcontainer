@@ -14,7 +14,7 @@ FROM orhunp/git-cliff:2.14.2@sha256:1e696a381a1b0366bb6ccbb6bd4e50e73473fda88eab
 # Debian 13's official slim image: packages and security updates straight from Debian's archive. The
 # image and the stages that compile for it start here.
 FROM debian:trixie-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4 AS debian
-FROM ghcr.io/betterleaks/betterleaks:v1.9.0@sha256:e3b95b0db6c2735db17165c009b0ad6d9cef34fb4578659232b98f69d7346cac AS betterleaks
+FROM ghcr.io/betterleaks/betterleaks:v1.10.0@sha256:c6dfa75145fe5b31fdaf02feff18a73f1e11df8ca04876522f87f857656c83ca AS betterleaks
 FROM ghcr.io/amacneil/dbmate:2.38.0@sha256:3937d2826e8189ed1f8cd58331f1f0711721ee10ac4c3d5d5f754fbe37e851ff AS dbmate
 FROM bufbuild/buf:1.75.0@sha256:adf82c7170be6629ec81dc907921ac1699407cd11c4f7fd7521b13c74152f849 AS buf
 # adrs, for Architecture Decision Records: upstream's image, built on Debian bookworm, so its binary
