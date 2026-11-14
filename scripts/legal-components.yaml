@@ -8,13 +8,6 @@
 # Ubuntu's base image ships outside any apt package. In upstream and purl, {version} is the
 # installed version, as printed by the version command.
 components:
-  - name: go
-    stage: go
-    license: BSD-3-Clause
-    version: go env GOVERSION
-    notices: [/legal/attribution/go/LICENSE, /legal/attribution/go/PATENTS]
-    paths: [/usr/local/go]
-
   - name: rust
     stage: rust
     # rustc, cargo, the standard library, rustfmt, clippy, and rust-analyzer. LLVM is compiled into
@@ -138,42 +131,6 @@ components:
     version: gh-stack --version
     notices: [/legal/attribution/gh-stack/LICENSE]
     paths: [/usr/local/bin/gh-stack]
-
-  - name: gopls
-    stage: gopls
-    install: go-install
-    license: BSD-3-Clause
-    version: gopls version
-    notices: [/legal/attribution/gopls/LICENSE]
-    paths: [/usr/local/bin/gopls]
-
-  - name: delve
-    stage: delve
-    install: go-install
-    license: MIT
-    version: dlv version
-    notices: [/legal/attribution/delve/LICENSE]
-    paths: [/usr/local/bin/dlv]
-
-  - name: staticcheck
-    stage: staticcheck
-    install: go-install
-    license: MIT
-    # Prints its release name first: "staticcheck 2026.2.2 (0.8.2)".
-    version: staticcheck -version
-    version-after: "("
-    notices: [/legal/attribution/staticcheck/LICENSE]
-    paths: [/usr/local/bin/staticcheck]
-
-  - name: govulncheck
-    stage: govulncheck
-    install: go-install
-    license: BSD-3-Clause
-    # Prints the Go toolchain's version first.
-    version: govulncheck -version
-    version-after: govulncheck@
-    notices: [/legal/attribution/govulncheck/LICENSE]
-    paths: [/usr/local/bin/govulncheck]
 
   - name: buf
     stage: buf

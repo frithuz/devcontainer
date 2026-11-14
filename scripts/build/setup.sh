@@ -13,7 +13,7 @@ apt-get install -y --no-install-recommends \
 	media-types netbase tzdata \
 	bat btop fd-find file fzf lsd ripgrep sqlite3 tmux unzip xz-utils zip \
 	lsof netcat-openbsd openssl procps socat toybox trippy \
-	acl bubblewrap \
+	bubblewrap \
 	gcc libc6-dev \
 	libatomic1 libgcc-s1 libstdc++6 \
 	libcurl4t64 libpcre2-8-0 \
@@ -75,12 +75,6 @@ fi
 locale-gen
 ldconfig
 
-# Shared GOPATH: root:staff, group-writable, setgid.
-mkdir -p /go/src /go/bin
-chown -R root:staff /go
-chmod -R 775 /go
-chmod 2775 /go /go/src /go/bin
-go version
 rustc --version
 cargo --version
 
@@ -130,9 +124,11 @@ as_agent() {
 # directory with the binary and a manifest that makes it a binary extension. The binary is a link
 # to the root-owned /usr/local/bin/gh-stack, so the manifest pins it: `gh extension upgrade`
 # leaves it alone instead of failing to overwrite it.
-gh_stack_version=$(go version -m /usr/local/bin/gh-stack | awk '$1 == "mod" && $2 == "github.com/github/gh-stack" { print $3 }')
+# Its version is the module version its stage's linker flag sets: "gh stack version v0.3.0".
+gh_stack_version=$(gh-stack --version)
+gh_stack_version=${gh_stack_version##* }
 if [[ $gh_stack_version != v* ]]; then
-	echo "gh-stack's build info has no module version: '$gh_stack_version'" >&2
+	echo "gh-stack reports no module version: '$gh_stack_version'" >&2
 	exit 1
 fi
 readonly gh_stack=/home/agent/.local/share/gh/extensions/gh-stack

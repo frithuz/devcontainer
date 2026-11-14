@@ -56,8 +56,8 @@ capabilities:
           - registry.npmjs.org:443
           - pypi.org:443
           - files.pythonhosted.org:443
-          - proxy.golang.org:443
-          - sum.golang.org:443
+          - index.crates.io:443
+          - static.crates.io:443
           # git over SSH, with the ssh-agent capability below.
           - github.com:22
 
@@ -141,21 +141,6 @@ capabilities:
   - type: com.docker.sandbox/lifecycle@1
     config:
       install:
-        # GOPATH stays group-writable for staff whatever the umask: a default ACL, which the
-        # image can't carry because image layers drop ACLs (docs/architecture.md#shared-writable-directories).
-        # Without setfacl, or on a filesystem without POSIX ACLs, it falls back to making what's
-        # there now group-writable and setgid, warns, and the sandbox still starts.
-        - command: |
-            if command -v setfacl >/dev/null && setfacl -R -m g::rwX -m d:g::rwx /go 2>/dev/null; then
-              exit 0
-            fi
-            chgrp -R staff /go
-            chmod -R g+rwX /go
-            find /go -type d -exec chmod g+s {} +
-            echo "no ACL support for /go; new files under it won't be group-writable under a 022 umask" >&2
-          user: "0"
-          description: Keep GOPATH group-writable for staff
-
         # Rewritten on every create from the bound auth mode, so it's idempotent. Top-level
         # keys go before the tables. The arg patterns admit no quote or backslash, so
         # they're safe in TOML strings.
@@ -265,14 +250,14 @@ capabilities:
         ## Sandbox environment
 
         This sandbox runs the frithuz devcontainer image (Debian 13, Docker Hardened Images) with one
-        pinned toolset: Go, Node with pnpm, Python with uv, gh, task, jq, yq, and linters
-        such as shfmt. /legal/manifest.tsv lists everything. Project tools such as
-        golangci-lint come from the project's own dependencies (`go tool`, pnpm, uv).
+        pinned toolset: Rust with cargo, Node with pnpm, Python with uv, gh, task, jq, yq,
+        and linters such as shfmt. /legal/manifest.tsv lists everything. Other project
+        tools come from the project's own dependencies (cargo, pnpm, uv).
 
         - Persistent environment comes from `BASH_ENV` (/etc/devcontainer/env.sh), not
           shell profiles. Don't rely on `.bashrc` or `/etc/profile`.
-        - `go install` and `pnpm add -g` write to shared, group-writable directories that
-          are already on `PATH`.
+        - `pnpm add -g` writes to a shared, group-writable directory that's already on
+          `PATH`. `cargo install` writes to `~/.cargo/bin`, which isn't on `PATH`.
         - Credentials are proxy-managed. Tokens in local config files are sentinels.
         - git over SSH reaches github.com through the host's SSH agent, when the host
           forwards one. GitHub's host keys are in /etc/ssh/ssh_known_hosts.

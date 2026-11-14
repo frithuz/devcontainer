@@ -75,14 +75,14 @@ jobs:
       image: ghcr.io/<owner>/devcontainer:<YYYYMMDD>@sha256:<digest>
     steps:
       - uses: actions/checkout@<sha>
-      - run: go test ./...
+      - run: cargo test
 ```
 
 - Steps run as root, the image's default user, as [GitHub requires](https://docs.github.com/en/actions/reference/workflows-and-actions/dockerfile-support#user): it mounts the workspace and runner tooling with ownership a non-root user can't write to. Don't pass `--user agent`. If git reports "dubious ownership", add `git config --global --add safe.directory "$GITHUB_WORKSPACE"`. The image doesn't set this globally, so local devcontainers keep the protection.
 - **Set `shell: bash`.** Container jobs otherwise default to `sh`, which doesn't load `BASH_ENV`.
-- Steps keep the image's `ENV`, `PATH` included, so tools you `go install` resolve from `$GOPATH/bin`. Actions only sets `HOME=/github/home`, which pnpm's configuration doesn't depend on.
+- Steps keep the image's `ENV`. Actions only sets `HOME=/github/home`, which pnpm's configuration doesn't depend on. Tools you `cargo install` land in `$HOME/.cargo/bin`, which isn't on `PATH`; add it with `echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"` if a later step runs them.
 - JavaScript actions run on the runner's own Node. The image's Node is for your steps.
-- Avoid `actions/setup-python`, `setup-node`, and `setup-go`. They install separate toolchains that drift from the image's.
+- Avoid `actions/setup-python`, `setup-node`, and Rust toolchain actions that run rustup. They install separate toolchains that drift from the image's.
 
 ### Docker in CI
 
@@ -112,6 +112,6 @@ sbx run 'quay.io/frithuz/claude-kit:latest@sha256:<digest>' <workspace>
 - No credentials are in the image. The sandbox's credential proxy injects them at runtime, as an API key or OAuth, whichever the host has bound.
 - git over SSH to GitHub uses the host's SSH agent. Load your key with `ssh-add` and keep `sbx`'s `ssh.agentForwardingEnabled` on, the default. Each kit asks for the agent only to log in as `git@github.com`, so it can't log in anywhere else. Without an agent, the sandbox still starts, without SSH. As Docker's `sbx/github-ssh` mixin does, the kits install GitHub's SSH host keys when the sandbox is created, in `/etc/ssh/ssh_known_hosts`.
 - git signs commits and tags with the host's SSH key, as Docker's `git-ssh-sign` kit does, in repositories that have a remote. Those without one, such as test fixtures, don't sign. The agent may only make git signatures. When the repository's remote is on github.com and `gh` is authenticated, the key command picks an agent key registered as a signing key on the committer's GitHub account. The kit includes the whole signing setup only when the host forwards an SSH agent. Each kit's dockerfile adds the key command, unmodified, from Docker's kit repository at a pinned commit and checksum, so building a kit needs `raw.githubusercontent.com`.
-- Agents may auto-update inside the sandbox, so each kit allows its agent's update hosts, along with the image's apt sources and the npm, PyPI, and Go module registries.
+- Agents may auto-update inside the sandbox, so each kit allows its agent's update hosts, along with the image's apt sources and the npm, PyPI, and crates.io registries.
 - Each agent comes from Docker's mixin for it, at the version the kit pins, and doesn't update itself ([tooling.md](tooling.md#agents)). Codex comes without its voice libraries, which need audio devices a sandbox doesn't have.
 - Claude Code's session state lives on sandbox volumes. Codex's app server copies its package into `~/.codex`, so nothing is mounted there.

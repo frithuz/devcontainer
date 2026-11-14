@@ -2,6 +2,8 @@
 
 # Source stages: pinned upstream images, multi-arch index digests.
 # Keep each reference a plain image:tag@sha256:digest so Dependabot can update it.
+# Go is a builder only: the go install stages below start from it, and the /legal step mounts its
+# toolchain to read the shipped Go binaries' module info. None of it reaches the image.
 FROM golang:1.27-trixie@sha256:fbb7ae40b62ff8afe31662df570d39b4f5052ac32b90dae8e60d7657a20a74f4 AS go
 FROM node:26-trixie-slim@sha256:5adad64f9a1fca2d51972caa65983634c8a774eb300d72b20f7f2a0f60368072 AS node
 FROM python:3.15-slim-trixie@sha256:533b0b2f9b5d46fd097091cf826f27902f1d6c3bca714b6dc74551356aa97a51 AS python
@@ -113,41 +115,6 @@ RUN --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/
     --mount=type=bind,source=scripts/build/go-install.sh,target=/mnt/src/scripts/build/go-install.sh \
     bash /mnt/src/scripts/build/run.sh /mnt/src/scripts/build/go-install.sh
 
-# Go's language server, debugger, linter, and vulnerability scanner: no upstream images, so each is
-# built from its pinned module like jv.
-FROM go AS gopls
-ARG MODULE=golang.org/x/tools/gopls@v0.24.0
-ARG PACKAGE=.
-ARG OUT=/opt/gopls
-RUN --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/run.sh \
-    --mount=type=bind,source=scripts/build/go-install.sh,target=/mnt/src/scripts/build/go-install.sh \
-    bash /mnt/src/scripts/build/run.sh /mnt/src/scripts/build/go-install.sh
-
-FROM go AS delve
-ARG MODULE=github.com/go-delve/delve@v1.27.2
-ARG PACKAGE=cmd/dlv
-ARG OUT=/opt/delve
-RUN --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/run.sh \
-    --mount=type=bind,source=scripts/build/go-install.sh,target=/mnt/src/scripts/build/go-install.sh \
-    bash /mnt/src/scripts/build/run.sh /mnt/src/scripts/build/go-install.sh
-
-# staticcheck is pinned by its module version, not its release name: release 2026.2.2 is v0.8.2.
-FROM go AS staticcheck
-ARG MODULE=honnef.co/go/tools@v0.8.2
-ARG PACKAGE=cmd/staticcheck
-ARG OUT=/opt/staticcheck
-RUN --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/run.sh \
-    --mount=type=bind,source=scripts/build/go-install.sh,target=/mnt/src/scripts/build/go-install.sh \
-    bash /mnt/src/scripts/build/run.sh /mnt/src/scripts/build/go-install.sh
-
-FROM go AS govulncheck
-ARG MODULE=golang.org/x/vuln@v1.9.0
-ARG PACKAGE=cmd/govulncheck
-ARG OUT=/opt/govulncheck
-RUN --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/run.sh \
-    --mount=type=bind,source=scripts/build/go-install.sh,target=/mnt/src/scripts/build/go-install.sh \
-    bash /mnt/src/scripts/build/run.sh /mnt/src/scripts/build/go-install.sh
-
 # ast-grep and hyperfine: no upstream images, and their releases publish no checksums. Their release
 # archives, pinned by SHA-256 per architecture like Sampo's, because each one's Rust dependencies
 # include an MPL-2.0 crate (option-ext in ast-grep, colored in hyperfine), which upstream's binary
@@ -173,7 +140,7 @@ RUN --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/
     --mount=type=bind,source=scripts/build/hyperfine.sh,target=/mnt/src/scripts/build/hyperfine.sh \
     bash /mnt/src/scripts/build/run.sh /mnt/src/scripts/build/hyperfine.sh
 
-# Rust: the official image's toolchain, pinned to a minor line like Go, plus rustfmt, clippy,
+# Rust: the official image's toolchain, pinned to a minor line, plus rustfmt, clippy,
 # rust-analyzer, and the standard library's source, which its minimal profile leaves out. The image
 # takes only the toolchain, at /usr/local/rust, without rustup (scripts/build/rust.sh).
 FROM rust:1.99-slim-trixie@sha256:7eab7ce19273ce785e0ca7578bdf7bc1fcbae621775a8197379a04c9f6e03cd5 AS rust
@@ -217,8 +184,6 @@ COPY --from=config-run /config/ /
 # standalone tools, the apt signing keys, image files (rootfs/: the BASH_ENV script and
 # start-dockerd), and the notices /legal starts from. The image takes it as its first layer.
 FROM debian AS files
-# Without Go's own tests (test/, testdata/, *_test.go), which only `go test std` needs.
-COPY --link --exclude=test --exclude=**/testdata --exclude=**/*_test.go --from=go /usr/local/go /out/usr/local/go
 COPY --link --from=python /usr/local/ /out/usr/local/
 COPY --link --from=rust /opt/rust /out/usr/local/rust
 COPY --link --from=node /usr/local/bin/node /out/usr/local/bin/node
@@ -237,10 +202,6 @@ COPY --link --chown=0:0 --chmod=0755 --from=betterleaks /usr/bin/betterleaks /ou
 COPY --link --chown=0:0 --chmod=0755 --from=dbmate /usr/local/bin/dbmate /out/usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=gh /opt/gh/gh /out/usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=gh-stack /opt/gh-stack/gh-stack /out/usr/local/bin/
-COPY --link --chown=0:0 --chmod=0755 --from=gopls /opt/gopls/gopls /out/usr/local/bin/
-COPY --link --chown=0:0 --chmod=0755 --from=delve /opt/delve/dlv /out/usr/local/bin/
-COPY --link --chown=0:0 --chmod=0755 --from=staticcheck /opt/staticcheck/staticcheck /out/usr/local/bin/
-COPY --link --chown=0:0 --chmod=0755 --from=govulncheck /opt/govulncheck/govulncheck /out/usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=buf /usr/local/bin/buf /out/usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=ast-grep /opt/ast-grep/ast-grep /out/usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=hyperfine /opt/hyperfine/hyperfine /out/usr/local/bin/
@@ -250,7 +211,6 @@ COPY --link --from=apt-keys /keys/ /out/etc/apt/keyrings/
 COPY --link rootfs/ /out/
 COPY --link LICENSE /out/legal/LICENSE
 COPY --link legal/README.md legal/SOURCE.md /out/legal/
-COPY --link --from=go /usr/local/go/LICENSE /usr/local/go/PATENTS /out/legal/attribution/go/
 COPY --link --from=python /usr/local/lib/python3.15/LICENSE.txt /out/legal/attribution/python/
 COPY --link --from=rust /opt/rust-legal/ /out/legal/attribution/rust/
 COPY --link --from=jq /COPYING /out/legal/attribution/jq/
@@ -259,10 +219,6 @@ COPY --link --from=task /opt/task/LICENSE /opt/task/SOURCE /out/legal/attributio
 COPY --link --from=sampo /opt/sampo/LICENSE /opt/sampo/SOURCE /out/legal/attribution/sampo/
 COPY --link --from=dnslookup /opt/dnslookup/LICENSE /out/legal/attribution/dnslookup/
 COPY --link --from=gh-stack /opt/gh-stack/LICENSE /out/legal/attribution/gh-stack/
-COPY --link --from=gopls /opt/gopls/LICENSE /out/legal/attribution/gopls/
-COPY --link --from=delve /opt/delve/LICENSE /out/legal/attribution/delve/
-COPY --link --from=staticcheck /opt/staticcheck/LICENSE /out/legal/attribution/staticcheck/
-COPY --link --from=govulncheck /opt/govulncheck/LICENSE /out/legal/attribution/govulncheck/
 COPY --link --from=ast-grep /opt/ast-grep/LICENSE /opt/ast-grep/SOURCE /out/legal/attribution/ast-grep/
 COPY --link --from=hyperfine /opt/hyperfine/LICENSE-APACHE /opt/hyperfine/LICENSE-MIT /opt/hyperfine/SOURCE /out/legal/attribution/hyperfine/
 RUN --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/run.sh \
@@ -302,11 +258,8 @@ RUN --mount=type=cache,id=apt-lists-$TARGETARCH,target=/var/lib/apt/lists,sharin
 ENV LANG=en_US.UTF-8
 ENV LC_ALL=en_US.UTF-8
 ENV LANGUAGE=en_US:en
-ENV GOPATH=/go
-ENV GOTOOLCHAIN=local
 ENV BASH_ENV=/etc/devcontainer/env.sh
 ENV PNPM_HOME=/usr/local/share/pnpm
-ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/go/bin
 ENV pnpm_config_global_bin_dir=/usr/local/bin
 ENV pnpm_config_global_dir=/usr/local/share/pnpm/global
 ENV pnpm_config_store_dir=/usr/local/share/pnpm/store
@@ -325,6 +278,7 @@ ENV pnpm_config_update_notifier=false
 ARG REVISION
 ARG REPOSITORY_URL
 RUN --mount=type=bind,target=/mnt/legal-src --mount=type=bind,from=gh,source=/opt/gh,target=/mnt/gh-legal \
+    --mount=type=bind,from=go,source=/usr/local/go,target=/mnt/go \
     --mount=type=bind,from=config,target=/mnt/config \
     --mount=type=cache,id=legal-go-mod,target=/var/cache/legal-go-mod,sharing=locked \
     --mount=type=cache,id=legal-apt-lists,target=/var/cache/legal-apt-lists,sharing=locked \

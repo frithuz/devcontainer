@@ -18,9 +18,9 @@ The Dockerfile has four kinds of stages. The comments in the file cover the deta
 
 The base is one of them: the `debian` stage pins Debian 13's official image, `debian:trixie-slim`, from Docker Hub. Its packages and security updates come straight from Debian's archive, which keeps every version it has published on [snapshot.debian.org](https://snapshot.debian.org), so the pinned base stays buildable and every installed version stays recordable. The final stage and the stages that compile for it start from it, so they link against the same libraries.
 
-**Builder stages** hold anything fetched or built by script that doesn't belong in a user's home: `gh`, `jv`, `task`, `dnslookup`, the Go developer tools, `ast-grep`, `hyperfine`, `protoc`, the Rust toolchain's extra components, and the apt signing key. That keeps `gnupg`, compilers, and other fetch and build tooling out of the final image. The `go install` builds start from `go`. Everything else starts from the image's `debian` base: the release downloads from `fetch`, which adds `curl`, `gpg`, and `unzip` to it, and `protoc` compiles on it, so it links against the image's libraries; Git comes from an independently published artifact ([git](#git)). The `config` stage validates `scripts/*.yaml` against their schemas and converts them to JSON. The scripts read only that output, so a malformed data file fails the build before anything uses it.
+**Builder stages** hold anything fetched or built by script that doesn't belong in a user's home: `gh`, `jv`, `task`, `dnslookup`, `gh-stack`, `ast-grep`, `hyperfine`, `protoc`, the Rust toolchain's extra components, and the apt signing key. That keeps `gnupg`, compilers, and other fetch and build tooling out of the final image. The `go install` builds start from `go`, which is a builder only: the image ships no Go toolchain, and the `/legal` step mounts `go`'s to read the shipped Go binaries' module info ([legal.md](legal.md#sbom-coverage)). Everything else starts from the image's `debian` base: the release downloads from `fetch`, which adds `curl`, `gpg`, and `unzip` to it, and `protoc` compiles on it, so it links against the image's libraries; Git comes from an independently published artifact ([git](#git)). The `config` stage validates `scripts/*.yaml` against their schemas and converts them to JSON. The scripts read only that output, so a malformed data file fails the build before anything uses it.
 
-**The `files` stage** lays out, under `/out`, every file the image copies in: the toolchains and standalone tools, git's `/usr/local` tree, the pnpm hard links, the `/usr/local/bin` symlinks, the apt signing key, `rootfs/`, and the notices `/legal` starts from. Hard links survive because they're copied within one `COPY`.
+**The `files` stage** lays out, under `/out`, every file the image copies in: the toolchains and standalone tools, git's `/usr` tree, the pnpm hard links, the `/usr/local/bin` symlinks, the apt signing key, `rootfs/`, and the notices `/legal` starts from. Hard links survive because they're copied within one `COPY`.
 
 **The final stage (`image`)** has as few layers as possible, three:
 
@@ -65,18 +65,17 @@ GitHub Actions container jobs ignore a `PATH` set with `ENV`. So **every image-p
 
 Debian's own `python3` isn't installed, and nothing the image installs depends on it. The copied CPython in `/usr/local/bin` is the image's `python3`. A package installed later that needs Debian's `python3` pulls it in alongside, and `/usr/local/bin/python3` still takes precedence on the `PATH`.
 
-`go install` output lands in `/go/bin`, outside the default `PATH`. That's acceptable, because those are the user's own installs, not image-provided commands.
+`cargo install` output lands in `~/.cargo/bin`, outside the default `PATH`. That's acceptable, because those are the user's own installs, not image-provided commands.
 
 ### Shared writable directories
 
-`agent` (devcontainers, sandboxes) and root (CI) share `GOPATH` (`/go`), `PNPM_HOME` (`/usr/local/share/pnpm`), and `/usr/local/bin`, where `pnpm add -g` links bins. All three are `root:staff`, group-writable, and setgid, and `agent` is in `staff`:
+`agent` (devcontainers, sandboxes) and root (CI) share `PNPM_HOME` (`/usr/local/share/pnpm`) and `/usr/local/bin`, where `pnpm add -g` links bins. Both are `root:staff`, group-writable, and setgid, and `agent` is in `staff`:
 
 - With the default `022` umask, subdirectories created at runtime keep the `staff` group but aren't group-writable. That's fine, because each supported context runs as a single user.
-- In sandboxes, `GOPATH` stays group-writable anyway: each kit's install hook gives `/go` a default ACL (`setfacl -R -m g::rwX -m d:g::rwx /go`), so whatever is created under it gets group `rwx` regardless of the umask. The image can't carry the ACL itself, because BuildKit drops ACLs when it exports a layer. The image installs `acl` for the hook. Where the sandbox filesystem has no POSIX ACLs, the hook falls back to `chmod -R g+rwX` and setgid directories, which covers what exists at install time but not what the umask creates later.
 - `/usr/local/bin` gets this **on the directory only**. Never run `chown -R` or `chmod -R` over copied toolchains: changing ownership in a later layer duplicates every affected file into a new layer. Set ownership at copy time with `COPY --chown` instead, in the `files` stage.
 - `agent` can overwrite image binaries in `/usr/local/bin` through a global install. That's accepted, since `agent` already has passwordless root.
 
-`GOCACHE` stays per-user.
+`CARGO_HOME` (`~/.cargo`) stays per-user.
 
 ### pnpm configuration
 
@@ -110,8 +109,7 @@ The image ships the full Docker Engine, but **no daemon starts automatically**: 
 
 Anything that must hold in every context goes in `ENV`. Anything that needs shell logic goes in `/etc/devcontainer/env.sh`, which `BASH_ENV` loads into every non-interactive bash, which is how `sbx` launches agents. It has to stay idempotent and quiet. Nothing may depend on `.bashrc` or `/etc/profile`, or on `PATH` additions for command lookup.
 
-- The `ENV PATH` adds `/go/bin` only as a convenience for `go install`ed tools.
-- `GOTOOLCHAIN=local` stops Go from silently downloading a different toolchain.
+- The image sets no `PATH`: the base's is already the default one.
 - The locale `ENV` comes after the step that runs `locale-gen`. Set earlier, the step would warn throughout that the locale doesn't exist.
 
 ### Login shell

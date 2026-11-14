@@ -374,7 +374,7 @@ go version -m /usr/bin /usr/sbin /usr/lib /usr/libexec /usr/local/bin /opt /home
 		$2 == "mod" || $2 == "dep" { flush(); kind = $2; path = $3; ver = $4; if ($2 == "mod") has_mod = 1; next }
 		$2 == "=>" { path = $3; ver = $4; next }
 		END { done_bin() }' |
-	grep -v $'\t/usr/local/go/' | sort -u >"$go_mods"
+	sort -u >"$go_mods"
 
 declare -A mod_bins mod_kind mod_rev
 # -X linker flags: '-X <pkg>.Version=<v>', '-X=<pkg>.Version=<v>', optionally quoted.
@@ -413,7 +413,7 @@ rm -f "$go_mods"
 
 go_downloads=$(mktemp)
 # A throwaway GOPATH: go keeps its checksum database cache in $GOPATH/pkg/sumdb, outside
-# GOMODCACHE, and the image's /go must stay as setup.sh made it, writable by staff.
+# GOMODCACHE, and nothing of it may land in the image.
 go_path=$(mktemp -d)
 mapfile -t go_wanted < <(printf '%s\n' "${!mod_bins[@]}" | grep -vE '@(\(devel\))?$' | sort)
 printf '%s\n' "${go_wanted[@]}" |

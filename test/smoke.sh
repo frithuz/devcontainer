@@ -2,10 +2,9 @@
 # Smoke tests (docs/maintenance.md#preflight-checks-testsmokesh). Runs inside the image as root,
 # and runs each part once as root and once as agent:
 #
-# - gopath: first, as root only, before any go command: /go holds only what setup.sh made.
 # - lookup: under `env -i` with only HOME and the default PATH, the way GitHub Actions sees the
 #   image. Every command must run, and each pinned tool must report the version its stage pins.
-# - environment: the image's ENV with only PATH reset. pnpm, Go, the shared directories, the
+# - environment: the image's ENV with only PATH reset. pnpm, Rust, the shared directories, the
 #   sandbox contract, sudo, and the locale.
 #
 # The preflight stage runs it in the build. Against any image, from the repository root:
@@ -64,8 +63,8 @@ version_in() {
 	grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' <<<"$1" | head -1
 }
 
-# The version a stage pins: the first version number in its FROM tag (golang:1.27-trixie gives
-# 1.27), or for a stage that builds from a module, the first @vX.Y.Z or =vX.Y.Z in its body.
+# The version a stage pins: the first version number in its FROM tag (rust:1.99-slim-trixie gives
+# 1.99), or for a stage that builds from a module, the first @vX.Y.Z or =vX.Y.Z in its body.
 pinned_version() {
 	awk -v stage="$1" '
 		toupper($1) == "FROM" {
@@ -177,7 +176,6 @@ lookup() {
 		'bwrap --version'
 		'sqlite3 --version'
 		'btop --version'
-		'gofmt -l /usr/local/go/src/errors'
 		'cargo --version'
 		'rustdoc --version'
 		'rustfmt --version'
@@ -267,12 +265,6 @@ if not modules or failed:
 EOF
 }
 
-# GOPATH as the build leaves it, checked before any go command: every one creates
-# /go/pkg/mod/cache. A root-owned /go/pkg from the build would keep agent from the module cache.
-gopath() {
-	expect "GOPATH holds only bin and src" "bin src" "$(find /go -mindepth 1 -maxdepth 1 -printf '%f\n' | sort | xargs)"
-}
-
 environment() {
 	local home dir file out user
 	user=$(id -un)
@@ -292,13 +284,8 @@ environment() {
 			fail "pnpm store (HOME='$home'): $out"
 	done
 
-	expect "GOPATH" /go "$(go env GOPATH 2>&1)"
-	expect "GOTOOLCHAIN" local "$(go env GOTOOLCHAIN 2>&1)"
-	out=$(go env GOCACHE 2>&1)
-	[[ $out == "$HOME"/* ]] && pass "GOCACHE is per-user ($out)" || fail "GOCACHE $out isn't under $HOME"
-
 	# Shared with the other user: created files keep the staff group (docs/architecture.md#shared-writable-directories).
-	for dir in /go /go/src /go/bin /usr/local/bin "$PNPM_HOME" "$PNPM_HOME/global" "$PNPM_HOME/store"; do
+	for dir in /usr/local/bin "$PNPM_HOME" "$PNPM_HOME/global" "$PNPM_HOME/store"; do
 		if file=$(mktemp -p "$dir" .smoke.XXXXXX 2>&1); then
 			expect "$dir is writable, files get group staff" staff "$(stat -c %G "$file")"
 			rm -f "$file"
@@ -306,12 +293,6 @@ environment() {
 			fail "$dir isn't writable: $file"
 		fi
 	done
-
-	local module bin=/go/bin/smoke-$user
-	module=$(mktemp -d)
-	printf 'package main\n\nfunc main() { println("ok") }\n' >"$module/main.go"
-	check "go install into GOPATH" bash -c "cd '$module' && go mod init example.com/smoke-$user && go install . && '$bin'"
-	rm -rf "$module" "$bin"
 
 	# Rust links with the system cc, and finds the copied sysroot without rustup.
 	expect "rustc's sysroot" /usr/local/rust "$(rustc --print sysroot 2>&1)"
@@ -379,7 +360,6 @@ done
 
 status=0
 as_agent=(setpriv --reuid=agent --regid=agent --init-groups)
-env -i HOME=/root PATH="$default_path" bash "$self" gopath root || status=1
 env -i HOME=/root PATH="$default_path" bash "$self" lookup root || status=1
 "${as_agent[@]}" env -i HOME=/home/agent PATH="$default_path" bash "$self" lookup agent || status=1
 env PATH="$default_path" bash "$self" environment root || status=1
