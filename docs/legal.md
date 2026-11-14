@@ -75,17 +75,15 @@ The repositories the source comes from:
 
 ### Compiled components
 
-A component compiled here or in a separate artifact (`install: source-build`: git, and protoc) records the source it was compiled from and the script that controlled the build, which a copyleft one owes. Its stage records both in `/legal/attribution/<name>/SOURCE`, and `collect-legal.sh` copies them into its manifest row:
+A component compiled here or in a separate artifact (`install: source-build`: git) records the source it was compiled from and the script that controlled the build, which a copyleft one owes. Its stage records both in `/legal/attribution/<name>/SOURCE`, and `collect-legal.sh` copies them into its manifest row:
 
-- **The archive**, by URL and SHA-256: git's signed release tarball, protobuf's release source tarball.
-- **The build script**, by repository path and SHA-256 (`build-script:`): `scripts/build/git.sh` in the Git artifact's producer repository, `scripts/build/protoc.sh` here.
-- **Libraries compiled in** (`embedded:`), each with a row of its own marked `embedded-in:<component>`: zlib-ng in git, under the Zlib license, and Abseil in protoc, under Apache-2.0. A permissive license owes no source by itself, but a library compiled into a GPL binary is part of that binary's Corresponding Source, so `source.tsv` lists the archive of every library embedded in a copyleft component.
+- **The archive**, by URL and SHA-256: git's signed release tarball.
+- **The build script**, by repository path and SHA-256 (`build-script:`): `scripts/build/git.sh` in the Git artifact's producer repository.
+- **Libraries compiled in** (`embedded:`), each with a row of its own marked `embedded-in:<component>`: zlib-ng in git, under the Zlib license. A permissive license owes no source by itself, but a library compiled into a GPL binary is part of that binary's Corresponding Source, so `source.tsv` lists the archive of every library embedded in a copyleft component.
 
 Git's artifact also carries `build/ORIGIN` and its exact recipe under `/legal/attribution/git/build/`: the Dockerfile, build scripts, and Debian packaging. `source.tsv` lists each recipe file at the producer commit, with its checksum; `manifest.tsv` records the pinned artifact reference. Missing or invalid artifact origin fails collection.
 
 The Rust standard library is also compiled into git. It's Apache-2.0 OR MIT, so it owes no source, and its notices ship in `/legal/attribution/git/rust/`.
-
-protoc is compiled in its own stage of the main Dockerfile, not a separate artifact, and nothing in it is copyleft, so `source.tsv` lists none of it. It links dynamically against the base's glibc and libstdc++, which the image already conveys. Upstream's Linux release binary links glibc statically, which would add LGPL code of uncertain source. utf8_range, which ships inside protobuf's tarball, is compiled in too (MIT, notices in `/legal/attribution/protoc/utf8_range/`).
 
 ### Sandbox kits
 
@@ -115,4 +113,4 @@ The image doesn't carry Claude Code. The Claude kit adds it, unmodified, from Do
    - Six npm modules bundled with pnpm ship only a `license` field, no license text.
    - jq's `COPYING` doesn't cover its bundled oniguruma.
    - Sixteen apt packages have copyright files that aren't machine-readable, so they're recorded as `NOASSERTION`. Most mention GPL or LGPL; zip and unzip (Info-ZIP) don't. `collect-source.sh` treats `NOASSERTION` as copyleft, so their source is listed regardless.
-   - Transitive notices aren't collected yet for Rust binaries (uv, git-cliff, adrs, ripgrep, Codex).
+   - Transitive notices aren't collected yet for Rust binaries (uv, adrs, ripgrep, Codex).

@@ -2,7 +2,7 @@
 # Makes every apt source HTTPS: the base image's Debian sources use plain HTTP, and it ships no CA
 # store. So the first update and the ca-certificates install go over HTTP, which apt still checks
 # against the archive's signed InRelease files, and every later fetch uses HTTPS and trusts the
-# installed store. Shared by the Dockerfile's git, protoc, and image stages.
+# installed store. Shared by the Dockerfile's fetch and image stages.
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 

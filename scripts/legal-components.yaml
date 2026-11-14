@@ -90,14 +90,6 @@ components:
       tag: v{version}
       files: [LICENSE]
 
-  - name: jv
-    stage: jv
-    install: go-install
-    license: Apache-2.0
-    version: jv --version
-    notices: [/legal/attribution/jv/LICENSE]
-    paths: [/usr/local/bin/jv]
-
   - name: task
     stage: task
     install: release
@@ -124,35 +116,23 @@ components:
     notices: [/legal/attribution/dnslookup/LICENSE]
     paths: [/usr/local/bin/dnslookup]
 
+  # The GitHub CLI extensions: upstream's latest release binaries, unpinned (the stage is named
+  # for both, so the smoke tests don't look for a pinned version).
   - name: gh-stack
-    stage: gh-stack
-    install: go-install
+    stage: gh-extensions
+    install: release
     license: MIT
     version: gh-stack --version
     notices: [/legal/attribution/gh-stack/LICENSE]
     paths: [/usr/local/bin/gh-stack]
 
-  - name: buf
-    stage: buf
-    # A static Go build (CGO_ENABLED=0), so copying it from upstream's Alpine image is safe.
-    license: Apache-2.0
-    version: buf --version
-    notices: [/legal/attribution/buf/LICENSE]
-    paths: [/usr/local/bin/buf]
-    upstream:
-      repository: bufbuild/buf
-      tag: v{version}
-      files: [LICENSE]
-
-  - name: protoc
-    stage: protoc
-    install: source-build
-    # protobuf (BSD-3-Clause) with its bundled utf8_range (MIT); Abseil is recorded as embedded.
-    license: BSD-3-Clause AND MIT
-    version: protoc --version
-    notices: [/legal/attribution/protoc/LICENSE, /legal/attribution/protoc/utf8_range/LICENSE]
-    paths: [/usr/local/bin/protoc, /usr/local/include/google/protobuf]
-    purl: pkg:generic/protobuf@{version}
+  - name: gh-actions-lock
+    stage: gh-extensions
+    install: release
+    license: MIT
+    version: gh-actions-lock --version
+    notices: [/legal/attribution/gh-actions-lock/LICENSE]
+    paths: [/usr/local/bin/gh-actions-lock]
 
   - name: ast-grep
     stage: ast-grep
@@ -173,18 +153,6 @@ components:
     notices: [/legal/attribution/hyperfine/LICENSE-*]
     paths: [/usr/local/bin/hyperfine]
     purl: pkg:cargo/hyperfine@{version}
-
-  - name: git-cliff
-    stage: git-cliff
-    license: MIT OR Apache-2.0
-    version: git-cliff --version
-    notices: [/legal/attribution/git-cliff/LICENSE-*]
-    paths: [/usr/local/bin/git-cliff]
-    upstream:
-      repository: orhun/git-cliff
-      tag: v{version}
-      files: [LICENSE-APACHE, LICENSE-MIT]
-    purl: pkg:cargo/git-cliff@{version}
 
   - name: adrs
     stage: adrs

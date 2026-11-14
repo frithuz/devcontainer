@@ -12,13 +12,11 @@ FROM mvdan/shfmt:v3.14.1@sha256:8c06884a35683d8763fba6c0d9484d11a61a96da65f8d497
 FROM ghcr.io/jqlang/jq:1.8.2@sha256:b9c68867e5766576263a222e91db3de422d802069c7af70440e667a95344e486 AS jq
 FROM mikefarah/yq:4.54.3@sha256:7834187596ad56fd5a81436114e0b0b9dd54c91bb43946d1f7145b2be5f9c3d2 AS yq
 FROM ghcr.io/pnpm/pnpm:12.21.0@sha256:168feba88e6a1684c99a62cbf4fe361d4e683e2a6c920d3b0acde7e15a28b62d AS pnpm
-FROM orhunp/git-cliff:2.14.2@sha256:1e696a381a1b0366bb6ccbb6bd4e50e73473fda88eab3a757b95e0d0d66c9531 AS git-cliff
 # Debian 13's official slim image: packages and security updates straight from Debian's archive. The
 # image and the stages that compile for it start here.
 FROM debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 AS debian
 FROM ghcr.io/betterleaks/betterleaks:v1.10.1@sha256:f345c1ac502abc51ec334c3d815ad18a79fb1509555fc4496b2cb88e760681b3 AS betterleaks
 FROM ghcr.io/amacneil/dbmate:2.38.1@sha256:b0c8a87bfef4f2819fdb0a68ca357a44d12fb90d23eca695fcfc3b7e159cb1c5 AS dbmate
-FROM bufbuild/buf:1.75.0@sha256:adf82c7170be6629ec81dc907921ac1699407cd11c4f7fd7521b13c74152f849 AS buf
 # adrs, for Architecture Decision Records: upstream's image, built on Debian bookworm, so its binary
 # links against an older glibc than the base's. Its Rust dependencies include an MPL-2.0 crate
 # (mdbook), which upstream's binary carries the obligation for.
@@ -41,6 +39,21 @@ ARG TARGETARCH
 ARG REFRESH
 RUN --mount=type=bind,source=scripts/install-gh.sh,target=/tmp/install-gh.sh bash /tmp/install-gh.sh /opt/gh
 
+# GitHub CLI extensions: gh-stack, for stacked pull requests, and gh-actions-lock, which pins every
+# action a repository's workflows use in a lockfile. No images, and their releases publish no
+# checksums, so each is upstream's latest release binary, checked against the SHA-256 GitHub reports
+# for it. gh-actions-lock's release must be immutable; gh-stack's releases aren't. REFRESH makes
+# scheduled builds pick up new releases. setup.sh installs them as agent's gh extensions.
+FROM fetch AS gh-extensions
+COPY --link --from=jq /jq /usr/local/bin/jq
+ARG EXTENSIONS="github/gh-stack github/gh-actions-lock"
+ARG IMMUTABLE=github/gh-actions-lock
+ARG TARGETARCH
+ARG REFRESH
+RUN --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/run.sh \
+    --mount=type=bind,source=scripts/build/gh-extensions.sh,target=/mnt/src/scripts/build/gh-extensions.sh \
+    bash /mnt/src/scripts/build/run.sh /mnt/src/scripts/build/gh-extensions.sh
+
 # apt signing key for Docker's repository, checked against its published fingerprint before the
 # final stage trusts it.
 FROM fetch AS apt-keys
@@ -52,9 +65,9 @@ RUN --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/
 # digest. Its files sit under /usr, where Debian's git package would put them.
 FROM ghcr.io/frithuz/git:2.56.1-1frithuz1@sha256:c0a19004fdd5910e3c8f5132ccef845b89fe737251144e514104db631b1c6631 AS git
 
-# jv, a JSON Schema validator: for the data files below, and shipped in the image. No upstream
-# image publishes it, so it's built at a pinned version (bumped by hand); Go verifies the module
-# against the checksum database. Static, with the LICENSE from the verified module.
+# jv, a JSON Schema validator, for the data files below: a builder only, not shipped in the image.
+# No upstream image publishes it, so it's built at a pinned version (bumped by hand); Go verifies
+# the module against the checksum database.
 FROM go AS jv
 ARG MODULE=github.com/santhosh-tekuri/jsonschema/cmd/jv@v0.7.0
 ARG PACKAGE=.
@@ -102,19 +115,6 @@ RUN --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/
     --mount=type=bind,source=scripts/build/go-install.sh,target=/mnt/src/scripts/build/go-install.sh \
     bash /mnt/src/scripts/build/run.sh /mnt/src/scripts/build/go-install.sh
 
-# gh-stack, the GitHub CLI extension for stacked pull requests: its releases publish no checksums,
-# so it's built from the pinned module like the tools above. The linker flag is the one its release
-# builds set; without it, it reports its version as "dev". setup.sh installs it as agent's gh
-# extension.
-FROM go AS gh-stack
-ARG MODULE=github.com/github/gh-stack@v0.3.0
-ARG PACKAGE=.
-ARG OUT=/opt/gh-stack
-ARG LDFLAGS="-X github.com/github/gh-stack/cmd.Version={version}"
-RUN --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/run.sh \
-    --mount=type=bind,source=scripts/build/go-install.sh,target=/mnt/src/scripts/build/go-install.sh \
-    bash /mnt/src/scripts/build/run.sh /mnt/src/scripts/build/go-install.sh
-
 # ast-grep and hyperfine: no upstream images, and their releases publish no checksums. Their release
 # archives, pinned by SHA-256 per architecture like Sampo's, because each one's Rust dependencies
 # include an MPL-2.0 crate (option-ext in ast-grep, colored in hyperfine), which upstream's binary
@@ -148,23 +148,6 @@ RUN --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/
     --mount=type=bind,source=scripts/build/rust.sh,target=/mnt/src/scripts/build/rust.sh \
     bash /mnt/src/scripts/build/run.sh /mnt/src/scripts/build/rust.sh
 
-# protoc, compiled from protobuf's release source tarball on the image's base, so it links against
-# the image's glibc: upstream's Linux release binary links glibc (LGPL) statically. Abseil, the
-# release protobuf pins, is compiled in. Bumped by hand: VERSION and SHA256 together, and
-# ABSEIL_VERSION and ABSEIL_SHA256 when protobuf's cmake/dependencies.cmake moves Abseil (the
-# build fails until they match).
-FROM debian AS protoc
-ARG VERSION=36.2
-ARG SHA256=3d9642a662d10e68ebae5e53f14dcce5105684212d5078f8e0d47d1ab3ae6b64
-ARG ABSEIL_VERSION=20250512.1
-ARG ABSEIL_SHA256=9b7a064305e9fd94d124ffa6cc358592eb42b5da588fb4e07d09254aa40086db
-ARG TARGETARCH
-RUN --mount=type=cache,id=apt-lists-$TARGETARCH,target=/var/lib/apt/lists,sharing=locked \
-    --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/run.sh \
-    --mount=type=bind,source=scripts/build/apt-bootstrap.sh,target=/mnt/src/scripts/build/apt-bootstrap.sh \
-    --mount=type=bind,source=scripts/build/protoc.sh,target=/mnt/src/scripts/build/protoc.sh \
-    bash /mnt/src/scripts/build/run.sh /mnt/src/scripts/build/apt-bootstrap.sh /mnt/src/scripts/build/protoc.sh
-
 # The scripts' data files (scripts/*.yaml): each validated against scripts/schemas/<name>.schema.json,
 # checked for duplicate names, and converted to <name>.json. The scripts read only this output,
 # never the YAML. `docker buildx bake config` runs it on its own and exports out/config/.
@@ -192,21 +175,18 @@ COPY --link --chown=0:0 --chmod=0755 --from=uv /uv /uvx /out/usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=shfmt /bin/shfmt /out/usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=jq /jq /out/usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=yq /usr/bin/yq /out/usr/local/bin/
-COPY --link --chown=0:0 --chmod=0755 --from=jv /opt/jv/jv /out/usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=task /opt/task/task /out/usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=sampo /opt/sampo/sampo /out/usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=dnslookup /opt/dnslookup/dnslookup /out/usr/local/bin/
-COPY --link --chown=0:0 --chmod=0755 --from=git-cliff /usr/local/bin/git-cliff /out/usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=adrs /usr/local/bin/adrs /out/usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=betterleaks /usr/bin/betterleaks /out/usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=dbmate /usr/local/bin/dbmate /out/usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=gh /opt/gh/gh /out/usr/local/bin/
-COPY --link --chown=0:0 --chmod=0755 --from=gh-stack /opt/gh-stack/gh-stack /out/usr/local/bin/
-COPY --link --chown=0:0 --chmod=0755 --from=buf /usr/local/bin/buf /out/usr/local/bin/
+COPY --link --chown=0:0 --chmod=0755 --from=gh-extensions /opt/gh-extensions/gh-stack/gh-stack /out/usr/local/bin/
+COPY --link --chown=0:0 --chmod=0755 --from=gh-extensions /opt/gh-extensions/gh-actions-lock/gh-actions-lock /out/usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=ast-grep /opt/ast-grep/ast-grep /out/usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=hyperfine /opt/hyperfine/hyperfine /out/usr/local/bin/
 COPY --link --from=git /out/ /out/
-COPY --link --from=protoc /out/ /out/
 COPY --link --from=apt-keys /keys/ /out/etc/apt/keyrings/
 COPY --link rootfs/ /out/
 COPY --link LICENSE /out/legal/LICENSE
@@ -214,11 +194,11 @@ COPY --link legal/README.md legal/SOURCE.md /out/legal/
 COPY --link --from=python /usr/local/lib/python3.15/LICENSE.txt /out/legal/attribution/python/
 COPY --link --from=rust /opt/rust-legal/ /out/legal/attribution/rust/
 COPY --link --from=jq /COPYING /out/legal/attribution/jq/
-COPY --link --from=jv /opt/jv/LICENSE /out/legal/attribution/jv/
 COPY --link --from=task /opt/task/LICENSE /opt/task/SOURCE /out/legal/attribution/task/
 COPY --link --from=sampo /opt/sampo/LICENSE /opt/sampo/SOURCE /out/legal/attribution/sampo/
 COPY --link --from=dnslookup /opt/dnslookup/LICENSE /out/legal/attribution/dnslookup/
-COPY --link --from=gh-stack /opt/gh-stack/LICENSE /out/legal/attribution/gh-stack/
+COPY --link --from=gh-extensions /opt/gh-extensions/gh-stack/LICENSE /opt/gh-extensions/gh-stack/SOURCE /out/legal/attribution/gh-stack/
+COPY --link --from=gh-extensions /opt/gh-extensions/gh-actions-lock/LICENSE /opt/gh-extensions/gh-actions-lock/SOURCE /out/legal/attribution/gh-actions-lock/
 COPY --link --from=ast-grep /opt/ast-grep/LICENSE /opt/ast-grep/SOURCE /out/legal/attribution/ast-grep/
 COPY --link --from=hyperfine /opt/hyperfine/LICENSE-APACHE /opt/hyperfine/LICENSE-MIT /opt/hyperfine/SOURCE /out/legal/attribution/hyperfine/
 RUN --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/run.sh \
@@ -240,8 +220,7 @@ ARG REFRESH
 COPY --link --from=files /out/ /
 
 # 2. The system, in one step.
-# Runtime packages, plus the shared libraries the copied Node, Python, protoc, and Rust tools link
-# against.
+# Runtime packages, plus the shared libraries the copied Node, Python, and Rust tools link against.
 # apt lists live in a cache mount: never in a layer, and apt-get update only fetches what
 # changed since the last build.
 # The base image's apt sources use plain HTTP; every apt source is HTTPS instead.

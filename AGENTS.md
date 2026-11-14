@@ -21,7 +21,7 @@ RUN --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/
 
 - **The runner prints each script into the build log** between a header carrying its sha256 and a footer, then runs it. The log shows exactly what ran, the image's history records only the command, and the script never reaches a layer. It takes several scripts and runs them in order, stopping at the first that fails.
 - **Mount only the files the step uses**, never all of `scripts/`. BuildKit hashes each mounted file into the step's cache key, so a broad mount reruns the step whenever any script changes.
-- **Pass values through `ARG`s**, read as environment variables (`${NAME:-}` when it may be unset). A pinned module version stays on an `ARG` line in its stage, where the smoke tests read it (the jv and dnslookup stages).
+- **Pass values through `ARG`s**, read as environment variables (`${NAME:-}` when it may be unset). A pinned module version stays on an `ARG` line in its stage, where the smoke tests read it (the dnslookup stage).
 - The sandbox kits' `legal.sh` runs without the runner, because a kit's build context is its own directory.
 
 Writing the scripts:

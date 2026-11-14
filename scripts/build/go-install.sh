@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Builds a pinned Go command, static and stripped, and copies the verified module's LICENSE
-# beside it (Dockerfile's jv, dnslookup, and gh-stack stages). From the stage's ARGs:
-# MODULE is <module path>@<version>, PACKAGE the command's directory in the module ('.' for its
-# root), OUT the destination, and LDFLAGS (optional) the linker flags, where {version} stands for
-# the module's version.
+# beside it (Dockerfile's jv and dnslookup stages). From the stage's ARGs: MODULE is
+# <module path>@<version>, PACKAGE the command's directory in the module ('.' for its root), OUT
+# the destination, and LDFLAGS (optional) the linker flags, where {version} stands for the module's
+# version.
 set -euo pipefail
 
 readonly module=${MODULE:?MODULE must be set} out=${OUT:?OUT must be set}

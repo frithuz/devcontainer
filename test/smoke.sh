@@ -236,18 +236,6 @@ lookup() {
 		fi
 	done
 
-	# protoc finds the well-known types in /usr/local/include, its default import path, and
-	# compiles every one.
-	check "protoc compiles the well-known types" bash -c '
-		cd /usr/local/include && files=(google/protobuf/*.proto google/protobuf/compiler/*.proto) &&
-			cd / && protoc --include_imports --descriptor_set_out=/dev/null "${files[@]}"'
-	# The image's libstdc++ is the build protoc was compiled against, or a newer one (protoc.sh).
-	check "protoc's libstdc++ is no older than the one it was compiled against" bash -c '
-		built=$(awk '\''$1 == "runtime:" { sub(/^libstdc\+\+6=/, "", $2); print $2 }'\'' /legal/attribution/protoc/SOURCE) &&
-			[[ -n $built ]] && installed=$(dpkg-query -W -f "\${Version}" libstdc++6) &&
-			echo "built against $built, installed $installed" &&
-			dpkg --compare-versions "$installed" ge "$built"'
-
 	# A missing shared library shows up only on import (docs/architecture.md#binary-compatibility).
 	check "python imports every lib-dynload module" python3 - <<'EOF'
 import importlib, pathlib, sysconfig
@@ -315,11 +303,14 @@ environment() {
 	expect "the workspace belongs to agent" agent "$(stat -c %U /home/agent/workspace)"
 
 	if [[ $user == agent ]]; then
-		# setup.sh's layout of `gh extension install github/gh-stack`, pinned to the image's binary.
-		expect "gh-stack is agent's gh extension" /usr/local/bin/gh-stack \
-			"$(readlink "$HOME/.local/share/gh/extensions/gh-stack/gh-stack")"
-		check "gh-stack's manifest is pinned" grep -qx 'ispinned: true' "$HOME/.local/share/gh/extensions/gh-stack/manifest.yml"
-		check "gh stack runs" gh stack --version
+		# setup.sh's layout of `gh extension install github/<name>`, pinned to the image's binary.
+		local ext
+		for ext in gh-stack gh-actions-lock; do
+			expect "$ext is agent's gh extension" "/usr/local/bin/$ext" \
+				"$(readlink "$HOME/.local/share/gh/extensions/$ext/$ext")"
+			check "$ext's manifest is pinned" grep -qx 'ispinned: true' "$HOME/.local/share/gh/extensions/$ext/manifest.yml"
+			check "gh ${ext#gh-} runs" gh "${ext#gh-}" --version
+		done
 		expect "passwordless sudo" 0 "$(sudo -n id -u 2>&1)"
 		expect "sudo keeps PATH" "/opt/smoke:$PATH" "$(PATH=/opt/smoke:$PATH sudo -n printenv PATH 2>&1)"
 		expect "sudo keeps proxy variables" $'http://proxy.invalid:3128\nlocalhost' \

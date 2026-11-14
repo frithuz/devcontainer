@@ -120,25 +120,32 @@ as_agent() {
 	setpriv --reuid=agent --regid=agent --init-groups env HOME=/home/agent USER=agent LOGNAME=agent "$@"
 }
 
-# gh-stack as agent's gh extension, laid out as `gh extension install github/gh-stack` would: a
-# directory with the binary and a manifest that makes it a binary extension. The binary is a link
-# to the root-owned /usr/local/bin/gh-stack, so the manifest pins it: `gh extension upgrade`
+# A GitHub extension as agent's gh extension, laid out as `gh extension install github/<name>`
+# would: a directory with the binary and a manifest that makes it a binary extension. The binary is
+# a link to the root-owned /usr/local/bin/<name>, so the manifest pins it: `gh extension upgrade`
 # leaves it alone instead of failing to overwrite it.
-# Its version is the module version its stage's linker flag sets: "gh stack version v0.3.0".
-gh_stack_version=$(gh-stack --version)
-gh_stack_version=${gh_stack_version##* }
-if [[ $gh_stack_version != v* ]]; then
-	echo "gh-stack reports no module version: '$gh_stack_version'" >&2
-	exit 1
-fi
-readonly gh_stack=/home/agent/.local/share/gh/extensions/gh-stack
-as_agent mkdir -p "$gh_stack"
-as_agent ln -s /usr/local/bin/gh-stack "$gh_stack/gh-stack"
-as_agent tee "$gh_stack/manifest.yml" >/dev/null <<MANIFEST
+# The manifest's tag is the release tag: v and the last word of its --version ("gh stack version
+# 0.3.0", "actions-lock version v0.4.1").
+install_gh_extension() {
+	local name=$1 version dir
+	version=$("$name" --version)
+	version=${version##* }
+	version=v${version#v}
+	if [[ ! $version =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+		echo "$name reports no release version: '$version'" >&2
+		exit 1
+	fi
+	dir=/home/agent/.local/share/gh/extensions/$name
+	as_agent mkdir -p "$dir"
+	as_agent ln -s "/usr/local/bin/$name" "$dir/$name"
+	as_agent tee "$dir/manifest.yml" >/dev/null <<MANIFEST
 owner: github
-name: gh-stack
+name: $name
 host: github.com
-tag: $gh_stack_version
+tag: $version
 ispinned: true
-path: $gh_stack/gh-stack
+path: $dir/$name
 MANIFEST
+}
+install_gh_extension gh-stack
+install_gh_extension gh-actions-lock
