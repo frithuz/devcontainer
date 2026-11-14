@@ -4,20 +4,20 @@
 # Keep each reference a plain image:tag@sha256:digest so Dependabot can update it.
 # Go is a builder only: the go install stages below start from it, and the /legal step mounts its
 # toolchain to read the shipped Go binaries' module info. None of it reaches the image.
-FROM golang:1.27-trixie@sha256:fbb7ae40b62ff8afe31662df570d39b4f5052ac32b90dae8e60d7657a20a74f4 AS go
-FROM node:26-trixie-slim@sha256:5adad64f9a1fca2d51972caa65983634c8a774eb300d72b20f7f2a0f60368072 AS node
-FROM python:3.15-slim-trixie@sha256:533b0b2f9b5d46fd097091cf826f27902f1d6c3bca714b6dc74551356aa97a51 AS python
-FROM ghcr.io/astral-sh/uv:0.13.7@sha256:96f40d3904aad8d0bd010539001d36c8e2188b981e1334471a90c4a1d93bb490 AS uv
+FROM golang:1.27-trixie@sha256:c47c3fda018d13d43a6bf5ebac3e5bba8a23a35782aa4faf531afaf47c64c39f AS go
+FROM node:26-trixie-slim@sha256:e6bedef217677b276c591795e169840edd9096dbf13f29df8ef8d1856b8820bc AS node
+FROM python:3.15-slim-trixie@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928 AS python
+FROM ghcr.io/astral-sh/uv:0.13.8@sha256:5cc1805e2426484abca4ad46ea783bab281fdb225fd82d8ce6d66a81254bac85 AS uv
 FROM mvdan/shfmt:v3.14.1@sha256:8c06884a35683d8763fba6c0d9484d11a61a96da65f8d497d6f625825a6043f2 AS shfmt
 FROM ghcr.io/jqlang/jq:1.8.2@sha256:b9c68867e5766576263a222e91db3de422d802069c7af70440e667a95344e486 AS jq
-FROM mikefarah/yq:4.54.2@sha256:5d56494617dce8311106e905aac5c080a2087c905a7f7de2984db2e2cc60ab2e AS yq
-FROM ghcr.io/pnpm/pnpm:12.18.0@sha256:41c39d1c734b0a810669c07587888aa7dbe9ef9b4c8e98b346b3654f7b269b6d AS pnpm
+FROM mikefarah/yq:4.54.3@sha256:7834187596ad56fd5a81436114e0b0b9dd54c91bb43946d1f7145b2be5f9c3d2 AS yq
+FROM ghcr.io/pnpm/pnpm:12.21.0@sha256:168feba88e6a1684c99a62cbf4fe361d4e683e2a6c920d3b0acde7e15a28b62d AS pnpm
 FROM orhunp/git-cliff:2.14.2@sha256:1e696a381a1b0366bb6ccbb6bd4e50e73473fda88eab3a757b95e0d0d66c9531 AS git-cliff
 # Debian 13's official slim image: packages and security updates straight from Debian's archive. The
 # image and the stages that compile for it start here.
-FROM debian:trixie-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4 AS debian
-FROM ghcr.io/betterleaks/betterleaks:v1.10.0@sha256:c6dfa75145fe5b31fdaf02feff18a73f1e11df8ca04876522f87f857656c83ca AS betterleaks
-FROM ghcr.io/amacneil/dbmate:2.38.0@sha256:3937d2826e8189ed1f8cd58331f1f0711721ee10ac4c3d5d5f754fbe37e851ff AS dbmate
+FROM debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 AS debian
+FROM ghcr.io/betterleaks/betterleaks:v1.10.1@sha256:f345c1ac502abc51ec334c3d815ad18a79fb1509555fc4496b2cb88e760681b3 AS betterleaks
+FROM ghcr.io/amacneil/dbmate:2.38.1@sha256:b0c8a87bfef4f2819fdb0a68ca357a44d12fb90d23eca695fcfc3b7e159cb1c5 AS dbmate
 FROM bufbuild/buf:1.75.0@sha256:adf82c7170be6629ec81dc907921ac1699407cd11c4f7fd7521b13c74152f849 AS buf
 # adrs, for Architecture Decision Records: upstream's image, built on Debian bookworm, so its binary
 # links against an older glibc than the base's. Its Rust dependencies include an MPL-2.0 crate
@@ -80,11 +80,11 @@ RUN --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/
 # Its release archive, pinned by SHA-256 per architecture like Task's: its Rust dependencies include
 # an MPL-2.0 crate (option-ext), which upstream's binary carries the obligation for. The archive has
 # no LICENSE, so it comes from the release tag, pinned too. Bumped by hand: VERSION and every
-# SHA256_ value together. The binary links against glibc (2.39 or newer at 0.23.0).
+# SHA256_ value together. The binary links against glibc (2.39 or newer at 0.24.1).
 FROM fetch AS sampo
-ARG VERSION=0.23.0
-ARG SHA256_AMD64=d526913cd5283ec18ac280b515916f44cd0c51a3a22dd780ddce791235354ed6
-ARG SHA256_ARM64=b7acca5cf6f9591e50ca6bc71c63bf3d63e5c84cd849152c625c350c20cfef7c
+ARG VERSION=0.24.1
+ARG SHA256_AMD64=56ac1065ba26efccd032e8c2ab594e1405ad70f56758c42ccb206f41b25c319b
+ARG SHA256_ARM64=edf379465c3d38079effa8e0ec0faa5b935b2de085a8b41f389576d069d8f5c0
 ARG SHA256_LICENSE=5af9a8bbcab03013b58c08124e6a23451664d0e9542be98b7672685cdbcb4c4d
 ARG TARGETARCH
 RUN --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/run.sh \
@@ -120,11 +120,11 @@ RUN --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/
 # include an MPL-2.0 crate (option-ext in ast-grep, colored in hyperfine), which upstream's binary
 # carries the obligation for. ast-grep's archive has no LICENSE, so it comes from the release tag,
 # pinned too. Bumped by hand: VERSION and every SHA256_ value together. Both link against glibc
-# (2.34 or newer for ast-grep at 0.51.1, 2.18 for hyperfine at 2.0.0).
+# (2.34 or newer for ast-grep at 0.51.2, 2.18 for hyperfine at 2.0.0).
 FROM fetch AS ast-grep
-ARG VERSION=0.51.1
-ARG SHA256_AMD64=42514f77ae0c8a25d7d32154d31d3e7e16f3ab894f8ce76ce417de234ee49157
-ARG SHA256_ARM64=db02fae2d8eace5fc40c55242068882452dd03eab38a1d950d5fd981cf112926
+ARG VERSION=0.51.2
+ARG SHA256_AMD64=40604c21c38d4c7581c56bdddeef277c56bf3c0113620aa96e78ae87e82366df
+ARG SHA256_ARM64=c3ab2bd43959db28621dc1551c13ea5fe5db4c1fc7b18086dade6b65042c78d0
 ARG SHA256_LICENSE=81471889c77b2161a3e4dcdb1b2e6ca382e485766132d92d5fe1d7497e7dd2d9
 ARG TARGETARCH
 RUN --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/run.sh \
@@ -143,7 +143,7 @@ RUN --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/
 # Rust: the official image's toolchain, pinned to a minor line, plus rustfmt, clippy,
 # rust-analyzer, and the standard library's source, which its minimal profile leaves out. The image
 # takes only the toolchain, at /usr/local/rust, without rustup (scripts/build/rust.sh).
-FROM rust:1.99-slim-trixie@sha256:7eab7ce19273ce785e0ca7578bdf7bc1fcbae621775a8197379a04c9f6e03cd5 AS rust
+FROM rust:1.100-slim-trixie@sha256:e9d95b74296f7126a83ae3d041aeaba1ff4c478f13abc5cc034fcf7c131c3d4a AS rust
 RUN --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/run.sh \
     --mount=type=bind,source=scripts/build/rust.sh,target=/mnt/src/scripts/build/rust.sh \
     bash /mnt/src/scripts/build/run.sh /mnt/src/scripts/build/rust.sh

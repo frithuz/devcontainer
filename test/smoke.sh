@@ -63,8 +63,8 @@ version_in() {
 	grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' <<<"$1" | head -1
 }
 
-# The version a stage pins: the first version number in its FROM tag (rust:1.99-slim-trixie gives
-# 1.99), or for a stage that builds from a module, the first @vX.Y.Z or =vX.Y.Z in its body.
+# The version a stage pins: the first version number in its FROM tag (rust:1.100-slim-trixie gives
+# 1.100), or for a stage that builds from a module, the first @vX.Y.Z or =vX.Y.Z in its body.
 pinned_version() {
 	awk -v stage="$1" '
 		toupper($1) == "FROM" {
