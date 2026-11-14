@@ -229,6 +229,20 @@ components:
       files: [LICENSE-APACHE, LICENSE-MIT]
     purl: pkg:cargo/git-cliff@{version}
 
+  - name: adrs
+    stage: adrs
+    # Its Rust dependencies are permissive except mdbook (MPL-2.0), compiled in upstream through
+    # mdbook-lint.
+    license: MIT OR Apache-2.0
+    version: adrs --version
+    notices: [/legal/attribution/adrs/LICENSE-*]
+    paths: [/usr/local/bin/adrs]
+    upstream:
+      repository: joshrotenberg/adrs
+      tag: v{version}
+      files: [LICENSE-APACHE-2.0, LICENSE-MIT]
+    purl: pkg:cargo/adrs@{version}
+
   - name: betterleaks
     stage: betterleaks
     license: MIT

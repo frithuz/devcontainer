@@ -41,7 +41,7 @@ apt is used only for what can't be copied: base OS packages and Docker Engine. P
 Copied binaries have to run on the base's glibc (Debian 13's):
 
 - Prefer statically linked binaries. Most of the Go tools and uv are.
-- Copy dynamically linked tools (Node, Python, git-cliff, pnpm) only from glibc (Debian-based) images whose glibc is no newer than the base's. Never copy them from Alpine/musl images.
+- Copy dynamically linked tools (Node, Python, git-cliff, adrs, pnpm) only from glibc (Debian-based) images whose glibc is no newer than the base's. Never copy them from Alpine/musl images.
 - Release binaries that link against glibc (Sampo, ast-grep, hyperfine) must need no newer glibc than the base's, and their other shared libraries (`libgcc_s`) come from apt. protoc is compiled on the base and needs `libstdc++` and `libgcc_s`, which the setup step installs explicitly rather than relying on another package to pull them in.
 - **Python** needs the most care. The official image links CPython against Debian's shared libraries, so the final stage installs the same packages. A missing library doesn't break `python3 --version`. It shows up only when the matching stdlib module is imported, which is why the smoke tests import each of them.
 

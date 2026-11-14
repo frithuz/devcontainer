@@ -17,6 +17,10 @@ FROM debian:trixie-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1de
 FROM ghcr.io/betterleaks/betterleaks:v1.9.0@sha256:e3b95b0db6c2735db17165c009b0ad6d9cef34fb4578659232b98f69d7346cac AS betterleaks
 FROM ghcr.io/amacneil/dbmate:2.37.0@sha256:0101fcc9999596f4a6930e5627296cd91f3bfa225e3e8c1699fc00881e439cc6 AS dbmate
 FROM bufbuild/buf:1.75.0@sha256:adf82c7170be6629ec81dc907921ac1699407cd11c4f7fd7521b13c74152f849 AS buf
+# adrs, for Architecture Decision Records: upstream's image, built on Debian bookworm, so its binary
+# links against an older glibc than the base's. Its Rust dependencies include an MPL-2.0 crate
+# (mdbook), which upstream's binary carries the obligation for.
+FROM ghcr.io/joshrotenberg/adrs:0.13.0@sha256:7858d9917c73b3d65f54a685d7424d2bf15fcc2da79fc09ff0444bc732aed44c AS adrs
 
 # The download tools on the image's base (curl, gpg, unzip), for the stages that fetch and verify
 # releases. Nothing from this stage reaches the image but the files those stages produce.
@@ -228,6 +232,7 @@ COPY --link --chown=0:0 --chmod=0755 --from=task /opt/task/task /out/usr/local/b
 COPY --link --chown=0:0 --chmod=0755 --from=sampo /opt/sampo/sampo /out/usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=dnslookup /opt/dnslookup/dnslookup /out/usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=git-cliff /usr/local/bin/git-cliff /out/usr/local/bin/
+COPY --link --chown=0:0 --chmod=0755 --from=adrs /usr/local/bin/adrs /out/usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=betterleaks /usr/bin/betterleaks /out/usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=dbmate /usr/local/bin/dbmate /out/usr/local/bin/
 COPY --link --chown=0:0 --chmod=0755 --from=gh /opt/gh/gh /out/usr/local/bin/
