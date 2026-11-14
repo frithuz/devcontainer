@@ -42,3 +42,12 @@ Other rules:
 ### Keep the final image's layers few
 
 The `image` stage has three layers: one `COPY` of everything assembled in the `files` stage, one `RUN` for the system, and the `/legal` step, which stays separate because `REVISION` changes on every commit. Add new copied files to `files` and new setup to the existing `RUN`, not as new steps ([`docs/architecture.md`](docs/architecture.md#dockerfile-structure)).
+
+## Local builds
+
+Build and test locally for arm64 only, the host's architecture. Never emulate amd64: it's many times slower under QEMU, and CI builds each architecture on its own native runner. Without `NATIVE=1`, a bake target builds both platforms, so always set it:
+
+```sh
+NATIVE=1 docker buildx bake preflight
+NATIVE=1 docker buildx bake image --load
+```
