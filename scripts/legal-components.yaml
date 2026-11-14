@@ -279,10 +279,11 @@ components:
       - /legal/attribution/git/rust/COPYRIGHT-library.html
       - /legal/attribution/git/rust/licenses/*
     paths:
-      - /usr/local/bin/git
-      - /usr/local/bin/scalar
-      - /usr/local/libexec/git-core
-      - /usr/local/share/git-core
+      - /usr/bin/git
+      - /usr/bin/scalar
+      - /usr/lib/git-core
+      - /usr/share/git-core
+      - /usr/share/bash-completion/completions/git
     purl: pkg:generic/git@{version}
 
   - name: pnpm

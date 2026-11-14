@@ -81,7 +81,7 @@ A component compiled here or in a separate artifact (`install: source-build`: gi
 - **The build script**, by repository path and SHA-256 (`build-script:`): `scripts/build/git.sh` in the Git artifact's producer repository, `scripts/build/protoc.sh` here.
 - **Libraries compiled in** (`embedded:`), each with a row of its own marked `embedded-in:<component>`: zlib-ng in git, under the Zlib license, and Abseil in protoc, under Apache-2.0. A permissive license owes no source by itself, but a library compiled into a GPL binary is part of that binary's Corresponding Source, so `source.tsv` lists the archive of every library embedded in a copyleft component.
 
-Git's artifact also carries `build/ORIGIN` and the exact Dockerfile, runner, and build scripts under `/legal/attribution/git/build/`. `source.tsv` lists each recipe file at the producer commit, with its checksum; `manifest.tsv` records the pinned artifact reference. Missing or invalid artifact origin fails collection.
+Git's artifact also carries `build/ORIGIN` and its exact recipe under `/legal/attribution/git/build/`: the Dockerfile, build scripts, and Debian packaging. `source.tsv` lists each recipe file at the producer commit, with its checksum; `manifest.tsv` records the pinned artifact reference. Missing or invalid artifact origin fails collection.
 
 The Rust standard library is also compiled into git. It's Apache-2.0 OR MIT, so it owes no source, and its notices ship in `/legal/attribution/git/rust/`.
 

@@ -32,10 +32,10 @@ Create each the same way, **Public**, with `frithuz+promote` as its only robot, 
 
 ### Git artifact repository `frithuz/git`
 
-This repository holds the Git artifacts this repository used to build and publish; the main
-Dockerfile still pins one. Nothing here writes to it any more: Git is now built in
-[frithuz/git](https://github.com/frithuz/git), which publishes to GHCR. Keep the repository
-**Public** so the pinned artifact stays pullable. `frithuz+promote`'s **Write** on it is no longer
+This repository holds the Git artifacts this repository used to build and publish. Nothing pins
+or writes to it any more: Git is now built in [frithuz/git](https://github.com/frithuz/git),
+which publishes to GHCR, and the main Dockerfile pins that. Keep the repository **Public** so
+older images' recorded artifacts stay pullable. `frithuz+promote`'s **Write** on it is no longer
 needed.
 
 ## 3. Robot account `frithuz+promote`

@@ -93,17 +93,18 @@ pinned_version() {
 }
 
 lookup() {
-	local name stage version_cmd version_after cmd path out version expected words
+	local name stage version_cmd version_after paths cmd path out version expected words
 	# Every copied component from scripts/legal-components.yaml. Image tools resolve from
-	# /usr/local/bin; the base stage's files stay where Ubuntu put them.
-	while IFS=$'\t' read -r -u 3 name stage version_cmd version_after; do
+	# /usr/local/bin, or from one of their own listed paths (git's artifact installs to /usr/bin);
+	# the base stage's files stay where Ubuntu put them.
+	while IFS=$'\t' read -r -u 3 name stage version_cmd version_after paths; do
 		read -ra words <<<"$version_cmd"
 		cmd=${words[0]}
 		if ! path=$(command -v "$cmd"); then
 			fail "$name: $cmd isn't on the default PATH"
 			continue
 		fi
-		if [[ $stage != base && $path != /usr/local/bin/$cmd ]]; then
+		if [[ $stage != base && $path != /usr/local/bin/$cmd && " $paths " != *" $path "* ]]; then
 			fail "$name: $cmd resolves to $path, not /usr/local/bin/$cmd"
 			continue
 		fi
@@ -135,7 +136,7 @@ lookup() {
 		else
 			fail "$name: '$version_cmd' reports '${version:-no version}', but stage $stage pins $expected"
 		fi
-	done 3< <(yq -r '.components[] | [.name, .stage, .version, .["version-after"] // "-"] | @tsv' "$components")
+	done 3< <(yq -r '.components[] | [.name, .stage, .version, .["version-after"] // "-", (.paths | join(" "))] | @tsv' "$components")
 
 	# Everything else the image provides: apt packages, aliases, and unpinned installs.
 	local -a commands=(
@@ -221,9 +222,7 @@ lookup() {
 	check "git grep -P" bash -c '
 		repo=$(mktemp -d) && cd "$repo" && git init -q && echo needle >f && git add f &&
 			git grep -qP "ne{2}dle"; status=$?; rm -rf "$repo"; exit $status'
-	# The first published artifact predates the recipe rename; keep its immutable pin usable.
 	local git_recipe=/legal/attribution/git/build/git.Dockerfile
-	[[ -f $git_recipe ]] || git_recipe=/legal/attribution/git/build/Dockerfile.git
 	expect "git compresses with the pinned zlib-ng" \
 		"zlib-ng: $(awk -F= '$1 == "ARG ZLIB_NG_VERSION" { print $2; exit }' "$git_recipe")" \
 		"$(git version --build-options | grep -E '^zlib(-ng)?: ')"

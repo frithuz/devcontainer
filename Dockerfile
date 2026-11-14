@@ -47,8 +47,8 @@ RUN --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/
     bash /mnt/src/scripts/build/run.sh /mnt/src/scripts/build/apt-keys.sh
 
 # Git, from a scratch artifact published separately (built in frithuz/git), pinned by version and
-# digest.
-FROM quay.io/frithuz/git:2.56.0@sha256:e086987497cf2ed1f1777347d5fdc1e85000b1183a5b8d3f919a058f23d6e5dc AS git
+# digest. Its files sit under /usr, where Debian's git package would put them.
+FROM ghcr.io/frithuz/git:2.56.1-1frithuz1@sha256:c0a19004fdd5910e3c8f5132ccef845b89fe737251144e514104db631b1c6631 AS git
 
 # jv, a JSON Schema validator: for the data files below, and shipped in the image. No upstream
 # image publishes it, so it's built at a pinned version (bumped by hand); Go verifies the module
