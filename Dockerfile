@@ -143,7 +143,7 @@ RUN --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/
 # Rust: the official image's toolchain, pinned to a minor line, plus rustfmt, clippy,
 # rust-analyzer, and the standard library's source, which its minimal profile leaves out. The image
 # takes only the toolchain, at /usr/local/rust, without rustup (scripts/build/rust.sh).
-FROM rust:1.100-slim-trixie@sha256:e9d95b74296f7126a83ae3d041aeaba1ff4c478f13abc5cc034fcf7c131c3d4a AS rust
+FROM rust:1.100-slim-trixie@sha256:6f14b2b4b278ec0d50aa1d69541c304ce0f95e0f6268487aa9924af1c2e9aebe AS rust
 RUN --mount=type=bind,source=scripts/build/run.sh,target=/mnt/src/scripts/build/run.sh \
     --mount=type=bind,source=scripts/build/rust.sh,target=/mnt/src/scripts/build/rust.sh \
     bash /mnt/src/scripts/build/run.sh /mnt/src/scripts/build/rust.sh
