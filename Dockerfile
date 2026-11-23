@@ -16,7 +16,7 @@ FROM ghcr.io/pnpm/pnpm:12.21.0@sha256:168feba88e6a1684c99a62cbf4fe361d4e683e2a6c
 # image and the stages that compile for it start here.
 FROM debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 AS debian
 FROM ghcr.io/betterleaks/betterleaks:v1.10.1@sha256:f345c1ac502abc51ec334c3d815ad18a79fb1509555fc4496b2cb88e760681b3 AS betterleaks
-FROM ghcr.io/amacneil/dbmate:2.38.1@sha256:b0c8a87bfef4f2819fdb0a68ca357a44d12fb90d23eca695fcfc3b7e159cb1c5 AS dbmate
+FROM ghcr.io/amacneil/dbmate:2.38.2@sha256:fb4fe7cabfe98cf864d63ce083867f3c303a8c1a022fcd69081439425706e909 AS dbmate
 # adrs, for Architecture Decision Records: upstream's image, built on Debian bookworm, so its binary
 # links against an older glibc than the base's. Its Rust dependencies include an MPL-2.0 crate
 # (mdbook), which upstream's binary carries the obligation for.
